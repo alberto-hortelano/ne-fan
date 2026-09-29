@@ -1121,6 +1121,10 @@ export class NarrativeState {
    *   `activePlugins` del bridge). Sin él, sólo se proyectan los plugins cuyo
    *   manifest está embebido en el record (los generados por IA). */
   serializeForLlm(manifests?: Map<string, PluginManifest>): LlmContext {
+    // El motor decide si cura (`player_healed`, #613) leyendo
+    // `player.health`: tiene que ser la vida de AHORA, no la del último
+    // guardado. Mismo volcado que hace `save()`.
+    this.refreshPlayerFromRuntime();
     return buildLlmContext(this, manifests);
   }
 

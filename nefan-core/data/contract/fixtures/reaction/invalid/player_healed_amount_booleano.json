@@ -1,0 +1,12 @@
+{
+  "description": "player_healed con amount true: en Python bool es int y valdría 1; el zod lo rechaza y el espejo también",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "player_healed",
+        "amount": true
+      }
+    ]
+  }
+}

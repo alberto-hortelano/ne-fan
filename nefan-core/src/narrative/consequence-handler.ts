@@ -29,6 +29,10 @@ export interface DispatchResult {
   /** Eventos `plugin_event` recolectados (no aplicados): el bridge los pasa
    *  al dispatcher de plugins después de las consequences core (§7.4). */
   pluginEvents: Array<{ pluginId: string; type: string; payload: Record<string, unknown> }>;
+  /** Cantidades de `player_healed` recolectadas (no aplicadas): el bridge se
+   *  las da al sim (`aplicarCuraciones`) antes de guardar. Sin effect para el
+   *  cliente: la barra sale del `playerHp` del siguiente `state_update`. */
+  curaciones: number[];
 }
 
 export function dispatchConsequences(
@@ -37,7 +41,12 @@ export function dispatchConsequences(
   consequences: Consequence[],
   opts: DispatchOptions = {},
 ): DispatchResult {
-  const result: DispatchResult = { effects: [], injectedDialogue: false, pluginEvents: [] };
+  const result: DispatchResult = {
+    effects: [],
+    injectedDialogue: false,
+    pluginEvents: [],
+    curaciones: [],
+  };
   // Contador local: varias spawn_entity del mismo turno (p. ej. "aparecen tres
   // guardias") caían en el mismo segundo con el generador por defecto y
   // recibían el MISMO id → entidades duplicadas y NPCs colapsados en el sim.
@@ -192,6 +201,11 @@ export function dispatchConsequences(
           type: c.event_type,
           payload: c.payload ?? {},
         });
+        break;
+      }
+      case "player_healed": {
+        // Sólo recolecta, como `plugin_event`: el sim no vive aquí.
+        result.curaciones.push(c.amount);
         break;
       }
     }

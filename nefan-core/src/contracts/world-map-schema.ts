@@ -38,14 +38,14 @@ import {
   type WorldMap,
 } from "../world-map/types.js";
 import type { Consequence } from "../narrative/types.js";
+import { ConsequenceSchema } from "../contract/model-io/schemas.js";
 
-/** Sobre superficial de una consequence: objeto con `type` string. La forma
- *  completa la valida el consumidor (dispatchConsequences tolera y audita;
- *  el pre-flight del modelo usa ConsequenceSchema del SoT). */
-export const ConsequenceEnvelope = z.custom<Consequence>(
-  (v) => !!v && typeof v === "object" && typeof (v as { type?: unknown }).type === "string",
-  { message: "consequence must be an object with a string `type`" },
-);
+/** Una consequence de trigger, con la MISMA forma que una de `narrative_event`:
+ *  el zod del SoT (`ConsequenceSchema`). Era un sobre superficial —objeto con
+ *  `type` string— y lo de dentro no lo miraba nadie, así que un
+ *  `player_healed` sin `amount` entraba por `map_add_trigger` y reventaba
+ *  en el sim al dispararse, sin nadie esperándolo (#613). */
+export const ConsequenceEnvelope: z.ZodType<Consequence, z.ZodTypeDef, unknown> = ConsequenceSchema;
 
 export const TriggerWhenSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("player_entered") }),

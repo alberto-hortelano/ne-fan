@@ -22,7 +22,7 @@
  *
  *  Lo que NO mide, a propósito: dónde reapareces, si el Secuaz sigue
  *  enganchado y si se cura a tope al morir tú. Son las piezas A, B y C1 de
- *  #613 y las decide el usuario en la sesión de diseño de combate.
+ *  #613, que el usuario decidió el 2026-09-29 y mide el guion 260.
  *
  *  Si el bandido mata al jugador ANTES de caer, o el Secuaz no llega a matarlo,
  *  el escenario no existe y el guion lo DECLARA (⊘), no sale verde.
@@ -168,7 +168,7 @@ export default async function (ctx) {
     secuaz.id,
   );
   ctx.expect(
-    "el Secuaz sigue en la lista (esta tanda no toca a los vivos: C1 es de #613)",
+    "el Secuaz sigue en la lista (a los vivos los mide el guion 260)",
     sigueElSecuaz,
     secuaz.id,
   );

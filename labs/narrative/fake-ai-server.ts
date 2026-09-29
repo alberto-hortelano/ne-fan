@@ -257,6 +257,13 @@ const TURNO_DECLARADO = [
   { nombre: "Nogala", kind: "npc" as const, footprint: undefined },
   { nombre: "Bolsa de monedas", kind: "item" as const, footprint: [2, 2] as [number, number] },
 ];
+/** Y la de la POCIÓN (#613, tanda BN): el motor contesta con un `dialogue` y
+ *  una `player_healed` de `POCION_PV`, la única curación del juego. Marca y no
+ *  turno, por lo mismo que las de arriba. Ese turno no trae spawns: el guion
+ *  mide la barra de vida, y un hostil a mitad de la medida la movería. La
+ *  pide el guion 261. */
+const MARCA_POCION = "UNA POCION";
+const POCION_PV = 10;
 /** Quien conduce el motor con esas marcas se queda CON EL MOTOR PARA ÉL: a
  *  partir de la primera, los spawns por número de turno (el hostil del 2, el
  *  mundo del 3, el spawn sin procedencia del 4) dejan de salir en esta sesión.
@@ -829,12 +836,14 @@ const server = http.createServer((req, res) => {
         // secas en su primera línea para que los turnos 2-4 no le pongan un
         // cofre encima de lo que va a medir (ver `motorConducidoPorMarcas`).
         if (texto.includes(MARCA_DECLARA)) motorConducidoPorMarcas = true;
-        const spawns = motorConducidoPorMarcas
+        const pocion = texto.includes(MARCA_POCION);
+        const spawns = motorConducidoPorMarcas || pocion
           ? loQueDeclara
           : [...spawnHostil, ...spawnMundo, ...spawnSinProcedencia];
         return send(200, {
           consequences: [
             ...spawns,
+            ...(pocion ? [{ type: "player_healed" as const, amount: POCION_PV }] : []),
             {
               type: "dialogue",
               speaker,

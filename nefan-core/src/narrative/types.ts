@@ -170,6 +170,10 @@ export type Consequence =
    *  dispatcher de plugins en el nivel 3 del tick. snake_case como el resto;
    *  `event_type` evita colisionar con el discriminante `type`. */
   | { type: "plugin_event"; plugin_id: string; event_type: string; payload?: Record<string, unknown> }
+  /** La curación del jugador (#613). El handler solo la RECOLECTA
+   *  (`DispatchResult.curaciones`): la aplica el bridge al sim, que es quien
+   *  sabe el máximo y si está muerto. */
+  | { type: "player_healed"; amount: number }
   /** Sin reacción explícita. El handler no emite efecto (cae del switch) pero
    *  la consequence queda auditada en dialogue_history. */
   | { type: "noop" };

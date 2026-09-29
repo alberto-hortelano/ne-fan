@@ -315,20 +315,31 @@ export function handleLoadRoom(
   ctx.enviarEstado(ws, roomResponse);
 }
 
-export function handleRespawn(msg: RespawnMessage, ws: ClientSocket, ctx: BridgeContext): void {
+export function handleRespawn(_msg: RespawnMessage, ws: ClientSocket, ctx: BridgeContext): void {
   // Reaparecer MUEVE al jugador, y con el save escuchando al sim eso acaba en
   // el `state.json`: mismo dueño que el input.
   if (!ctx.world.canDrive(ws)) return;
-  const events = ctx.sim.respawn(msg.pos);
+  // Sin jugador no hay a quién reaparecer: el sim no está sembrado (título,
+  // bridge recién reiniciado). Antes se contestaba con `playerHp ?? 100`, un
+  // jugador inventado a tope de vida; hoy se dice y no se contesta.
+  const player = ctx.sim.getCombatant("player");
+  if (!player) {
+    console.error("Bridge: respawn sin jugador en el sim — nada que reaparecer");
+    return;
+  }
+  // DÓNDE lo decide el sim (el último punto seguro, #613); el cliente lo
+  // recibe en `reaparicion` y lo aplica, como `status.spawn` al arrancar.
+  const { events, punto } = ctx.sim.respawn();
   const response: SinDuenoDelSim<StateUpdateMessage> = {
     type: "state_update",
     events,
-    playerHp: ctx.sim.getCombatant("player")?.health ?? 100,
+    playerHp: player.health,
     ...estadoDelJugador(ctx),
     enemies: getEnemyStates(ctx),
+    reaparicion: punto,
   };
   ctx.enviarEstado(ws, response);
-  console.log("Bridge: player respawned");
+  console.log(`Bridge: player respawned en (${punto.x.toFixed(2)}, ${punto.z.toFixed(2)})`);
 }
 
 /** Alta ADITIVA de combatientes (enemigos de un tile recién cargado en el

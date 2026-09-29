@@ -69,6 +69,8 @@ Semantic notes the type cannot express:
 - plugin_event only makes sense for plugins the session has ACTIVE — the engine
   runs the plugin's declarative rules (commerce, reputation, …); emit it instead
   of hand-narrating what a plugin already models.
+- player_healed restores player health, capped at the player's max; it is the
+  only way a living player heals. context.player.health is the current value.
 
 OTHER ACTIONS during this turn (optional, alongside consequences): you may also
 call the state tools to mutate authoritative state directly — inventory_add /
@@ -140,6 +142,10 @@ NarrativeReaction = {
       plugin_id: string /* no vacío */;  // Id del plugin declarativo destino
       event_type: string /* no vacío */;  // Tipo de evento que consume el plugin
       payload?: Record<string, unknown>;  // Datos del evento (objeto)
+    }
+    | {
+      type: "player_healed";
+      amount: number /* entero, ≥1 */;  // Puntos de vida que recupera el jugador (entero ≥ 1). El juego los topa en su máximo; a un jugador muerto no le hace nada. Su vida actual está en context.player.health
     }
     | {
       type: "noop";

@@ -69,11 +69,12 @@ export interface LoadRoomMessage {
   }[];
 }
 
+/** R tras morir. Sin punto: DÓNDE se reaparece lo decide el sim del bridge
+ *  (el último punto seguro, #613) y viaja de vuelta en
+ *  `StateUpdateMessage.reaparicion`. Un cliente que mande `pos` es de otra
+ *  versión y lo rechaza el zod (`.strict()`), no se ignora. */
 export interface RespawnMessage {
   type: "respawn";
-  /** Punto de reaparición en coordenadas globales (el cliente elige un punto
-   *  libre cercano en el tile actual). Ausente = legacy (0,0,4). */
-  pos?: Vec3;
 }
 
 export interface PingMessage {
@@ -371,6 +372,12 @@ export interface StateUpdateMessage {
     /** Modo del FSM (idle/wander/goto/visit/flee/intervene/react) — trazas. */
     state: string;
   }[];
+  /** Dónde reaparece el jugador. SOLO en la respuesta a `respawn`: el punto
+   *  lo decide el sim (el último punto seguro, #613) y el cliente lo copia a
+   *  su posición antes de volver a mandar input —la posición la conduce el
+   *  input, y sin esto el siguiente frame lo devolvería al cadáver—. Mismo
+   *  patrón que `status.spawn` al arrancar. */
+  reaparicion?: Vec3;
 }
 
 export interface PongMessage {

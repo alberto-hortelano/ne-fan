@@ -40,9 +40,11 @@ export class EnemyAI {
   aggroRadius: number;
 
   /** Enganchado: una vez que el jugador entra en el radio, el enemigo ya no
-   *  se desentiende aunque se aleje. No hay correa (volver a su sitio y
-   *  desengancharse) a propósito: eso es diseño de encuentro y no lo decide
-   *  esta tanda; lo que aquí se arregla es que la pelea la EMPIECE alguien. */
+   *  se desentiende aunque se aleje. Lo único que lo suelta es que el jugador
+   *  MUERA (#613, decisión del usuario 2026-09-29): `GameSimulation.respawn`
+   *  llama a `soltar()` y lo devuelve a su sitio de alta, y solo vuelve a por
+   *  ti si reentras en su radio. No hay correa por DISTANCIA —mientras vivas,
+   *  te persigue por todo el mapa—: eso va con el pathing de #618. */
   private engaged = false;
 
   // Internal state
@@ -86,6 +88,23 @@ export class EnemyAI {
   isEngaged(dist: number): boolean {
     if (!this.engaged && dist <= this.aggroRadius) this.engaged = true;
     return this.engaged;
+  }
+
+  /** ¿Está enganchado AHORA? Sin efectos, a diferencia de `isEngaged(dist)`,
+   *  que puede engancharlo al preguntar: el sim lo consulta cada tick para
+   *  saber si el jugador está fuera de combate, y esa pregunta no puede
+   *  cambiar la respuesta. */
+  get enganchado(): boolean {
+    return this.engaged;
+  }
+
+  /** Suelta al jugador: vuelve al estado de antes del primer contacto, sin
+   *  ataque a medio decidir ni enfriamiento pendiente. Solo lo llama
+   *  `GameSimulation.respawn` (ver `engaged`). */
+  soltar(): void {
+    this.engaged = false;
+    this.timer = 0;
+    this.cooldownTimer = 0;
   }
 
   /** Update enemy position — move toward/away from target. */

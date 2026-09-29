@@ -67,7 +67,6 @@ import {
   pasoDelJugador,
   velocidadDelJugador,
 } from "@nefan-core/src/simulation/paso-del-jugador.js";
-import { puntoDeReaparicion } from "@nefan-core/src/simulation/reaparicion.js";
 import { HablarConUnNpc } from "@nefan-core/src/simulation/hablar-con-un-npc.js";
 import {
   createGameClient,
@@ -523,18 +522,13 @@ fpsRenderer.setCollisionCellsProvider((tileKey) => {
 
 // --- Respawn ---
 
-/** R (one-shot del provider): revive al player si está muerto. La condición
- *  de negocio vive aquí; el provider solo transporta la intención. */
+/** R (one-shot del provider): revive al player si está muerto. DÓNDE se
+ *  vuelve lo decide el sim del bridge (#613) y llega en `result.reaparicion`;
+ *  el «Respawned!» lo dice el panel de combate con `player_respawned`. */
 function handleRespawnRequest(): void {
   const p = gameClient?.jugadorEnCombate();
   if (!p || p.health > 0) return;
-  // DÓNDE se vuelve lo decide core (`puntoDeReaparicion`): aquí solo se le da
-  // la posición del cadáver.
-  const rp = puntoDeReaparicion(playerPos);
-  gameClient?.respawn(rp);
-  playerPos.x = rp.x;
-  playerPos.z = rp.z;
-  log("Respawned!");
+  gameClient?.respawn();
 }
 
 // --- Game Loop ---
@@ -667,6 +661,12 @@ function gameLoop(now: number): void {
         attackRequested,
         attackType: attackRequested ? input.state.selectedAttack : undefined,
       });
+
+  // El punto de reaparición lo decide el sim (#613); se copia antes del siguiente input.
+  if (result.reaparicion) {
+    playerPos.x = result.reaparicion.x;
+    playerPos.z = result.reaparicion.z;
+  }
 
   // Lo que el jugador VE y LEE de lo que resolvió el sim: el aro del ataque,
   // las líneas del registro y si sigue de pie. Devuelve la animación de una vez

@@ -131,6 +131,21 @@ const PluginEventConsequence = z.object({
   payload: z.record(z.unknown()).optional().describe("Datos del evento (objeto)"),
 });
 
+// La ÚNICA curación del jugador (#613, decisión del usuario 2026-09-29: «se
+// cura por consecuencias»). Solo la cantidad: el tope, el muerto y el save son
+// del juego, no del motor.
+const PlayerHealedConsequence = z.object({
+  type: z.literal("player_healed"),
+  amount: z
+    .number()
+    .int()
+    .min(1)
+    .describe(
+      "Puntos de vida que recupera el jugador (entero ≥ 1). El juego los topa en su máximo; " +
+        "a un jugador muerto no le hace nada. Su vida actual está en context.player.health",
+    ),
+});
+
 const NoopConsequence = z.object({
   type: z.literal("noop"),
 });
@@ -141,6 +156,7 @@ export const ConsequenceSchema = z.discriminatedUnion("type", [
   SpawnEntityConsequence,
   ScheduleEventConsequence,
   PluginEventConsequence,
+  PlayerHealedConsequence,
   NoopConsequence,
 ]);
 

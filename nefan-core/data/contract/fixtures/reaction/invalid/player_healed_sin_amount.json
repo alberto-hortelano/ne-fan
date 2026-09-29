@@ -1,0 +1,11 @@
+{
+  "description": "player_healed sin amount: la cantidad es obligatoria, no hay curación por defecto",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "player_healed"
+      }
+    ]
+  }
+}

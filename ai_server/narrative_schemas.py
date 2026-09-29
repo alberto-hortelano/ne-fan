@@ -1371,7 +1371,7 @@ def validate_narrative_reaction(data: dict | None) -> dict:
     """Validate a Claude response to react_to_player.
 
     Strict mode — accepted types are exactly {dialogue, story_update,
-    spawn_entity, schedule_event, noop}. Any deviation (aliases like
+    spawn_entity, schedule_event, plugin_event, player_healed, noop}. Any deviation (aliases like
     show_dialogue, text instead of delta, missing required fields, malformed
     kinds) raises ValueError. The bridge surfaces the error to the client; the
     operator fixes the narrative engine's prompt.
@@ -1384,7 +1384,10 @@ def validate_narrative_reaction(data: dict | None) -> dict:
     if len(raw) > 4:
         raise ValueError(f"react_to_player returned {len(raw)} consequences, max is 4")
 
-    valid_types = {"dialogue", "story_update", "spawn_entity", "schedule_event", "plugin_event", "noop"}
+    valid_types = {
+        "dialogue", "story_update", "spawn_entity", "schedule_event", "plugin_event",
+        "player_healed", "noop",
+    }
     out: list[dict] = []
     for idx, c in enumerate(raw):
         if not isinstance(c, dict):
@@ -1443,6 +1446,15 @@ def validate_narrative_reaction(data: dict | None) -> dict:
                 "description": description,
                 "trigger": str(c.get("trigger", "next_scene")),
             })
+        elif t == "player_healed":
+            # Espejo del zod (`PlayerHealedConsequence`): entero ≥ 1. `bool` es
+            # subclase de `int` en Python y el zod no lo admite: se excluye.
+            amount = c.get("amount")
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount < 1:
+                raise ValueError(
+                    f"player_healed[{idx}].amount must be an integer >= 1, got {amount!r}"
+                )
+            out.append({"type": "player_healed", "amount": amount})
         elif t == "plugin_event":
             plugin_id = str(c.get("plugin_id", "")).strip()
             event_type = str(c.get("event_type", "")).strip()

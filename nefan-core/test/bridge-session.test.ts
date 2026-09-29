@@ -1237,7 +1237,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
 
     sim.getCombatant("player")!.health = 0;
     sent.length = 0;
-    await porElBorde({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, socket, ctx);
+    await porElBorde({ type: "respawn" }, socket, ctx);
     const estados = sent.filter((m): m is StateUpdateMessage => m.type === "state_update");
     assert.equal(estados.length, 1, "el respawn contesta con un state_update");
     assert.equal(estados[0].events[0]?.type, "player_respawned", "premisa: es el frame del respawn");
@@ -1447,7 +1447,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
       fixtura,
       ctx,
     );
-    await porElBorde({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, fixtura, ctx);
+    await porElBorde({ type: "respawn" }, fixtura, ctx);
     await porElBorde({ type: "add_combatants", enemies: [] }, fixtura, ctx);
     const estados = deEstado();
     assert.equal(estados.length, 4, "los CUATRO emisores contestan por este camino");
@@ -1558,7 +1558,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     sim.getCombatant("player")!.position = { x: 12, y: 1, z: -6 };
 
     const { socket: ajeno, sent: sentAjeno } = makeSocket();
-    await porElBorde({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, ajeno, ctx);
+    await porElBorde({ type: "respawn" }, ajeno, ctx);
     assert.equal(sentAjeno.length, 0, "al socket ajeno no se le contesta nada");
     assert.deepEqual(sim.getCombatant("player")!.position, { x: 12, y: 1, z: -6 });
 

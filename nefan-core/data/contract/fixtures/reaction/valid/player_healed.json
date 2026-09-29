@@ -1,0 +1,30 @@
+{
+  "description": "player_healed: el motor cura al jugador (pociones, curandero; #613). Entero ≥ 1; el tope en el máximo lo pone el juego",
+  "expect": "accept",
+  "payload": {
+    "consequences": [
+      {
+        "type": "dialogue",
+        "speaker": "Curandera",
+        "text": "Bébetelo de un trago."
+      },
+      {
+        "type": "player_healed",
+        "amount": 30
+      }
+    ]
+  },
+  "sobrevive": {
+    "consequences": [
+      {
+        "type": "dialogue",
+        "speaker": "Curandera",
+        "text": "Bébetelo de un trago."
+      },
+      {
+        "type": "player_healed",
+        "amount": 30
+      }
+    ]
+  }
+}

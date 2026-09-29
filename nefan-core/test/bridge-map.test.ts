@@ -91,6 +91,29 @@ describe("bridge player_entered_place + map triggers", () => {
     assert.ok(narrative.story_so_far.includes("Huele a estofado."));
   });
 
+  /** #613: la curación también puede venir de un trigger que el motor dejó
+   *  escrito (una fuente, un altar). Mismo camino que la del diálogo
+   *  (`aplicarCuraciones`), antes del guardado del trigger. */
+  it("un trigger con player_healed cura al jugador del sim", async () => {
+    const { ctx, narrative, sim, store } = makeCtx();
+    narrative.startNewSession("plugtest");
+    const { socket } = makeSocket();
+    ctx.world.claimForSession(socket, narrative.session_id);
+    narrative.worldMap.upsertPlace({ id: "fuente", kind: "site", parent_id: "world", name: "La Fuente" });
+    narrative.recordSceneLoaded("scene_fuente", escenaExpandidaDePrueba("scene_fuente", { place_id: "fuente" }));
+    narrative.worldMap.addTrigger("fuente", {
+      id: "agua",
+      when: { type: "player_entered" },
+      consequences: [{ type: "player_healed", amount: 25 }],
+    });
+    sim.getCombatant("player")!.health = 40;
+
+    await porElBorde({ type: "player_entered_place", placeId: "fuente" }, socket, ctx);
+
+    assert.equal(sim.getCombatant("player")!.health, 65);
+    assert.equal(store.state.player.hp, 65);
+  });
+
   it("un trigger con el plugin_id de ANTES de migrar sigue sirviendo, y sin overlay", async () => {
     // El caso de #164 visto desde el mapa: el motor deja triggers escritos y
     // sigue narrando; cuando el jugador llega, el sistema al que apuntan puede

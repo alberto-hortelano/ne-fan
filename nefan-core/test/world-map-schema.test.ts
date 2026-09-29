@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { AnchorSchema, WorldMapSchema } from "../src/contracts/world-map-schema.js";
+import { AnchorSchema, PlaceTriggerSpecSchema, WorldMapSchema } from "../src/contracts/world-map-schema.js";
 import { WorldMapManager } from "../src/world-map/world-map.js";
 import { WORLD_SNAPSHOT_SCHEMA_VERSION, WorldSnapshotSchema } from "../src/games/world-snapshot.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
@@ -267,5 +267,23 @@ describe("la tool map_upsert_place hace el pre-flight del anchor (#465)", () => 
     assert.deepEqual(pre.args, ["anchor"], "validateAnchor no valida el anchor que recibe la tool");
     assert.ok(post, "map_upsert_place ya no reenvía al bridge (¿se movió la tool?)");
     assert.ok(pre.pos < post.pos, "validateAnchor corre DESPUÉS de reenviar al bridge");
+  });
+});
+
+/** #613: la consequence de un trigger tiene la MISMA forma que la de
+ *  `narrative_event` (el zod del SoT). Era un sobre superficial —objeto con
+ *  `type` string—, y un `player_healed` sin `amount` entraba y reventaba en el
+ *  sim al dispararse, sin nadie esperando la respuesta. */
+describe("PlaceTriggerSpecSchema — las consequences de un trigger", () => {
+  const trigger = (consequences: unknown[]) => ({ id: "t", when: { type: "player_entered" }, consequences });
+
+  it("acepta una consequence válida del contrato del motor", () => {
+    assert.equal(PlaceTriggerSpecSchema.safeParse(trigger([{ type: "player_healed", amount: 10 }])).success, true);
+  });
+
+  it("rechaza la que el pre-flight del motor rechazaría: la forma de dentro también se mira", () => {
+    for (const mala of [{ type: "player_healed" }, { type: "player_healed", amount: 0 }, { type: "no_existe" }]) {
+      assert.equal(PlaceTriggerSpecSchema.safeParse(trigger([mala])).success, false, JSON.stringify(mala));
+    }
   });
 });

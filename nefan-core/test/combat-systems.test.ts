@@ -13,6 +13,8 @@ import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { combatRegistry } from "../src/combat/registry.js";
 import { GameStore } from "../src/store/game-store.js";
+import { EnemyAI } from "../src/combat/enemy-ai.js";
+import { SeededRng } from "../src/rng.js";
 import type { CombatConfig, CombatEvent, EnemyPersonality } from "../src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -357,5 +359,64 @@ describe("EnemyAI — el enemigo no persigue al jugador desde el otro lado del t
 
     tickIdle(sim, player, 500);
     assert.ok(enemy.position.z < 30, `sin puerta debe acercarse (z=${enemy.position.z})`);
+  });
+});
+
+/** SOLTAR (#613, decisión del usuario 2026-09-29): al morir el jugador, cada
+ *  enemigo le suelta. `GameSimulation.respawn` lo llama y
+ *  `simulation.test.ts` lo mide por el sim entero; aquí, lo que la IA promete
+ *  por sí misma — que suelta DEL TODO: ni el enganche, ni el ataque que tenía
+ *  a medio decidir, ni el enfriamiento del último. */
+describe("EnemyAI — soltar al jugador (#613)", () => {
+  const personalidad: EnemyPersonality = {
+    aggression: 1,
+    preferred_attacks: ["quick"],
+    reaction_time: 0.5,
+    combat_range: 4,
+    aggro_radius: 10,
+  };
+  const conIa = () => {
+    const ai = new EnemyAI("bandido", personalidad, makeSim("standard").combatSystem, new SeededRng(7));
+    const yo = createCombatant("bandido", 60, "unarmed", { x: 0, y: 0, z: 1 }, { x: 0, y: 0, z: -1 });
+    const jugador = createCombatant("player", 100, "unarmed", { x: 0, y: 0, z: 0 });
+    return { ai, yo, jugador };
+  };
+
+  it("`enganchado` pregunta sin enganchar; `isEngaged` dentro del radio sí engancha", () => {
+    const { ai } = conIa();
+    assert.equal(ai.enganchado, false);
+    assert.equal(ai.isEngaged(50), false, "fuera del radio no engancha");
+    assert.equal(ai.enganchado, false);
+    assert.equal(ai.isEngaged(5), true);
+    assert.equal(ai.enganchado, true, "preguntar no desengancha");
+  });
+
+  it("soltar desengancha: fuera del radio ya no le hace caso, dentro vuelve a engancharse", () => {
+    const { ai } = conIa();
+    ai.isEngaged(5);
+    ai.soltar();
+    assert.equal(ai.enganchado, false);
+    assert.equal(ai.isEngaged(50), false, "suelto y lejos: no le hace caso");
+    assert.equal(ai.isEngaged(5), true, "soltar no es desactivar");
+  });
+
+  it("soltar olvida el ataque a medio decidir: el reloj de reacción vuelve a cero", () => {
+    const { ai, yo, jugador } = conIa();
+    assert.deepEqual(ai.tick(0.4, yo, jugador), [], "0,4 s de 0,5: aún no decide");
+    ai.soltar();
+    assert.deepEqual(ai.tick(0.2, yo, jugador), [], "sin soltar serían 0,6 s y atacaría");
+    assert.equal(ai.tick(0.3, yo, jugador)[0]?.type, "attack_started", "0,5 s desde que soltó: ahora sí");
+  });
+
+  it("soltar olvida el enfriamiento del último ataque", () => {
+    const { ai, yo, jugador } = conIa();
+    assert.equal(ai.tick(0.5, yo, jugador)[0]?.type, "attack_started", "premisa: ataca y se enfría");
+    yo.state = "idle";
+    ai.soltar();
+    assert.equal(
+      ai.tick(0.5, yo, jugador)[0]?.type,
+      "attack_started",
+      "sin enfriamiento pendiente vuelve a decidir al cumplirse su reacción",
+    );
   });
 });

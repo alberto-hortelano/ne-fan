@@ -4,7 +4,7 @@
 
 import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
 import { falloDeReaccionParaElJugador } from "../../src/protocol/status-motivo.js";
-import { npcSync, runPluginTick, sessionChangedError, type BridgeContext } from "../context.js";
+import { aplicarCuraciones, npcSync, runPluginTick, sessionChangedError, type BridgeContext } from "../context.js";
 import type {
   DialogueChoiceMessage,
   InteractEntityMessage,
@@ -78,6 +78,7 @@ async function reportAndDispatch(
     speakerHintId,
   });
   const pluginFx = runPluginTick(ctx, eventId, dispatched.pluginEvents);
+  aplicarCuraciones(ctx, eventId, dispatched.curaciones);
   // Fail-loud del bridge (patrón de simulation.ts): si el guardado falla
   // (ENOSPC, permisos), la reacción YA vive en memoria y el jugador tiene que
   // ver sus efectos igualmente — se avisa del save y el turno sigue. Sin este

@@ -10,6 +10,7 @@ import { SeededRng } from "../rng.js";
 import * as Combatant from "../combat/combatant.js";
 import { distanceXZ } from "../vec3.js";
 import type { NpcBehaviorEvent, NpcBehaviorSystem } from "./npc-behavior.js";
+import { puntoDeReaparicion } from "./reaparicion.js";
 
 export interface FrameInputs {
   playerPosition: Vec3;
@@ -33,6 +34,15 @@ export class GameSimulation {
   private rng: SeededRng;
   private roomBounds: { halfW: number; halfD: number } | null = null;
   private npcBehavior: NpcBehaviorSystem | null = null;
+  /** Dónde se dio de alta cada enemigo (los que traen personalidad). Es a
+   *  donde vuelve cuando el jugador muere (#613): sin esto se quedaba junto al
+   *  cadáver y el punto seguro caía dentro de su radio. */
+  private casas = new Map<string, Vec3>();
+  /** El último punto donde el jugador estaba vivo y FUERA DE COMBATE (ninguna
+   *  IA de un vivo enganchada). Es donde reaparece. Lo siembra el alta del
+   *  jugador y lo avanza `tick`; no se persiste: al reanudar, la posición
+   *  guardada vuelve a sembrarlo. */
+  private puntoSeguro: Vec3 | null = null;
 
   constructor(config: CombatConfig, store?: GameStore, seed?: number, combat?: CombatSystem) {
     this.store = store ?? new GameStore();
@@ -74,7 +84,9 @@ export class GameSimulation {
 
   addCombatant(state: CombatantState, personality?: EnemyPersonality): void {
     this.combatants.set(state.id, state);
+    if (state.id === "player") this.puntoSeguro = puntoDeReaparicion(state.position);
     if (personality) {
+      this.casas.set(state.id, { ...state.position });
       this.enemyAIs.set(
         state.id,
         new EnemyAI(state.id, personality, this.combat, this.rng),
@@ -85,6 +97,8 @@ export class GameSimulation {
   removeCombatant(id: string): void {
     this.combatants.delete(id);
     this.enemyAIs.delete(id);
+    this.casas.delete(id);
+    if (id === "player") this.puntoSeguro = null;
   }
 
   getCombatant(id: string): CombatantState | undefined {
@@ -214,19 +228,40 @@ export class GameSimulation {
       }
     }
 
+    // 7. ¿Sigue fuera de combate? Se mira AL FINAL, con los enganches de este
+    // tick ya decididos (pasos 2 y 3): la posición con la que un enemigo te
+    // engancha está DENTRO de su radio, y apuntarla como segura te devolvería
+    // a su alcance al reaparecer. Así el punto es el del último tick en que
+    // nadie te hizo caso — fuera de todos los radios, porque un enemigo sin
+    // enganchar no se mueve de su sitio.
+    if (player && player.health > 0 && !this.algunoEnganchado()) {
+      this.puntoSeguro = puntoDeReaparicion(player.position);
+    }
+
     return { events: allEvents, npcEvents };
   }
 
-  respawn(spawnPos?: Vec3): CombatEvent[] {
+  /** Reaparecer tras morir (R). DÓNDE lo decide el sim, no el cliente (#613,
+   *  decisión del usuario 2026-09-29): en el último punto seguro, fuera de
+   *  combate. Y al morir TODOS te sueltan: cada enemigo vivo olvida el
+   *  enganche y vuelve a su sitio de alta —teletransporte; el jugador está
+   *  muerto y no lo ve—, así que no te espera junto al punto seguro.
+   *
+   *  Devuelve el punto porque el cliente lo aplica: la posición del jugador la
+   *  conduce su input (`tick`), y sin el punto el siguiente input lo devolvería
+   *  al cadáver. Sin jugador no hay nada que reaparecer, y se dice. */
+  respawn(): { events: CombatEvent[]; punto: Vec3 } {
     const player = this.combatants.get("player");
-    if (!player) return [];
+    if (!player || !this.puntoSeguro) {
+      throw new Error("GameSimulation.respawn: no hay jugador en el sim (o no tiene punto seguro)");
+    }
 
     // Reset player
     player.health = player.maxHealth;
     player.state = "idle";
     player.currentAttackType = "";
     player.windUpTimer = 0;
-    player.position = spawnPos ?? { x: 0, y: 0, z: 4 };
+    player.position = { ...this.puntoSeguro };
 
     // Reset all enemies
     for (const [, c] of this.combatants) {
@@ -238,8 +273,13 @@ export class GameSimulation {
       c.state = "idle";
       c.currentAttackType = "";
       c.windUpTimer = 0;
-      c.health = c.maxHealth; // C1: si morir cura a los VIVOS lo decide #613
+      // C1: morir cura a los VIVOS. Lo decidió el usuario el 2026-09-29: la
+      // única curación del jugador es la del motor (`curarAlJugador`).
+      c.health = c.maxHealth;
+      const casa = this.casas.get(c.id);
+      if (casa) c.position = { ...casa };
     }
+    for (const [, ai] of this.enemyAIs) ai.soltar();
 
     // Clear pending combat
     this.combat.reset();
@@ -250,7 +290,42 @@ export class GameSimulation {
       pos: [player.position.x, player.position.y, player.position.z],
     });
 
-    return [{ type: "player_respawned", hp: player.maxHealth }];
+    return {
+      events: [{ type: "player_respawned", hp: player.maxHealth }],
+      punto: { ...player.position },
+    };
+  }
+
+  /** Cura al jugador `cantidad` PV, topado en su máximo. Es la ÚNICA curación
+   *  del juego (#613: «se cura por consecuencias», la consequence
+   *  `player_healed` del motor). A un muerto no le hace nada —solo R deshace
+   *  la muerte—. Devuelve los PV que recuperó de verdad: 0 si estaba muerto o
+   *  lleno. Una cantidad que no es un número positivo es un error de quien
+   *  llama (el zod del motor ya la exige entera ≥ 1). */
+  curarAlJugador(cantidad: number): number {
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      throw new RangeError(`GameSimulation.curarAlJugador: cantidad inválida (${cantidad})`);
+    }
+    const player = this.combatants.get("player");
+    if (!player) throw new Error("GameSimulation.curarAlJugador: no hay jugador en el sim");
+    if (player.health <= 0) return 0;
+    const antes = player.health;
+    player.health = Math.min(player.maxHealth, antes + cantidad);
+    const recuperado = player.health - antes;
+    if (recuperado > 0) {
+      this.store.dispatch("player_healed", { new_hp: player.health, amount: recuperado });
+    }
+    return recuperado;
+  }
+
+  /** ¿Hay algún enemigo VIVO enganchado? Es la definición de «en combate» del
+   *  punto seguro. */
+  private algunoEnganchado(): boolean {
+    for (const [id, ai] of this.enemyAIs) {
+      const c = this.combatants.get(id);
+      if (c && c.health > 0 && ai.enganchado) return true;
+    }
+    return false;
   }
 
   /** Find nearest alive combatant that isn't self. */
@@ -268,6 +343,8 @@ export class GameSimulation {
   reset(): void {
     this.combatants.clear();
     this.enemyAIs.clear();
+    this.casas.clear();
+    this.puntoSeguro = null;
     this.combat.reset();
     this.npcBehavior?.clear();
   }
