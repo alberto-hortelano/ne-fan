@@ -230,12 +230,15 @@ export class GameSimulation {
 
     // Reset all enemies
     for (const [, c] of this.combatants) {
-      if (c.id !== "player") {
-        c.state = "idle";
-        c.currentAttackType = "";
-        c.windUpTimer = 0;
-        c.health = c.maxHealth;
-      }
+      if (c.id === "player") continue;
+      // La muerte es absorbente (decisión del usuario 2026-08-31): reaparecer TÚ
+      // no levanta a quien ya mataste. El save lo cumplía (`mundo-persistido.ts`);
+      // el sim no, y el muerto volvía de pie hasta el siguiente resume.
+      if (c.health <= 0) continue;
+      c.state = "idle";
+      c.currentAttackType = "";
+      c.windUpTimer = 0;
+      c.health = c.maxHealth; // C1: si morir cura a los VIVOS lo decide #613
     }
 
     // Clear pending combat

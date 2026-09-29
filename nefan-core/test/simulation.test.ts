@@ -321,6 +321,66 @@ describe("GameSimulation", () => {
   });
 });
 
+describe("GameSimulation.respawn", () => {
+  const personalidad: EnemyPersonality = {
+    aggression: 1,
+    preferred_attacks: ["quick"],
+    reaction_time: 0.1,
+    combat_range: 4.0,
+  };
+
+  /** #613, pieza C2: la muerte es absorbente (decisión del usuario 2026-08-31).
+   *  El save ya lo cumplía; el sim levantaba al muerto al pulsar R. La muerte se
+   *  PRODUCE por el camino real (ataque del jugador por `tick`), no se fabrica
+   *  poniendo `health = 0`: si el golpe no llega, el test es rojo, no mudo. */
+  it("reaparecer no levanta al enemigo que ya mataste", () => {
+    const sim = new GameSimulation(config, new GameStore(), 42);
+    const player = createCombatant("player", 100, "short_sword",
+      { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    // A un golpe de morir, con su máximo aparte: si respawn lo cura, vuelve a 60.
+    const a = createCombatant("a", 1, "unarmed", { x: 0, y: 0, z: -1.5 }, { x: 0, y: 0, z: 1 }, 60);
+    const b = createCombatant("b", 60, "unarmed", { x: 0, y: 0, z: 30 }, { x: 0, y: 0, z: -1 }, 60);
+    sim.addCombatant(player);
+    sim.addCombatant(a, personalidad);
+    sim.addCombatant(b, personalidad);
+
+    const quieto = { playerPosition: player.position, playerForward: player.forward, playerMoving: false };
+    const antes: CombatEvent[] = [];
+    antes.push(...sim.tick(0.016, { ...quieto, attackRequested: true, attackType: "quick" }).events);
+    for (let i = 0; i < 30 && !antes.some((e) => e.type === "died"); i++) {
+      antes.push(...sim.tick(0.016, quieto).events);
+    }
+    assert.ok(
+      antes.some((e) => e.type === "died" && e.combatantId === "a"),
+      "premisa: el jugador mata a `a` en el sim (evento died)",
+    );
+    assert.equal(a.state, "dead");
+
+    b.health = 20; // `b` no es el sujeto: basta con que esté herido y vivo
+    player.health = 0;
+    const dondeCayo = { ...a.position };
+    sim.respawn({ x: 0, y: 0, z: -1 });
+
+    assert.equal(a.health, 0, "el muerto sigue a 0 tras reaparecer");
+    assert.equal(a.state, "dead", "…y sigue `dead`");
+    // C1: si morir cura a los VIVOS lo decide #613, NO esta PR. Se afirma para
+    // que quien lo cambie lo haga a sabiendas.
+    assert.equal(b.health, b.maxHealth, "C1 intacto: el vivo herido se cura (pendiente de #613)");
+
+    // 3 s de sim con el jugador pegado al cadáver: `a` ni ataca ni se mueve.
+    const despues: CombatEvent[] = [];
+    const junto = { playerPosition: player.position, playerForward: player.forward, playerMoving: false };
+    for (let i = 0; i < 188; i++) despues.push(...sim.tick(0.016, junto).events);
+    assert.deepEqual(
+      despues.filter((e) => e.attackerId === "a" || e.combatantId === "a"),
+      [],
+      "el muerto no inicia ni resuelve ataques",
+    );
+    assert.deepEqual(a.position, dondeCayo, "el muerto no se mueve");
+    assert.equal(a.health, 0);
+  });
+});
+
 describe("GameSimulation.setCombatSystem", () => {
   it("swaps the system after reset()", () => {
     const sim = new GameSimulation(config, undefined, 42);

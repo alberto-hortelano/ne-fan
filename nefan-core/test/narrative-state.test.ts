@@ -1034,9 +1034,11 @@ describe("NarrativeState: el runtime de los ENEMIGOS también viaja en el save",
     await s.save();
     assert.deepEqual(await combatDe(storage, id), { health: 0, max_health: 60 });
 
-    // Esto es exactamente lo que hace `sim.respawn()` al pulsar R: cura a
-    // TODOS los enemigos a su máximo. Sin el candado, morir y reaparecer
-    // deshacía una muerte YA guardada.
+    // Un runtime que devuelve al muerto a su máximo. Hasta #613 (pieza C2) era
+    // lo que hacía `sim.respawn()` al pulsar R; hoy el sim ya no levanta a
+    // quien está a 0 (`simulation.test.ts`, «reaparecer no levanta…»), pero
+    // el save no se fía del sim: cualquier otra vía que suba la vida chocaría
+    // aquí. Sin el candado, eso deshacía una muerte YA guardada.
     vivo = { id: "bandido_1", position: { x: 0, y: 0, z: 0 }, health: 60, maxHealth: 60 };
     await s.save();
     assert.deepEqual(
