@@ -1188,6 +1188,65 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     );
   });
 
+  /** #613, pieza C2: la misma muerte, ahora en PANTALLA. Hasta esta tanda el
+   *  save la guardaba pero `sim.respawn()` levantaba al muerto, y el
+   *  `state_update` del respawn lo mandaba `alive:true` a 60: de pie y pegando
+   *  hasta el siguiente resume. Todo por el borde, como el cliente: alta por
+   *  `add_combatants`, muerte por `input` con ataque, R por `respawn`. */
+  it("pulsar R no resucita en el state_update al enemigo que mataste", async () => {
+    const { ctx, sim } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    await porElBorde(
+      {
+        type: "add_combatants",
+        enemies: [{
+          id: "bandido_1",
+          position: { x: 0, y: 0, z: -1.5 },
+          health: 1,
+          maxHealth: 60,
+          weaponId: "unarmed",
+          personality: { aggression: 0, preferred_attacks: ["quick"], reaction_time: 1, combat_range: 4 },
+        }],
+      },
+      socket,
+      ctx,
+    );
+    assert.ok(sim.getCombatant("bandido_1"), "premisa: el alta llegó al sim");
+    const golpear = (attackRequested: boolean) =>
+      porElBorde(
+        {
+          type: "input",
+          delta: 0.05,
+          inputs: {
+            playerPosition: { x: 0, y: 0, z: 0 },
+            playerForward: { x: 0, y: 0, z: -1 },
+            playerMoving: false,
+            ...(attackRequested ? { attackRequested: true, attackType: "quick" } : {}),
+          },
+        },
+        socket,
+        ctx,
+      );
+    await golpear(true);
+    for (let i = 0; i < 10 && sim.getCombatant("bandido_1")!.health > 0; i++) await golpear(false);
+    assert.equal(sim.getCombatant("bandido_1")!.health, 0, "premisa: el jugador lo mata en el sim");
+
+    sim.getCombatant("player")!.health = 0;
+    sent.length = 0;
+    await porElBorde({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, socket, ctx);
+    const estados = sent.filter((m): m is StateUpdateMessage => m.type === "state_update");
+    assert.equal(estados.length, 1, "el respawn contesta con un state_update");
+    assert.equal(estados[0].events[0]?.type, "player_respawned", "premisa: es el frame del respawn");
+    const bandido = estados[0].enemies.find((e) => e.id === "bandido_1");
+    assert.ok(bandido, "el cadáver sigue en la lista: el cliente lo pinta caído");
+    assert.equal(bandido.alive, false, "el muerto llega muerto al cliente tras pulsar R");
+    assert.equal(bandido.hp, 0);
+  });
+
   /** La otra mitad: el runtime atado es de UNA sesión. Sin soltarlo al
    *  cambiar de identidad, el primer save de la partida nueva escribiría la
    *  posición del jugador de la vieja. */
