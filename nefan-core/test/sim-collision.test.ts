@@ -58,6 +58,21 @@ describe("createSimCollisionProvider", () => {
     assert.ok(!provider.blocksCircle(open.x, open.z, 0.5));
   });
 
+  /** Guion 119 (rojo en `main` tras #775): el tabernero que huía de una pelea
+   *  cruzaba el borde del tile y acababa a 15 m dentro de la «Zona sin
+   *  generar», donde el jugador no puede seguirle sin aceptar «¿Explorar…?».
+   *  El PASO no entra en lo no generado; quien ya lo toca, sale. */
+  it("el paso no ENTRA en un tile sin generar, pero quien ya lo toca sale y se mueve", () => {
+    const provider = createSimCollisionProvider(makeState());
+    // El tile (0,0) acaba en x = 32; el (1,0) no existe.
+    assert.deepEqual(provider.queImpideElPaso(31, 0, 31.7, 0, 0.5), { de: "tile" }, "entrar: el cuerpo tocaría x > 32");
+    assert.equal(provider.queImpideElPaso(31, 0, 31.4, 0, 0.5), null, "CONTROL: dentro del tile, el paso es libre");
+    assert.equal(provider.queImpideElPaso(31.4, 0, 31.4, 1, 0.5), null, "CONTROL: a lo largo del borde, también");
+    assert.equal(provider.queImpideElPaso(32.2, 0, 31.6, 0, 0.5), null, "salir: quien ya toca lo no generado vuelve");
+    assert.equal(provider.queImpideElPaso(40, 0, 41, 0, 0.5), null, "y quien vive allí anda libre");
+    assert.equal(provider.ocupado(32.3, 0, 0.5), false, "`ocupado` no cambia: lo no generado no es un muro para la salida del sólido");
+  });
+
   it("tile inexistente → sin colisión (degradación, no throw)", () => {
     const provider = createSimCollisionProvider(makeState());
     // Punto en el tile (5,5), que no existe.
