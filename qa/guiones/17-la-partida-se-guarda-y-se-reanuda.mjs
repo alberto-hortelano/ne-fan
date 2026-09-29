@@ -5,7 +5,7 @@
  *  partida. Ninguna de esas escrituras se persiste sola: el handler devuelve
  *  un `RouteResult` con `mutated: true`, el borde del State API ve el flag y
  *  llama a `onMutation`, y el bridge escribe `saves/{id}/state.json`
- *  (`ws-server.ts` → `narrative.save()`).
+ *  (`bridge/arranque.ts` → `narrative.save()`).
  *
  *  Ese flag es lo único que separa «la partida se guarda» de «la partida no
  *  se guarda», y perderlo NO CAMBIA NINGUNA RESPUESTA: el status sigue siendo

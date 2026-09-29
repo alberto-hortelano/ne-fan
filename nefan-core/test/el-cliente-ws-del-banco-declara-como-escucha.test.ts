@@ -6,7 +6,7 @@
  *  ## Qué sujeta
  *
  *  El bridge rechaza un frame que no pasa el contrato por UNICAST, al socket
- *  que lo mandó (`bridge/ws-server.ts`), y `escribir` calla si ese socket ya no
+ *  que lo mandó (`bridge/conexion.ts`), y `escribir` calla si ese socket ya no
  *  está abierto. Un cliente del banco que abre, manda y cierra en el mismo tick
  *  no pierde el COLOR de su guion —el 63 declaraba ⊘ y el 60 salía ✘ igual—,
  *  pierde la CAUSA: «el tile no llegó» en vez de «el bridge rechazó el frame».

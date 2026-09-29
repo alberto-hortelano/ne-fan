@@ -16,8 +16,9 @@ import type { RegisteredPlugin } from "../../src/plugins/register.js";
 import { formatZodError } from "../../src/contract/model-io/validate.js";
 import type { z, ZodTypeAny } from "zod";
 
-/** Hooks de plugins (F5) — viven en ws-server porque el registry activo del
- *  dispatcher (`activePlugins`) es estado del bridge. */
+/** Hooks de plugins (F5) — los cablea el bridge (`bridge/hooks-de-plugins.ts`)
+ *  porque el registry activo del dispatcher (`activePlugins`) es estado del
+ *  bridge. */
 export interface PluginHooks {
   /** Valida y activa un manifest runtime, o EVOLUCIONA el plugin vigente del
    *  mismo `name` (`action`, §7.3). Lanza PluginRegisterError con el motivo
@@ -122,7 +123,7 @@ export function parseBody<S extends ZodTypeAny>(
 }
 
 /** `RegisteredPlugin` (core) → cuerpo de `PluginRegisterResponse` (wire).
- *  Vive junto al tipo del hook para que el mapeo exista UNA vez: ws-server y
+ *  Vive junto al tipo del hook para que el mapeo exista UNA vez: el bridge y
  *  los harnesses de test montan el mismo hook, y una traducción copiada en
  *  cada uno diverge sin que ningún test se entere. Los campos de `migrated`
  *  se omiten cuando no aplican en vez de viajar como `null`. */

@@ -2,7 +2,7 @@
  *
  *  El bridge dice que no por `narrative_status` con `phase:"error"`: por
  *  UNICAST al socket que mandó un frame que no pasa el contrato
- *  (`kind:"protocolo"`, `bridge/ws-server.ts`), y por difusión a quien esté
+ *  (`kind:"protocolo"`, `bridge/conexion.ts`), y por difusión a quien esté
  *  suscrito para cualquier otro `kind` (`tile`, `scene`…). Y un frame que no se
  *  puede leer no se tira: es un rechazo `ilegible`, porque es exactamente el
  *  dato que falta cuando la consecuencia no llega.

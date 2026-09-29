@@ -488,7 +488,7 @@ async function ensureStack(entorno) {
     // Disco propio de la corrida: sin esto la batería lee y ESCRIBE en los
     // saves y los mundos pre-generados del repo, y la corrida N deja el disco
     // distinto para la N+1 (medido: el snapshot de mundo cambiaba de md5 cada
-    // vez). El bridge respeta las dos variables (ws-server.ts:46,52) y
+    // vez). El bridge respeta las dos variables (las lee `bridge/ws-server.ts`) y
     // start.sh las hereda del entorno.
     //
     // NEFAN_LOG_DIR entra por el mismo motivo y llevaba desde siempre sin que

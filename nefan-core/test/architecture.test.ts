@@ -2338,7 +2338,7 @@ describe("fronteras arquitectónicas", () => {
       deLaRegla([
         {
           // El NACIMIENTO del contexto: sin punto, y ahí es donde el campo
-          // tiene que inicializarse (ws-server.ts y test/helpers.ts).
+          // tiene que inicializarse (hoy `contexto-del-bridge.ts`, #769).
           path: "nefan-core/bridge/ws-server.ts",
           text: "const ctx: BridgeContext = {\n  activePlugins: new Map(),\n};\n",
           imports: [],

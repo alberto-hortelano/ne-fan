@@ -24,7 +24,9 @@ import { routeMessage } from "../bridge/router.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type { LlmContext } from "../src/narrative/types.js";
 import type { SessionStartedMessage } from "../src/protocol/messages.js";
-import { FIXTURE_GAMES, hooksDePlugins, makeCtx, makeNarrativeState, makeSocket } from "./helpers.js";
+import { FIXTURE_GAMES, makeCtx, makeSocket } from "./helpers.js";
+import type { BridgeContext } from "../bridge/context.js";
+import { hooksDePluginsDelBridge } from "../bridge/hooks-de-plugins.js";
 
 const GAME = "plugtest";
 
@@ -85,7 +87,7 @@ describe("world vocabulary (módulo puro)", () => {
 describe("POST /vocabulary (State API)", () => {
   it("persiste el vocabulario del juego de la sesión activa con su world_doc_hash", async () => {
     const { gamesDir, worldDocHash } = tmpGamesDir();
-    const { narrative } = makeNarrativeState();
+    const { ctx, narrative } = makeCtx();
     narrative.startNewSession(GAME);
     narrative.setWorldInfo({
       name: "Juego de pruebas",
@@ -111,7 +113,7 @@ describe("POST /vocabulary (State API)", () => {
       },
       onProgress: () => {},
       onMapChanged: () => {},
-      plugins: hooksDePlugins(narrative),
+      plugins: hooksDePluginsDelBridge(ctx),
     });
     await new Promise<void>((res) => server.once("listening", () => res()));
     const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -142,7 +144,8 @@ describe("POST /vocabulary (State API)", () => {
   });
 
   /** Levanta el State API sobre un narrative dado y devuelve su URL. */
-  async function servidor(narrative: Parameters<typeof createStateHttpServer>[0]["narrative"], gamesDir: string) {
+  async function servidor(ctx: BridgeContext, gamesDir: string) {
+    const { narrative } = ctx;
     const server: Server = createStateHttpServer({
       // El motor al que apuntaría el bridge: GET /health lo publica.
       aiServerUrl: "http://127.0.0.1:0",
@@ -154,7 +157,7 @@ describe("POST /vocabulary (State API)", () => {
       onMutation: () => {},
       onProgress: () => {},
       onMapChanged: () => {},
-      plugins: hooksDePlugins(narrative),
+      plugins: hooksDePluginsDelBridge(ctx),
     });
     await new Promise<void>((res) => server.once("listening", () => res()));
     return { server, baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
@@ -173,8 +176,8 @@ describe("POST /vocabulary (State API)", () => {
   // cambia quién lo dice y con qué código.
   it("sin sesión activa ⇒ 409 no_session (el vocabulario pertenece a una partida)", async () => {
     const { gamesDir } = tmpGamesDir();
-    const { narrative } = makeNarrativeState(); // sin startNewSession: no hay sesión
-    const { server, baseUrl } = await servidor(narrative, gamesDir);
+    const { ctx } = makeCtx(); // sin startNewSession: no hay sesión
+    const { server, baseUrl } = await servidor(ctx, gamesDir);
     try {
       const res = await fetch(`${baseUrl}/vocabulary`, {
         method: "POST",
@@ -194,13 +197,13 @@ describe("POST /vocabulary (State API)", () => {
 
   it("si la escritura falla, el error SALE (400 con su motivo), no se traga", async () => {
     const { gamesDir } = tmpGamesDir();
-    const { narrative } = makeNarrativeState();
+    const { ctx, narrative } = makeCtx();
     narrative.startNewSession(GAME);
     // Sesión abierta pero sin world_doc_hash (setWorldInfo aún no ha corrido:
     // el motor puede llamar a vocabulary_set antes de tiempo). El schema de
     // WorldVocabulary lo rechaza y writeWorldVocabulary LANZA.
     assert.equal(narrative.world.world_doc_hash, "", "precondición: sin hash de mundo");
-    const { server, baseUrl } = await servidor(narrative, gamesDir);
+    const { server, baseUrl } = await servidor(ctx, gamesDir);
     try {
       const res = await fetch(`${baseUrl}/vocabulary`, {
         method: "POST",

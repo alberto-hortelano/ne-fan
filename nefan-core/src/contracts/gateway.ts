@@ -5,7 +5,7 @@
  * variantes gateway→cliente). Este módulo lo reexporta íntegro — no se
  * redefine nada.
  *
- * Convenciones de transporte (implementadas en bridge/ws-server.ts +
+ * Convenciones de transporte (implementadas en bridge/conexion.ts +
  * bridge/router.ts):
  *  - Un mensaje JSON por frame de texto WS; frame inválido → narrative_status
  *    phase "error" (fail-loud, nunca silencio).

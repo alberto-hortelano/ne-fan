@@ -13,24 +13,10 @@ import { loadConfig } from "../src/combat/combat-data.js";
 import { GameStore } from "../src/store/game-store.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
-import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
-import { NpcDirector } from "../src/world-map/npc-director.js";
-import { registerRuntimePlugin } from "../src/plugins/register.js";
-import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
-import type { PluginManifest } from "../src/plugins/types.js";
-import { pluginRegisterBody, type PluginHooks } from "../bridge/state-http/context.js";
-import { createSimCollisionProvider } from "../bridge/sim-collision.js";
-import { SceneGenQueue } from "../bridge/scene-gen-queue.js";
-import { createWorldClaim } from "../bridge/world-claim.js";
 import { routeMessage } from "../bridge/router.js";
 import { intakeClientMessage } from "../bridge/message-intake.js";
-import {
-  sellarSesion,
-  sellarDuenoDelSim,
-  type BridgeContext,
-  type ClientSocket,
-  type NarrativeAiClient,
-} from "../bridge/context.js";
+import { crearContextoDelBridge } from "../bridge/contexto-del-bridge.js";
+import type { BridgeContext, ClientSocket, NarrativeAiClient } from "../bridge/context.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
 import type { NarrativeWorldState } from "../src/narrative/types.js";
 
@@ -99,35 +85,6 @@ export function escenaExpandidaDePrueba(
   });
 }
 
-/** Los hooks de plugins del State API cableados como en `ws-server.ts`
- *  (registro, listado e inspección sobre `activePlugins`). Un test que levanta
- *  `createStateHttpServer` los necesita aunque no toque un plugin: el tipo los
- *  exige, y un doble que los omitiera compilaba solo por el `as`. */
-export function hooksDePlugins(
-  narrative: NarrativeState,
-  activePlugins: Map<string, PluginManifest> = new Map(),
-): PluginHooks {
-  return {
-    register: (raw) => pluginRegisterBody(registerRuntimePlugin(narrative, activePlugins, raw)),
-    list: () =>
-      [...activePlugins.entries()].map(([id, m]) =>
-        pluginListSummary(id, m, narrative.pluginDelManifest(id)?.origin.author),
-      ),
-    inspect: (id, view) =>
-      inspectPlugin(
-        {
-          plugins: narrative.plugins,
-          world: narrative.world,
-          player: narrative.player,
-          entities: narrative.entities,
-        },
-        activePlugins,
-        id,
-        view,
-      ),
-  };
-}
-
 /** Socket capturador: acumula en `sent` todo lo que el bridge envía. */
 export function makeSocket(): { socket: ClientSocket; sent: ServerMessage[] } {
   const sent: ServerMessage[] = [];
@@ -167,14 +124,16 @@ export function fakeBootstrapTile(over: Record<string, unknown> = {}): Record<st
 }
 
 /** BridgeContext completo con fakes: sim determinista (seed 12345), storage
- *  en memoria, AiClient falso (respuestas mínimas, overrides vía opts.ai) y
- *  broadcast capturado en `broadcasts`. */
-/** Espejo del escritor crudo de `ws-server.ts`: `send` no admite mensajes con
- *  sello, así que el doble tampoco puede escribirlos a mano. */
-function escribir(ws: ClientSocket, msg: ServerMessage): void {
-  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
-}
-
+ *  en memoria, AiClient falso (respuestas mínimas, overrides vía opts.ai) y lo
+ *  difundido capturado en `broadcasts`.
+ *
+ *  El contexto nace en `crearContextoDelBridge`, la MISMA fábrica que usa el
+ *  bridge de verdad (#769): el escritor crudo y los cuatro verbos de sellado
+ *  que ejercen los tests de bridge son los de producción, no un espejo que
+ *  podía seguir sellando con el original roto. `broadcasts` es lo que recibe
+ *  un socket SUSCRITO —serializado y vuelto a leer, como lo lee el cliente—,
+ *  así que entra lo difundido (`broadcastNarrative`, `difundirDeJuego`) y no
+ *  lo unicast (`send`, `enviarNarrativo`, `enviarEstado`). */
 export function makeCtx(
   opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi; persistWorldSnapshots?: boolean } = {},
 ) {
@@ -185,8 +144,6 @@ export function makeCtx(
   );
   const storage = new MemorySessionStorage();
   const narrative = new NarrativeState(storage);
-  const broadcasts: ServerMessage[] = [];
-  const subscribers = new Set<ClientSocket>();
   const aiCalls: Record<string, unknown[]> = { notify: [], scene: [], choice: [], develop: [] };
 
   const aiClient: NarrativeAiClient = {
@@ -222,68 +179,28 @@ export function makeCtx(
     },
   };
 
-  const simCollision = createSimCollisionProvider(narrative);
-  const ctx: BridgeContext = {
+  const { ctx, suscriptores: subscribers } = crearContextoDelBridge({
     sim,
     combatConfig,
     store,
     narrative,
     sessionStorage: storage,
     aiClient,
-    mapTriggers: new MapTriggerEvaluator(narrative),
-    npcDirector: new NpcDirector(narrative, simCollision),
-    simCollision,
     gamesDir: opts.gamesDir ?? FIXTURE_GAMES,
     stylesDir: opts.stylesDir ?? FIXTURE_STYLES,
     // Apagado por defecto: la escritura pasiva contaminaría los fixtures (y
     // el siguiente start_session replayearía el snapshot saltándose el fake).
     persistWorldSnapshots: opts.persistWorldSnapshots ?? false,
-    activePlugins: new Map(),
-    sceneGen: new SceneGenQueue(),
-    posTracking: { cellKey: null, tileKey: null, placeId: null },
-    world: createWorldClaim(narrative, sim),
-    subscribe(ws) {
-      subscribers.add(ws);
-    },
-    send(ws, msg) {
-      escribir(ws, msg);
-    },
-    // Sella por la MISMA función que `ws-server.ts` (#282). No es una copia
-    // por comodidad: si el doble no sellara igual, los tests de bridge
-    // medirían un cable que no existe y el sello se podría romper en
-    // producción con todo en verde.
-    broadcastNarrative(msg) {
-      const sellado = sellarSesion(msg, narrative.session_id);
-      broadcasts.push(sellado);
-      for (const ws of subscribers) escribir(ws, sellado);
-    },
-    enviarNarrativo(ws, msg) {
-      escribir(ws, sellarSesion(msg, narrative.session_id));
-    },
-    // El doble del verbo que NO sella (#313), y por el mismo motivo que los de
-    // arriba: si el doble sellara lo que en producción va sin sello, los tests
-    // de bridge medirían un cable que no existe. Entra en `broadcasts` como
-    // todo lo difundido — lo que cambia es qué lleva dentro, no por dónde sale.
-    difundirDeJuego(msg) {
-      broadcasts.push(msg);
-      for (const ws of subscribers) escribir(ws, msg);
-    },
-    // El doble del CUARTO verbo (#659), por la MISMA función que `ws-server.ts`
-    // y por el mismo motivo que los tres de arriba: si el doble sellara
-    // distinto —o no sellara— los tests de bridge medirían un cable que no
-    // existe, y el candado del 79→80 saldría verde sin sujetar nada. No entra
-    // en `broadcasts`: es unicast, como `send`.
-    enviarEstado(ws, msg) {
-      escribir(ws, sellarDuenoDelSim(msg, ctx.world.delSim));
-    },
-  };
+  });
+  const { socket: oyente, sent: broadcasts } = makeSocket();
+  ctx.subscribe(oyente);
   return { ctx, broadcasts, storage, narrative, store, sim, aiCalls, subscribers };
 }
 
 /** MANDA UN FRAME COMO LO MANDA EL CLIENTE: por el BORDE, no por el router.
  *
  *  `routeMessage` recibe un `ClientMessage` YA validado; en producción no hay
- *  forma de llegar a él sin pasar por `intakeClientMessage` (`ws-server.ts`).
+ *  forma de llegar a él sin pasar por `intakeClientMessage` (`bridge/conexion.ts`).
  *  Un test que llame al router directamente puede mandar una fixture que el
  *  cable rechaza y quedarse verde para siempre — y eso ya pasó: cinco fixtures
  *  de `bridge-*.test.ts` mandaban personalidades sin `combat_range`, que el

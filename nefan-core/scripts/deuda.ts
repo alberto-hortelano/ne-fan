@@ -39,9 +39,11 @@ import { archConfig, loadArchFiles } from "./arch-collect.js";
 import {
   MEDIDA_CLIENTE,
   MEDIDA_CORE,
+  MEDIDA_SCRIPTS,
   claveDe,
   crapRows,
   leerContratoCliente,
+  leerContratoScripts,
   readThresholds,
   veredictoCliente,
   type CrapRow,
@@ -265,7 +267,7 @@ function avisosDelCliente(m: Medicion, objetivo: number): string[] {
   }
   const { sobran } = veredictoCliente(m.filas, leerContratoCliente());
   if (sobran.length > 0) {
-    avisos.push(`${sobran.length} congelada(s) de client-crap.json sobran en su cifra: aprieta la foto`);
+    avisos.push(`${sobran.length} congelada(s) de client-crap.json sobran en su cifra: \`npm run crap -- --apretar\` en nefan-html`);
   }
   return avisos;
 }
@@ -292,7 +294,16 @@ export function reglaDelCore(): ReglaDeCola {
         que: `${f.name} — CRAP ${f.crap.toFixed(0)} (complejidad ${f.complexity}, cobertura ${(f.coverage * 100).toFixed(0)}%)`,
         peso: f.crap,
       })),
-    avisos: () => [],
+    // Desde #769 el core mide EL ÁRBOL ENTERO: lo que ningún test carga entra
+    // a cobertura 0 (y sus funciones con nombre, como item). Se cuenta aquí
+    // para que el número no se lea como «todo el core tiene test».
+    avisos: (m) =>
+      m.sinCargar.ficheros === 0
+        ? []
+        : [
+            `${m.sinCargar.ficheros} de ${m.sinCargar.deFicheros} ficheros (${m.sinCargar.lineas} líneas de código) ` +
+              `no los carga ningún test y cuentan a cobertura 0`,
+          ],
   };
 }
 
@@ -307,7 +318,38 @@ export function reglaDelCliente(): ReglaDeCola {
   };
 }
 
-/** Un bloque de complejidad × cobertura. La MISMA función para las dos
+/** La cola de `scripts/` (#769). Su universo es `lo-cargado`, como el del
+ *  core antes de #769, así que vale la regla del core —«cobertura 0 entra
+ *  siempre» solo afecta a lo cargado, que es poco—. Lo que no enseña como item
+ *  lo dice el aviso: los ficheros que ningún test carga (no cuentan) y las
+ *  congeladas que sobran. */
+export function reglaDeScripts(): ReglaDeCola {
+  const contrato = leerContratoScripts();
+  return {
+    titulo: `Scripts — complejidad × cobertura (CRAP > ${contrato.objetivo}, o cobertura 0; solo lo cargado)`,
+    tituloSinMedir: "Scripts — complejidad × cobertura",
+    fuente: "coverage/lcov.info + scripts-crap.json",
+    items: (m) =>
+      enColaDeCrap(m.filas, contrato.objetivo).map((f) => ({
+        donde: `${f.file}:${f.startLine}`,
+        que: `${f.name} — CRAP ${f.crap.toFixed(0)} (complejidad ${f.complexity}, cobertura ${(f.coverage * 100).toFixed(0)}%)`,
+        peso: f.crap,
+      })),
+    avisos: (m) => {
+      const avisos = [
+        `${m.sinCargar.ficheros} de ${m.sinCargar.deFicheros} ficheros (${m.sinCargar.lineas} líneas de código) ` +
+          `no los carga ningún test y NO cuentan: universo lo-cargado`,
+      ];
+      const { sobran } = veredictoCliente(m.filas, contrato);
+      if (sobran.length > 0) {
+        avisos.push(`${sobran.length} congelada(s) de scripts-crap.json sobran en su cifra: \`npm run crap -- --scripts --apretar\``);
+      }
+      return avisos;
+    },
+  };
+}
+
+/** Un bloque de complejidad × cobertura. La MISMA función para las tres
  *  medidas: lo que cambia es de dónde sale el lcov y cómo se presenta. */
 export function bloqueCrap(
   cambio: ReturnType<typeof ultimoCambio>,
@@ -593,6 +635,7 @@ function main(): void {
     bloqueFronteras(),
     bloqueCrap(ultimoCambio()),
     bloqueCrap(ultimoCambio(MEDIDA_CLIENTE), MEDIDA_CLIENTE, reglaDelCliente()),
+    bloqueCrap(ultimoCambio(MEDIDA_SCRIPTS), MEDIDA_SCRIPTS, reglaDeScripts()),
     bloqueMutacion(),
   ];
 

@@ -75,6 +75,11 @@ jobs:
       # saber de cobertura. El duplicado se corta una vez a cada lado.
       - run: npm run coverage
       - run: npm run crap -- --check
+      # #769: las herramientas que deciden los gates se miden con su PROPIA
+      # medida (`data/contract/scripts-crap.json`): tope por función con foto y
+      # suelo de cobertura, sobre LO CARGADO de `scripts/`. Sale del mismo
+      # `coverage/lcov.info` de arriba, así que no cuesta otra pasada.
+      - run: npm run crap -- --scripts --check
       # (~30 s) #598a: cada batería del plan de mutación EJERCE lo que su módulo
       # muta, medido corriendo las 61 baterías con `NODE_V8_COVERAGE` y contando
       # invocaciones. No entra en `npm test` a propósito: son 8,6 s de reloj con

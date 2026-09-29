@@ -1,5 +1,6 @@
 /** Plugins runtime (F5/F6): alta, listado e inspección del registry activo.
- *  El registry vive en ws-server; aquí solo se llaman sus hooks. */
+ *  El registry vive en el ctx del bridge (`hooks-de-plugins.ts`); aquí solo se
+ *  llaman sus hooks. */
 import { PluginRegisterRequestSchema } from "../../src/contracts/request-schemas.js";
 import type { ResponseOf } from "../../src/contracts/http.js";
 import type {

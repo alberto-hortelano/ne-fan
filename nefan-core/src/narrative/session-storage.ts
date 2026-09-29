@@ -15,7 +15,7 @@ import type { SessionData, SessionMetadata } from "./types.js";
  *
  *  La garantía la da el TIPO y no un checker: `BridgeContext.sessionStorage`
  *  se declara con este interfaz, así que llamar a `write` desde un handler no
- *  compila. El interfaz ancho lo construye un solo fichero (`ws-server.ts`) y
+ *  compila. El interfaz ancho lo construye un solo fichero (`bridge/arranque.ts`) y
  *  se lo da a `NarrativeState`, que es el escritor único. */
 export interface SessionStorage {
   read(sessionId: string): Promise<SessionData | null>;
@@ -30,7 +30,7 @@ export interface SessionStorage {
 }
 
 /** El interfaz ANCHO: el que puede crear un save. Solo lo pide
- *  `NarrativeState` (el escritor único) y solo lo construye `ws-server.ts`. */
+ *  `NarrativeState` (el escritor único) y solo lo construye `bridge/arranque.ts`. */
 export interface SessionWriter extends SessionStorage {
   write(sessionId: string, data: SessionData): Promise<void>;
 }

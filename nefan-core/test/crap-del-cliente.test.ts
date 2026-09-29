@@ -24,21 +24,31 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  CON_FOTO_CLIENTE,
+  CON_FOTO_SCRIPTS,
   ContratoClienteSchema,
+  ContratoScriptsSchema,
   MEDIDA_CLIENTE,
+  MEDIDA_CORE,
+  MEDIDA_SCRIPTS,
   ThresholdsSchema,
+  apretarCongeladas,
   claveDe,
   crapRows,
   fotoDeCongeladas,
   functionsOf,
+  informeConFoto,
   leerContratoCliente,
+  leerContratoScripts,
   lineHitsFromLcov,
   medirFuentes,
+  planDeApretar,
+  textoDeApretar,
   veredictoCliente,
   type ContratoCliente,
   type CrapRow,
 } from "../scripts/crap-score.js";
-import { cabeceraDe, enColaDelCliente } from "../scripts/deuda.js";
+import { cabeceraDe, enColaDelCliente, reglaDeScripts } from "../scripts/deuda.js";
 
 const coreRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EL_ARBOL = { arboles: ["src/"], universo: "el-arbol" } as const;
@@ -382,5 +392,217 @@ describe("CRAP del cliente · la cola de deuda", () => {
       },
     ]);
     assert.match(out, /Sin medir: cliente/);
+  });
+});
+
+describe("--apretar · el trinquete que baja (#769)", () => {
+  // Una función de cx 10 que hoy mide `hoy` de CRAP: la fila se fabrica a mano
+  // porque lo que se prueba es la regla, no la medida.
+  const filaDe = (funcion: string, crap: number): CrapRow => ({
+    name: funcion,
+    file: "src/a.ts",
+    startLine: 1,
+    endLine: 10,
+    complexity: 10,
+    coverage: 0,
+    crap,
+  });
+  const congelada = (funcion: string, crap: number) => ({ fichero: "src/a.ts", funcion, crap });
+
+  it("una congelada que hoy mide MÁS no sube: se queda en su foto", () => {
+    const c = contrato([congelada("f", 500)]);
+    const r = apretarCongeladas([filaDe("f", 600)], c);
+    assert.deepEqual(r.congeladas, c.congeladas);
+    assert.deepEqual(r.cambios, []);
+  });
+
+  it("una roja NUEVA sin foto no entra: apretar no añade claves (eso es --foto)", () => {
+    const c = contrato([congelada("f", 500)]);
+    const r = apretarCongeladas([filaDe("f", 500), filaDe("nueva", 900)], c);
+    assert.deepEqual(
+      r.congeladas.map((x) => x.funcion),
+      ["f"],
+    );
+  });
+
+  it("una que BAJÓ se aprieta a su cifra de hoy, redondeada hacia arriba a 0,1", () => {
+    const r = apretarCongeladas([filaDe("f", 480.02)], contrato([congelada("f", 500)]));
+    assert.deepEqual(r.congeladas, [congelada("f", 480.1)]);
+    assert.deepEqual(r.cambios, [
+      { fichero: "src/a.ts", funcion: "f", congelada: 500, nueva: 480.1, motivo: "bajo" },
+    ]);
+  });
+
+  it("una que ya cabe en el tope se QUITA, y una cuya función no está también", () => {
+    const r = apretarCongeladas(
+      [filaDe("cabe", 50), filaDe("sigue", 200)],
+      contrato([congelada("cabe", 120), congelada("borrada", 300), congelada("sigue", 200)]),
+    );
+    assert.deepEqual(r.congeladas, [congelada("sigue", 200)]);
+    assert.deepEqual(
+      r.cambios.map((c) => [c.funcion, c.motivo, c.nueva]),
+      [
+        ["cabe", "cabe-en-el-tope", undefined],
+        ["borrada", "no-esta", undefined],
+      ],
+    );
+  });
+
+  it("lo que devuelve sigue siendo un contrato válido: ninguna congelada bajo el tope", () => {
+    const c = contrato([congelada("f", 500), congelada("g", 120)]);
+    const r = apretarCongeladas([filaDe("f", 73.05), filaDe("g", 73)], c);
+    assert.equal(ContratoClienteSchema.safeParse({ ...c, congeladas: r.congeladas }).success, true);
+    assert.deepEqual(r.congeladas, [congelada("f", 73.1)]);
+  });
+
+  it("con rojas delante SE NIEGA: una «que no está» puede ser un renombrado", () => {
+    // `vieja` desaparece y aparece `nueva` con su misma cifra: la pista del
+    // renombrado es la entrada vieja, y quitarla ahora la borraría.
+    const c = contrato([congelada("vieja", 110)]);
+    const plan = planDeApretar([filaDe("nueva", 110)], c);
+    assert.equal(plan.ok, false);
+    assert.ok(!plan.ok && plan.rojas[0].renombradoDe?.funcion === "vieja");
+    const sano = planDeApretar([filaDe("vieja", 100)], c);
+    assert.ok(sano.ok);
+    assert.deepEqual(sano.congeladas, [congelada("vieja", 100)]);
+  });
+});
+
+describe("CRAP de scripts/ · su contrato (#769)", () => {
+  const base = {
+    $comment: "x",
+    _lo_que_esto_NO_sujeta: ["x"],
+    tope: 73,
+    objetivo: 30,
+    suelo_cobertura: { min: 79, nota: "x" },
+    congeladas: [{ fichero: "scripts/a.ts", funcion: "main", crap: 200 }],
+  };
+
+  it("el contrato real parsea, con suelo, y su foto solo nombra scripts/", () => {
+    const c = leerContratoScripts();
+    assert.ok(c.suelo_cobertura && c.suelo_cobertura.min > 0);
+    assert.ok(c.congeladas.every((g) => g.fichero.startsWith("scripts/")));
+  });
+
+  it("cada medida congela SOLO su árbol: src/ no cabe en la de scripts, ni scripts/ en la del cliente", () => {
+    assert.equal(ContratoScriptsSchema.safeParse(base).success, true);
+    const conSrc = { ...base, congeladas: [{ fichero: "src/a.ts", funcion: "f", crap: 200 }] };
+    assert.equal(ContratoScriptsSchema.safeParse(conSrc).success, false);
+    const { suelo_cobertura: _s, ...cliente } = base;
+    assert.equal(ContratoClienteSchema.safeParse(cliente).success, false, "scripts/ en el del cliente");
+    assert.equal(
+      ContratoClienteSchema.safeParse({ ...cliente, congeladas: [] }).success,
+      true,
+      "el mismo contrato sin la clave ajena sí vale: lo que rechaza es el prefijo",
+    );
+  });
+
+  it("el suelo es obligatorio donde se declara y prohibido donde no", () => {
+    const { suelo_cobertura: _s, ...sinSuelo } = base;
+    assert.equal(ContratoScriptsSchema.safeParse(sinSuelo).success, false);
+    assert.equal(
+      ContratoClienteSchema.safeParse({ ...contrato(), suelo_cobertura: { min: 1, nota: "x" } }).success,
+      false,
+    );
+  });
+
+  it("cada congelada de scripts nombra un fichero que existe y una función que está en él", () => {
+    const perdidas: string[] = [];
+    for (const c of leerContratoScripts().congeladas) {
+      const abs = join(coreRoot, c.fichero);
+      if (!existsSync(abs)) {
+        perdidas.push(`${c.fichero} (no existe)`);
+        continue;
+      }
+      const claves = new Set(functionsOf(readFileSync(abs, "utf-8"), c.fichero).map(claveDe));
+      if (!claves.has(c.funcion)) perdidas.push(`${c.fichero} · ${c.funcion}`);
+    }
+    assert.deepEqual(perdidas, [], "regenera con `npm run crap -- --scripts --foto` o aprieta con `--apretar`");
+  });
+
+  it("la cola de deuda de scripts dice lo que NO cuenta, y ofrece --apretar cuando sobra una", () => {
+    const regla = reglaDeScripts();
+    const m = {
+      filas: [],
+      cobGlobal: 80,
+      lineasMedidas: 100,
+      sinCargar: { ficheros: 17, lineas: 1947, deFicheros: 29 },
+      descartados: [],
+    };
+    const avisos = regla.avisos(m);
+    assert.match(avisos[0], /^17 de 29 ficheros \(1947 líneas de código\) no los carga ningún test y NO cuentan/);
+    // Con filas vacías, TODA congelada real «no está»: sobran todas.
+    assert.ok(leerContratoScripts().congeladas.length > 0, "sin congeladas este aserto no probaría nada");
+    assert.match(avisos[1], /scripts-crap\.json sobran en su cifra: `npm run crap -- --scripts --apretar`/);
+  });
+
+  it("MEDIDA_SCRIPTS mide scripts/ con el lcov del core y SOLO lo cargado", () => {
+    assert.deepEqual(MEDIDA_SCRIPTS.arboles, ["scripts/"]);
+    assert.equal(MEDIDA_SCRIPTS.universo, "lo-cargado");
+    assert.equal(MEDIDA_SCRIPTS.lcov, MEDIDA_CORE.lcov);
+    assert.equal(MEDIDA_CORE.universo, "el-arbol", "el core mide el árbol entero desde #769");
+  });
+});
+
+describe("el CLI de las medidas con foto decide en funciones puras (#769)", () => {
+  const filaDe = (funcion: string, crap: number): CrapRow => ({
+    name: funcion,
+    file: "scripts/a.ts",
+    startLine: 3,
+    endLine: 10,
+    complexity: 10,
+    coverage: 0,
+    crap,
+  });
+  const medicion = (filas: CrapRow[], cobGlobal: number) => ({
+    filas,
+    cobGlobal,
+    lineasMedidas: 1000,
+    sinCargar: { ficheros: 2, lineas: 40, deFicheros: 5 },
+    descartados: [],
+  });
+  const conSuelo = (min: number, congeladas: ContratoCliente["congeladas"] = []): ContratoCliente => ({
+    ...contrato(congeladas),
+    suelo_cobertura: { min, nota: "x" },
+  });
+
+  it("el suelo muerde: por debajo es un fallo con la cifra, y el margen se imprime en puntos y líneas", () => {
+    const rojo = informeConFoto(CON_FOTO_SCRIPTS, medicion([], 80), conSuelo(99));
+    assert.deepEqual(rojo.fallos, ["la cobertura de líneas de scripts bajó a 80.00% (mínimo 99%)"]);
+    assert.ok(rojo.resumen.includes("Cobertura mínima: 99% — ahora 80.00% (margen -19.00 puntos ≈ -190 líneas)."));
+    const verde = informeConFoto(CON_FOTO_SCRIPTS, medicion([], 80), conSuelo(79.2));
+    assert.deepEqual(verde.fallos, []);
+    assert.ok(verde.resumen.some((l) => l.includes("margen 0.80 puntos ≈ 8 líneas")));
+  });
+
+  it("una función sobre el tope es un fallo que avisa de que lo-cargado puede ponerse rojo por un test", () => {
+    const inf = informeConFoto(CON_FOTO_SCRIPTS, medicion([filaDe("main", 90)], 90), conSuelo(50));
+    assert.equal(inf.fallos.length, 1);
+    assert.match(inf.fallos[0], /90\.0 > 73 {2}main · scripts\/a\.ts:3/);
+    assert.match(inf.fallos[0], /¿Fichero recién cargado\?/);
+    // El cliente mide el árbol entero: ahí esa coletilla sería mentira.
+    const cliente = informeConFoto(CON_FOTO_CLIENTE, medicion([filaDe("main", 90)], 90), contrato());
+    assert.doesNotMatch(cliente.fallos[0], /recién cargado/);
+    assert.ok(cliente.resumen.some((l) => l.startsWith("Sin suelo de cobertura: client-crap.json")));
+  });
+
+  it("una congelada que sobra avisa con el verbo que la baja, sin fallo", () => {
+    const c = conSuelo(50, [{ fichero: "scripts/a.ts", funcion: "main", crap: 200 }]);
+    const inf = informeConFoto(CON_FOTO_SCRIPTS, medicion([filaDe("main", 90)], 90), c);
+    assert.deepEqual(inf.fallos, []);
+    assert.match(inf.aviso ?? "", /--apretar/);
+    assert.match(inf.aviso ?? "", /200 → 90\.0 {2}main · scripts\/a\.ts/);
+  });
+
+  it("--apretar: la negativa sale con error, «nada» no escribe y un cambio sí", () => {
+    const c = conSuelo(50, [{ fichero: "scripts/a.ts", funcion: "main", crap: 200 }]);
+    const niega = textoDeApretar(planDeApretar([filaDe("otra", 300)], c), 1, "x.json");
+    assert.deepEqual([niega.ok, niega.escribir], [false, false]);
+    assert.match(niega.texto, /se niega: hay 1 función/);
+    const nada = textoDeApretar(planDeApretar([filaDe("main", 200)], c), 1, "x.json");
+    assert.deepEqual([nada.ok, nada.escribir, nada.texto], [true, false, "✔ nada que apretar: las 1 congeladas siguen en su cifra"]);
+    const baja = textoDeApretar(planDeApretar([filaDe("main", 150)], c), 1, "x.json");
+    assert.deepEqual([baja.ok, baja.escribir], [true, true]);
+    assert.match(baja.texto, /200 → 150 \(bajo\) {2}main · scripts\/a\.ts/);
   });
 });
