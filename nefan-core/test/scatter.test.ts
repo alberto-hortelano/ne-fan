@@ -79,6 +79,43 @@ describe("scatter: gramática", () => {
   });
 });
 
+/** Tanda BP: el `seed` de zona es un ENTERO de 0 a 1e9, la misma definición
+ *  (`zone-seed.ts`) que el de `vegetation_zones`. Antes aceptaba cualquier
+ *  número, y la prosa del tile, que dice «integer ≥ 0», mentía por defecto. */
+describe("scatter_zones[].seed: entero, el mismo tipo que el de vegetation_zones", () => {
+  const conSeed = (seed: unknown) => parseScatter({ pino: PINO }, [{ ...ZONA, seed }]);
+
+  it("acepta un entero, el 0 incluido, y el tope 1e9", () => {
+    for (const seed of [0, 7, 1e9]) {
+      const r = conSeed(seed);
+      assert.ok(r.ok, `seed ${seed}: ${!r.ok ? r.error : ""}`);
+      assert.equal(r.ok && r.zones[0].seed, seed);
+    }
+  });
+
+  it("rechaza fraccionario, cadena, negativo y fuera de rango, NOMBRANDO el campo", () => {
+    for (const seed of [1.5, "3", -1, 1e10]) {
+      const r = conSeed(seed);
+      assert.equal(r.ok, false, `seed ${JSON.stringify(seed)} no debería pasar`);
+      if (!r.ok) {
+        assert.match(r.error, /^scatter_zones\[0\]\.seed: /, r.error);
+        assert.match(r.error, /entero/, `el mensaje enseña el tipo: ${r.error}`);
+        assert.ok(r.error.endsWith(`(tiene ${JSON.stringify(seed)})`), `el mensaje dice QUÉ llegó: ${r.error}`);
+      }
+    }
+  });
+
+  it("el seed manda: otro seed, otro scatter; el mismo, el mismo", () => {
+    const prims = (seed: number) => {
+      const r = conSeed(seed);
+      assert.ok(r.ok);
+      return r.ok ? runScatter(r.generators, r.zones, { seedKey: "tile_0_0" }).prims : [];
+    };
+    assert.deepEqual(prims(3), prims(3));
+    assert.notDeepEqual(prims(3), prims(4));
+  });
+});
+
 describe("scatter: poblado", () => {
   const parsed = () => {
     const r = parseScatter({ pino: PINO }, [ZONA]);

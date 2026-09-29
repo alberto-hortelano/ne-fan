@@ -251,9 +251,10 @@ classifier). Nothing fills vegetation for you: what you do not declare
 3) OPTIONAL "vegetation_zones" — mass vegetation planted BY THE ENGINE,
 deterministically: [{ "type": Spanish plant name ("pino", "matorral",
 "zarza"…), "area": [col,row,w,h] in cells | "rest" (the whole tile),
-"density": SPECIMENS PER m², "seed"? }] (max 8 zones). What comes out are
-REAL tree/bush volumes — the same thing you would get by hand-placing
-`tree` volumes, with trunk collision and shade. A `type` matching
+"density": SPECIMENS PER m², "seed"?: integer 0..1000000000 (reshuffles
+the same zone) }] (max 8 zones). What comes out are REAL tree/bush volumes — the
+same thing you would get by hand-placing `tree` volumes, with trunk
+collision and shade. A `type` matching
 arbusto/mata/matorral/helecho/zarza/bush plants bushes (decorative, they do
 not block); anything else plants trees.
 
@@ -305,7 +306,7 @@ collide and cost no image credits (they render in their declared colors).
   roughness? } } — hslJitter varies the tone per instance.
 - scatter_zones: [{ kind:"<generator>", shape: {type:"rect",x0,z0,x1,z1} |
   {type:"ellipse",cx,cz,rx,rz} | {type:"poly",pts:[[c,r],…]}, density
-  (elements/m², 0..1.5; total capped at 240 instances/tile), seed? }]
+  (elements/m², 0..1.5; total capped at 240 instances/tile), seed?: integer 0..1000000000 }]
   (max 12 zones; coordinates in cells).
   Format example:
   "scatter_generators": {

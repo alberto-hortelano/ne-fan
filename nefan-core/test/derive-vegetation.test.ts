@@ -202,6 +202,74 @@ describe("deriveVolumesFromSchema: vegetation_zones", () => {
  *  la que reconcilia las DOS representaciones del mismo objeto: la entity del
  *  esquema y su volumen. De ahí sale `representedBy`, que es lo que impide
  *  pintar las dos. */
+/** Tanda BP: el `seed` de una zona es un ENTERO ≥ 0, el mismo tipo y rango
+ *  que el de `scatter_zones`. Antes era cadena y el motor, que lo aprendía del
+ *  campo hermano, lo escribía como número y se comía un rechazo por tile. */
+describe("vegetation_zones[].seed: entero, y manda sobre las posiciones", () => {
+  const zonaCon = (seed: unknown) => parseVegetationZones([{ type: "pino", area: "rest", density: 0.02, seed }]);
+
+  it("acepta un entero, el 0 incluido, y el tope 1e9", () => {
+    for (const seed of [0, 7, 1e9]) {
+      const p = zonaCon(seed);
+      assert.ok(p.ok, `seed ${seed}: ${!p.ok ? p.error : ""}`);
+      assert.equal(p.ok && p.zones[0].seed, seed);
+    }
+  });
+
+  it("rechaza cadena, fraccionario, negativo y fuera de rango, NOMBRANDO el campo", () => {
+    for (const seed of ["claro", "3", 1.5, -1, 1e10]) {
+      const p = zonaCon(seed);
+      assert.equal(p.ok, false, `seed ${JSON.stringify(seed)} no debería pasar`);
+      if (!p.ok) {
+        assert.match(p.error, /^vegetation_zones\[0\]\.seed: /, p.error);
+        assert.match(p.error, /entero/, `el mensaje enseña el tipo: ${p.error}`);
+        assert.ok(p.error.endsWith(`(tiene ${JSON.stringify(seed)})`), `el mensaje dice QUÉ llegó: ${p.error}`);
+      }
+    }
+  });
+
+  it("el seed manda: la misma zona en el mismo tile con seeds distintos planta en otro sitio, y con el mismo, en el mismo", () => {
+    const bosque = (seed: number) => deriveVolumesFromSchema(
+      { seed: "tile_0_0", vegetation_zones: zonas([{ type: "pino", area: "rest", density: 0.02, seed }]) }, [],
+    ).vegetation.map(at);
+    assert.deepEqual(bosque(1), bosque(1), "mismo seed → mismas posiciones");
+    assert.notDeepEqual(bosque(1), bosque(2), "otro seed → otras posiciones");
+    // El seed 0 no es «sin seed»: un `||` en vez del `=== undefined` lo
+    // confundiría con la rama del type.
+    const sinSeed = deriveVolumesFromSchema(
+      { seed: "tile_0_0", vegetation_zones: zonas([{ type: "pino", area: "rest", density: 0.02 }]) }, [],
+    ).vegetation.map(at);
+    assert.notDeepEqual(bosque(0), sinSeed, "seed 0 ≠ sin seed");
+  });
+
+  it("sin seed, el bosque es el de antes del cambio de tipo, bit a bit (golden)", () => {
+    // Capturado ANTES de pasar el seed a entero (tanda BP): la rama sin seed
+    // sigue hasheando el `type` literal, así que los saves y snapshots de
+    // tiles sin seed no se mueven.
+    const v = deriveVolumesFromSchema({
+      seed: "tile_2_-1",
+      vegetation_zones: zonas([
+        { type: "pino", area: [8, 8, 60, 60], density: 0.03 },
+        { type: "matorral", area: [70, 70, 50, 50], density: 0.05 },
+      ]),
+    }, []).vegetation;
+    const foto = (x: Volume) => [x.id, x.type, at(x), (x as Extract<Volume, { type: "tree" }>).s];
+    assert.equal(v.length, 58);
+    assert.deepEqual(v.slice(0, 6).map(foto), [
+      ["derived_veg_0_0", "tree", [60.8, 36.4], 1.1],
+      ["derived_veg_0_1", "tree", [43.5, 16.5], 0.79],
+      ["derived_veg_0_2", "tree", [12.7, 47.8], 0.87],
+      ["derived_veg_0_3", "tree", [63, 52.2], 0.96],
+      ["derived_veg_0_4", "tree", [54.3, 50.4], 0.82],
+      ["derived_veg_0_5", "tree", [56.3, 13.7], 1.07],
+    ]);
+    assert.deepEqual(v.slice(-2).map(foto), [
+      ["derived_veg_1_29", "bush", [87.3, 106.9], 1.03],
+      ["derived_veg_1_30", "bush", [99.1, 78.3], 0.72],
+    ]);
+  });
+});
+
 describe("deriveVolumesFromSchema: entities del tile", () => {
   it("cada kind estático deriva su primitiva y queda MARCADA como representada", () => {
     const out = deriveVolumesFromSchema(

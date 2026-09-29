@@ -17,6 +17,8 @@ import { ENTITY_FIELDS, SCENE_FIELDS, EMITTED_SCENE_FIELDS, EmittedSceneSchema, 
 import { celdasQueCubreRadio } from "../src/scene/terrain-collision.js";
 import { COTA_TILE, TILE_CELLS, TILE_MPC } from "../src/scene/tile.js";
 import { AnchorSchema } from "../src/contracts/world-map-schema.js";
+import { parseVegetationZones } from "../src/scene/blueprint/vegetation.js";
+import { ZONE_SEED_MAX } from "../src/scene/blueprint/zone-seed.js";
 
 const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.meta.url));
 
@@ -371,5 +373,45 @@ describe("contrato narrativo — el prompt de tile documenta el rect del anchor 
     const bootstrap = text.slice(text.indexOf("BOOTSTRAP ("));
     assert.match(bootstrap, /With bootstrap_world_map: true/);
     assert.match(bootstrap, /WITHOUT bootstrap_world_map, the world already exists/);
+  });
+});
+
+/** Tanda BP: un tile tiene DOS `seed?` hermanos (`vegetation_zones` y
+ *  `scatter_zones`). Con la prosa callando el tipo, 4 de 4 motores escribieron
+ *  el de vegetación como número —el del campo de al lado— y se comieron un
+ *  rechazo por tile. Ahora los dos son enteros y la prosa lo dice en los dos
+ *  sitios; el motor MCP lee la prosa, no el JSON del tool, así que la prosa
+ *  es lo que se canda (y el JSON se alinea para que no diga otra cosa). */
+describe("contrato narrativo — los dos seed del tile dicen su tipo y su rango, y son los del zod (tanda BP)", () => {
+  const text = readFileSync(resolve(PROMPTS_DIR, "tile_instructions.md"), "utf-8");
+  // El rango se LEE de la prosa y se ejerce contra el zod a los dos lados del
+  // borde: si el tope del zod o el del prompt se mueven solos, esto se pone rojo.
+  const rangos = [...text.matchAll(/"?seed"?\?:\s*integer (\d+)\.\.(\d+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+
+  it("tile_instructions.md dice «integer lo..hi» en los DOS seed? y no deja ninguno a pelo", () => {
+    assert.equal(rangos.length, 2, `seed? con rango: ${rangos.length} (se esperan 2: vegetation_zones y scatter_zones)`);
+    const todos = text.match(/"?seed"?\?/g) ?? [];
+    assert.equal(todos.length, rangos.length, "hay un seed? sin tipo en tile_instructions.md");
+  });
+
+  it("el rango que dice la prosa es el que aplica el zod, justo en los bordes", () => {
+    const zona = (seed: unknown) => parseVegetationZones([{ type: "pino", area: "rest", density: 0.02, seed }]).ok;
+    for (const [lo, hi] of rangos) {
+      assert.equal(lo, 0);
+      assert.equal(hi, ZONE_SEED_MAX, `la prosa dice ${hi} y el zod aplica ${ZONE_SEED_MAX}`);
+      assert.equal(zona(lo), true, "el mínimo que dice la prosa entra");
+      assert.equal(zona(hi), true, "el máximo que dice la prosa entra");
+      assert.equal(zona(lo - 1), false, "uno por debajo, no");
+      assert.equal(zona(hi + 1), false, "uno por encima, no");
+    }
+    assert.equal(zona("7"), false, "integer: la cadena no");
+    assert.equal(zona(1.5), false, "integer: el fraccionario no");
+  });
+
+  it("el JSON del tool dice el mismo tipo y rango que la prosa en los dos seed", () => {
+    const tool = readFileSync(resolve(TOOLS_DIR, "generate_scene.json"), "utf-8");
+    const seeds = tool.match(/seed\?[^,}\]]*/g) ?? [];
+    assert.equal(seeds.length, 2, `seed? en generate_scene.json: ${JSON.stringify(seeds)}`);
+    for (const s of seeds) assert.ok(s.startsWith(`seed?: integer 0..${ZONE_SEED_MAX}`), `seed del tool sin el rango del zod: «${s}»`);
   });
 });
