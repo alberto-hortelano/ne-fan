@@ -76,7 +76,7 @@ export function crearContextoDelBridge(deps: DependenciasDelContexto): {
     simCollision,
     activePlugins: new Map(),
     sceneGen: new SceneGenQueue(),
-    posTracking: { cellKey: null, tileKey: null, placeId: null },
+    posTracking: { cellKey: null, tileKey: null },
     world: createWorldClaim(narrative, sim),
     subscribe(ws) {
       suscriptores.add(ws);

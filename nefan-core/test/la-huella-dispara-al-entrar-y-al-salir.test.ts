@@ -153,7 +153,7 @@ describe("reanudar dentro de una huella no es entrar en ella (#465, G1)", () => 
     await ctx.narrative.save();
 
     // Proceso nuevo: el tracking de posición nace vacío (el de ws-server.ts).
-    ctx.posTracking = { cellKey: null, tileKey: null, placeId: null };
+    ctx.posTracking = { cellKey: null, tileKey: null };
     const { socket: s2, sent: sent2 } = makeSocket();
     await porElBorde({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
     assert.equal((sent2[0] as SessionStartedMessage).ok, true);

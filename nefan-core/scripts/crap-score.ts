@@ -734,6 +734,30 @@ function medirOSalir(medida: Medida): Medicion {
   }
 }
 
+/** El gate del core, PURO: el tope sin excepciones y el suelo GLOBAL. Lo
+ *  prueba `npm test` con filas sintéticas, sin lcov (QA de #769: el guion que
+ *  lo ejercía de punta a punta necesitaba un lcov que el job de candados no
+ *  tiene, y pagarlo allí eran 3-5 min más de CI). */
+export function fallosDelCore(m: Pick<Medicion, "filas" | "cobGlobal">, umbral: Thresholds): string[] {
+  const fallos: string[] = [];
+  const peores = m.filas.filter((r) => r.crap > umbral.crap.max);
+  if (peores.length > 0) {
+    fallos.push(
+      `${peores.length} función(es) por encima del tope de CRAP (${umbral.crap.max}):\n` +
+        peores
+          .slice(0, 20)
+          .map((r) => `   ${r.crap.toFixed(1)}  ${r.name} · ${r.file}:${r.startLine}`)
+          .join("\n"),
+    );
+  }
+  if (m.cobGlobal < umbral.cobertura_lineas.min) {
+    fallos.push(
+      `la cobertura de líneas bajó a ${m.cobGlobal.toFixed(2)}% (mínimo ${umbral.cobertura_lineas.min}%)`,
+    );
+  }
+  return fallos;
+}
+
 function mainCore(check: boolean, top: number): void {
   const { filas, cobGlobal, lineasMedidas, sinCargar } = medirOSalir(MEDIDA_CORE);
   tabla(filas, top);
@@ -762,21 +786,7 @@ function mainCore(check: boolean, top: number): void {
   );
 
   if (!check) return;
-  const fallos: string[] = [];
-  if (peores.length > 0) {
-    fallos.push(
-      `${peores.length} función(es) por encima del tope de CRAP (${umbral.crap.max}):\n` +
-        peores
-          .slice(0, 20)
-          .map((r) => `   ${r.crap.toFixed(1)}  ${r.name} · ${r.file}:${r.startLine}`)
-          .join("\n"),
-    );
-  }
-  if (cobGlobal < umbral.cobertura_lineas.min) {
-    fallos.push(
-      `la cobertura de líneas bajó a ${cobGlobal.toFixed(2)}% (mínimo ${umbral.cobertura_lineas.min}%)`,
-    );
-  }
+  const fallos = fallosDelCore({ filas, cobGlobal }, umbral);
   if (fallos.length > 0) {
     console.error(`\n✘ ${fallos.join("\n✘ ")}`);
     process.exit(1);
@@ -925,17 +935,23 @@ export function textoDeApretar(
   };
 }
 
+/** El contrato con SOLO `congeladas` cambiadas, PURO: se reescribe sobre el
+ *  JSON crudo, así que el orden de claves y el formato (el de
+ *  `JSON.stringify(…, 2)` más salto final, que es el de los dos contratos)
+ *  quedan como estaban. */
+export function reescribirCongeladas(texto: string, congeladas: ContratoConFoto["congeladas"]): string {
+  const crudo = JSON.parse(texto) as Record<string, unknown>;
+  crudo.congeladas = congeladas;
+  return JSON.stringify(crudo, null, 2) + "\n";
+}
+
 /** `--apretar` de verdad: reescribe SOLO `congeladas`, sobre el JSON crudo,
  *  así que el orden de claves y el formato del fichero (el de
  *  `JSON.stringify(…, 2)`) quedan como estaban. */
 function ejecutarApretar(cf: MedidaConFoto, m: Medicion, contrato: ContratoConFoto): void {
   const plan = planDeApretar(m.filas, contrato);
   const t = textoDeApretar(plan, contrato.congeladas.length, cf);
-  if (plan.ok && t.escribir) {
-    const crudo = JSON.parse(readFileSync(cf.ruta, "utf-8")) as Record<string, unknown>;
-    crudo.congeladas = plan.congeladas;
-    writeFileSync(cf.ruta, JSON.stringify(crudo, null, 2) + "\n");
-  }
+  if (plan.ok && t.escribir) writeFileSync(cf.ruta, reescribirCongeladas(readFileSync(cf.ruta, "utf-8"), plan.congeladas));
   (t.ok ? console.log : console.error)(`\n${t.texto}`);
   if (!t.ok) process.exit(1);
 }
@@ -965,18 +981,35 @@ function mainConFoto(
   console.log("\n✔ dentro de los umbrales");
 }
 
+export type ModoDelCli =
+  | { ok: true; medida: Medida["nombre"]; check: boolean; top: number; foto: boolean; apretar: boolean }
+  | { ok: false; error: string };
+
+/** Qué pide una línea de órdenes, PURO. Existe para poder probar que cada
+ *  orden que recomienda un mensaje (`MedidaConFoto.orden`) es una orden que
+ *  este CLI entiende, y de LA MISMA medida (QA de #769, H2). */
+export function modoDelCli(argv: readonly string[]): ModoDelCli {
+  const o = {
+    check: argv.includes("--check"),
+    top: Number(argv[argv.indexOf("--top") + 1]) || 25,
+    foto: argv.includes("--foto"),
+    apretar: argv.includes("--apretar"),
+  };
+  if (argv.includes("--cliente")) return { ok: true, medida: "cliente", ...o };
+  if (argv.includes("--scripts")) return { ok: true, medida: "scripts", ...o };
+  // El core no tiene foto: su gate es un suelo GLOBAL más un tope sin excepciones.
+  if (o.foto || o.apretar) return { ok: false, error: "--foto y --apretar son de las medidas con foto: --cliente o --scripts" };
+  return { ok: true, medida: "core", ...o };
+}
+
 function main(): void {
-  const argv = process.argv.slice(2);
-  const CHECK = argv.includes("--check");
-  const TOP = Number(argv[argv.indexOf("--top") + 1]) || 25;
-  const o = { check: CHECK, top: TOP, foto: argv.includes("--foto"), apretar: argv.includes("--apretar") };
-  if (argv.includes("--cliente")) mainConFoto(CON_FOTO_CLIENTE, o);
-  else if (argv.includes("--scripts")) mainConFoto(CON_FOTO_SCRIPTS, o);
-  else if (o.foto || o.apretar) {
-    // El core no tiene foto: su gate es un suelo GLOBAL más un tope sin excepciones.
-    console.error("--foto y --apretar son de las medidas con foto: --cliente o --scripts");
+  const modo = modoDelCli(process.argv.slice(2));
+  if (!modo.ok) {
+    console.error(modo.error);
     process.exit(2);
-  } else mainCore(CHECK, TOP);
+  }
+  if (modo.medida === "core") mainCore(modo.check, modo.top);
+  else mainConFoto(modo.medida === "cliente" ? CON_FOTO_CLIENTE : CON_FOTO_SCRIPTS, modo);
 }
 
 if (process.argv[1]?.endsWith("crap-score.ts")) main();

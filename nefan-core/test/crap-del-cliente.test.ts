@@ -34,6 +34,8 @@ import {
   ThresholdsSchema,
   apretarCongeladas,
   claveDe,
+  crap,
+  fallosDelCore,
   crapRows,
   fotoDeCongeladas,
   functionsOf,
@@ -42,7 +44,9 @@ import {
   leerContratoScripts,
   lineHitsFromLcov,
   medirFuentes,
+  modoDelCli,
   planDeApretar,
+  reescribirCongeladas,
   textoDeApretar,
   veredictoCliente,
   type ContratoCliente,
@@ -627,5 +631,96 @@ describe("el CLI de las medidas con foto decide en funciones puras (#769)", () =
     const baja = textoDeApretar(planDeApretar([filaDe("main", 150)], c), 1, CON_FOTO_SCRIPTS);
     assert.deepEqual([baja.ok, baja.escribir], [true, true]);
     assert.match(baja.texto, /200 → 150 \(bajo\) {2}main · scripts\/a\.ts/);
+  });
+});
+
+/** Lo que el guion 230 medía de punta a punta con el lcov real y que el job de
+ *  candados no puede pagar (QA de #769, ronda de CI): aquí, con datos
+ *  sintéticos, en `npm test`. El camino verde con el lcov real lo sigue
+ *  corriendo el job `nefan-core` (`crap --check` y `crap -- --scripts --check`). */
+describe("el CLI de crap · lo que antes solo medía el guion 230 (#769)", () => {
+  const umbral = {
+    $comment: "x",
+    crap: { max: 73, objetivo: 30, nota: "x" },
+    cobertura_lineas: { min: 95, nota: "x" },
+  };
+  const fila = (file: string, name: string, cx: number, coverage: number): CrapRow => ({
+    name,
+    file,
+    startLine: 1,
+    endLine: cx + 2,
+    complexity: cx,
+    coverage,
+    crap: crap(cx, coverage),
+  });
+
+  it("§1 · un fichero del core que nadie carga, con una función de cx 9, pone rojo el gate y lo nombra", () => {
+    // El universo del core es el árbol: el fichero entra a 0 sin que el lcov lo traiga.
+    const fuentes = new Map([
+      ["bridge/cargado.ts", funcionDe("va", 2)],
+      ["bridge/zz-sonda.ts", funcionDe("sonda", 9)],
+    ]);
+    const hits = lineHitsFromLcov(lcovDe(["bridge/cargado.ts", { 1: 1, 2: 1, 3: 1, 4: 1 }]));
+    const m = medirFuentes(hits, fuentes, { arboles: MEDIDA_CORE.arboles, universo: MEDIDA_CORE.universo });
+    const fallos = fallosDelCore({ filas: m.filas, cobGlobal: 99 }, umbral);
+    assert.equal(fallos.length, 1);
+    assert.match(fallos[0], /90\.0 {2}sonda · bridge\/zz-sonda\.ts:1/);
+    // …y con el universo de antes, el mismo fichero no existía para el gate.
+    const antes = medirFuentes(hits, fuentes, { arboles: MEDIDA_CORE.arboles, universo: "lo-cargado" });
+    assert.deepEqual(fallosDelCore({ filas: antes.filas, cobGlobal: 99 }, umbral), []);
+  });
+
+  it("§2 · el suelo del core muerde por debajo y no en el borde", () => {
+    assert.deepEqual(fallosDelCore({ filas: [fila("src/a.ts", "a", 3, 1)], cobGlobal: 95 }, umbral), []);
+    assert.deepEqual(fallosDelCore({ filas: [], cobGlobal: 94.99 }, umbral), [
+      "la cobertura de líneas bajó a 94.99% (mínimo 95%)",
+    ]);
+  });
+
+  it("§3 · --apretar sobre el contrato REAL, inflado a mano, lo deja byte a byte como estaba", () => {
+    const ruta = join(coreRoot, "data", "contract", "scripts-crap.json");
+    const original = readFileSync(ruta, "utf-8");
+    const contrato = leerContratoScripts(ruta);
+    // Hoy cada congelada mide exactamente su foto: son las filas de la medida.
+    const hoy = contrato.congeladas.map((c) => ({ ...fila(c.fichero, c.funcion, 10, 0), crap: c.crap }));
+    const inflado = structuredClone(contrato);
+    inflado.congeladas[0].crap += 50;
+    inflado.congeladas.push({ fichero: "scripts/zz-inventado.ts", funcion: "nada", crap: 100 });
+    const plan = planDeApretar(hoy, inflado);
+    assert.ok(plan.ok);
+    assert.equal(reescribirCongeladas(reescribirCongeladas(original, inflado.congeladas), plan.congeladas), original);
+    // Con la foto como está, apretar no cambia nada: el fichero no se reescribe.
+    const quieto = planDeApretar(hoy, contrato);
+    assert.ok(quieto.ok && quieto.cambios.length === 0);
+    assert.equal(reescribirCongeladas(original, contrato.congeladas), original, "reescribir sin cambios es la identidad");
+  });
+
+  it("§4 · con una roja delante, --apretar se niega (y el CLI sale con 1)", () => {
+    const contrato = leerContratoScripts();
+    const conRoja = structuredClone(contrato);
+    conRoja.congeladas[0].crap = conRoja.tope + 1;
+    const hoy = contrato.congeladas.map((c) => ({ ...fila(c.fichero, c.funcion, 10, 0), crap: c.crap }));
+    const plan = planDeApretar(hoy, conRoja);
+    assert.equal(plan.ok, false);
+    const t = textoDeApretar(plan, conRoja.congeladas.length, CON_FOTO_SCRIPTS);
+    assert.deepEqual([t.ok, t.escribir], [false, false]);
+  });
+
+  it("§5 · cada orden que recomiendan los mensajes la entiende ESTE CLI, y es de la misma medida", () => {
+    // El cliente se corre en nefan-html, donde `npm run crap` ya lleva `--cliente`.
+    const argvDe = (cf: typeof CON_FOTO_CLIENTE, flag: string): string[] => {
+      const tras = cf.orden.replace(/^npm run crap --\s*/, "").split(/\s+/).filter(Boolean);
+      return [...(cf === CON_FOTO_CLIENTE ? ["--cliente"] : []), ...tras, flag];
+    };
+    for (const cf of [CON_FOTO_CLIENTE, CON_FOTO_SCRIPTS]) {
+      for (const flag of ["--apretar", "--foto", "--check"]) {
+        const modo = modoDelCli(argvDe(cf, flag));
+        assert.ok(modo.ok, `${cf.orden} ${flag}: ${!modo.ok && modo.error}`);
+        assert.equal(modo.medida, cf.medida.nombre, `${cf.orden} ${flag} mide OTRA cosa`);
+      }
+    }
+    // Lo que el H2 recomendaba en nefan-core para scripts: sale con error, o mide el core.
+    assert.equal(modoDelCli(["--apretar"]).ok, false);
+    assert.deepEqual(modoDelCli(["--check"]), { ok: true, medida: "core", check: true, top: 25, foto: false, apretar: false });
   });
 });

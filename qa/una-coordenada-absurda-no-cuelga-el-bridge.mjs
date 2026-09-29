@@ -202,7 +202,7 @@ function bridgeDe(narrative) {
     simCollision: provider,
     mapTriggers: new MapTriggerEvaluator(narrative),
     sceneGen: new SceneGenQueue(),
-    posTracking: { cellKey: null, tileKey: null, placeId: null },
+    posTracking: { cellKey: null, tileKey: null },
     world: createWorldClaim(narrative, sim),
     activePlugins: new Map(),
     broadcastNarrative: (m) => difundidos.push(m),

@@ -105,13 +105,10 @@ export interface BridgeContext {
    *  `cadena` son los lugares cuyas huellas contienen al jugador, de fuera
    *  adentro (`cadenaEnLaCelda`); ausente = todavía no se sabe (arranque,
    *  reanudar) y cuenta como vacía. Los triggers salen del cruce de la vieja
-   *  con la nueva (#465, F1). `placeId` es el campo de antes de la cadena y
-   *  ya no lo lee nadie: lo inicializa `ws-server.ts`, que reescribe la
-   *  tanda BJ, y se borra en cuanto se pueda tocar ese fichero. */
+   *  con la nueva (#465, F1). */
   posTracking: {
     cellKey: string | null;
     tileKey: string | null;
-    placeId: string | null;
     cadena?: readonly string[];
   };
   /** El dueño del mundo del sim: quién puede escribir en él y si la partida
