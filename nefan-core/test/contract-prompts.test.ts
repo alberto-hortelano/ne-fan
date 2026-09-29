@@ -17,6 +17,7 @@ import { ENTITY_FIELDS, SCENE_FIELDS, EMITTED_SCENE_FIELDS, EmittedSceneSchema, 
 import { celdasQueCubreRadio } from "../src/scene/terrain-collision.js";
 import { COTA_TILE, TILE_CELLS, TILE_MPC } from "../src/scene/tile.js";
 import { AnchorSchema } from "../src/contracts/world-map-schema.js";
+import { parseVegetationZones } from "../src/scene/blueprint/vegetation.js";
 
 const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.meta.url));
 
@@ -371,5 +372,37 @@ describe("contrato narrativo — el prompt de tile documenta el rect del anchor 
     const bootstrap = text.slice(text.indexOf("BOOTSTRAP ("));
     assert.match(bootstrap, /With bootstrap_world_map: true/);
     assert.match(bootstrap, /WITHOUT bootstrap_world_map, the world already exists/);
+  });
+});
+
+/** Tanda BP: un tile tiene DOS `seed?` hermanos (`vegetation_zones` y
+ *  `scatter_zones`). Con la prosa callando el tipo, 4 de 4 motores escribieron
+ *  el de vegetación como número —el del campo de al lado— y se comieron un
+ *  rechazo por tile. Ahora los dos son enteros y la prosa lo dice en los dos
+ *  sitios; el motor MCP lee la prosa, no el JSON del tool, así que la prosa
+ *  es lo que se canda (y el JSON se alinea para que no diga otra cosa). */
+describe("contrato narrativo — los dos seed del tile dicen su tipo, y es el del zod (tanda BP)", () => {
+  const text = readFileSync(resolve(PROMPTS_DIR, "tile_instructions.md"), "utf-8");
+
+  it("tile_instructions.md dice «integer ≥ 0» en los DOS seed? y no deja ninguno a pelo", () => {
+    const conTipo = text.match(/"?seed"?\?:\s*integer ≥ 0/g) ?? [];
+    assert.equal(conTipo.length, 2, `seed? con tipo: ${conTipo.length} (se esperan 2: vegetation_zones y scatter_zones)`);
+    const todos = text.match(/"?seed"?\?/g) ?? [];
+    assert.equal(todos.length, conTipo.length, "hay un seed? sin tipo en tile_instructions.md");
+  });
+
+  it("el tipo que dice la prosa es el que acepta el zod de vegetation_zones", () => {
+    const zona = (seed: unknown) => parseVegetationZones([{ type: "pino", area: "rest", density: 0.02, seed }]).ok;
+    assert.equal(zona(0), true, "integer ≥ 0: el 0 entra");
+    assert.equal(zona(7), true);
+    assert.equal(zona(-1), false, "≥ 0: el -1 no");
+    assert.equal(zona("7"), false, "integer: la cadena no");
+  });
+
+  it("el JSON del tool no contradice a la prosa en ninguno de los dos seed", () => {
+    const tool = readFileSync(resolve(TOOLS_DIR, "generate_scene.json"), "utf-8");
+    const seeds = tool.match(/seed\?[^,}\]]*/g) ?? [];
+    assert.equal(seeds.length, 2, `seed? en generate_scene.json: ${JSON.stringify(seeds)}`);
+    for (const s of seeds) assert.match(s, /^seed\?: integer ≥ 0/, `seed del tool sin el tipo del zod: «${s}»`);
   });
 });

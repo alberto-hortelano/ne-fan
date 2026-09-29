@@ -204,7 +204,7 @@ function scatterVegetationVolumes(
     const zone = zones[zi];
     const area = zoneRect(zone.area);
     const isBush = zoneIsBush(zone.type);
-    const rng = seededRng(`${raw.seed ?? "tile"}:veg:${zi}:${fnv1a(zone.seed ?? zone.type)}`);
+    const rng = seededRng(`${raw.seed ?? "tile"}:veg:${zi}:${fnv1a(zone.seed === undefined ? zone.type : String(zone.seed))}`);
     // Ejemplares/m² × área de la zona = lo que se pide. La separación sale de
     // la densidad, con el suelo geométrico por debajo.
     const target = Math.round(zoneAreaM2(zone.area) * zone.density);

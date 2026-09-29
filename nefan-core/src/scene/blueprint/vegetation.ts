@@ -127,7 +127,15 @@ export const VegetationZoneSchema = z
     area: z.union([areaRect, z.literal("rest")]),
     /** Ejemplares por m². */
     density: z.number(),
-    seed: z.string().min(1).max(64).optional(),
+    /** Baraja la misma zona. Mismo tipo y rango que `scatter_zones.seed`
+     *  (`scatter.ts`): dos `seed?` hermanos en el tile con dos tipos distintos
+     *  hacían que el motor escribiera este como número y se comiera un rechazo. */
+    seed: z
+      .number({ invalid_type_error: "seed es un entero ≥ 0, como el de scatter_zones" })
+      .int("seed es un entero ≥ 0, como el de scatter_zones")
+      .min(0, "seed es un entero ≥ 0, como el de scatter_zones")
+      .max(1e9, "seed va de 0 a 1e9, como el de scatter_zones")
+      .optional(),
   })
   .strict()
   .superRefine((z0, ctx) => {
