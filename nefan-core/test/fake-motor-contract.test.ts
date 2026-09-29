@@ -48,6 +48,7 @@ describe("el motor falso emite lo que el contrato del rol acepta", () => {
           crossings: [{ type: "path", at: 88, width: 4 }],
         },
       },
+      anchored_places: [],
       nearby_places: [],
     };
     conforme("makeTile(tile normal)", makeTile(gt));
@@ -65,6 +66,7 @@ describe("el motor falso emite lo que el contrato del rol acepta", () => {
         description: "Un molino de agua río abajo.",
         attrs: {},
       },
+      anchored_places: [],
       nearby_places: [],
     };
     conforme("makeTile(tile con place)", makeTile(gt));
@@ -81,6 +83,7 @@ describe("el motor falso emite lo que el contrato del rol acepta", () => {
         west: { tile: [-1, 0], scene_id: "tile_-1_0", description: "campo", biome: "grass", crossings: [{ type: "path", at: 64, width: 2 }] },
         east: { tile: [1, 0], scene_id: "tile_1_0", description: "campo", biome: "grass", crossings: [{ type: "path", at: 88, width: 4 }] },
       },
+      anchored_places: [],
       nearby_places: [],
     };
     const scene = entradaEnMundoExistente(gt);

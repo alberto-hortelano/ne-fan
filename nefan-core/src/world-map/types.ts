@@ -70,9 +70,11 @@ export interface Place {
   introduced_event_id?: string;
   visited: boolean;
   /** Anclaje al plano continuo de tiles: el place VIVE en el tile (tx,ty),
-   *  opcionalmente acotado a un rect [col,row,w,h] en celdas del tile. El
-   *  bridge activa el place (y dispara sus triggers) cuando la POSICIÓN del
-   *  jugador entra en el anchor. */
+   *  opcionalmente acotado a un rect [col,row,w,h] en celdas del tile: su
+   *  HUELLA (el área construida), no un punto de llegada. El bridge activa
+   *  el place (y dispara sus triggers) cuando la POSICIÓN del jugador entra
+   *  en el anchor; entre huellas anidadas gana la más pequeña
+   *  (`lugarEnLaCelda`). */
   anchor?: { tx: number; ty: number; rect?: [number, number, number, number] };
 }
 

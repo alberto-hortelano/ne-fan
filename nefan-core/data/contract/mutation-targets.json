@@ -502,6 +502,7 @@
         "test/entrada-del-fichero.test.ts",
         "test/exits.test.ts",
         "test/game-repair.test.ts",
+        "test/lugar-en-la-celda.test.ts",
         "test/map-triggers.test.ts",
         "test/place-anchor.test.ts",
         "test/style-application.test.ts",

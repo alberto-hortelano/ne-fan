@@ -372,7 +372,22 @@ export interface LlmContext {
       kind: string;
       description: string;
       attrs: Record<string, unknown>;
+      /** Su huella en el tile, si el mapa ya la tiene: se construye dentro. */
+      rect?: [number, number, number, number];
     };
+    /** Los DEMÁS places anclados a ESTE tile (no el de `place`): ya existen
+     *  en el mapa con esa huella (sin `rect`, el tile entero), así que el
+     *  motor los construye dentro de ella y no los re-ancla ni los siembra.
+     *  Obligatorio para que ningún constructor del contexto se lo olvide:
+     *  la entrada regenerada los perdía y quedaban sobre una geometría que ya
+     *  no existía (#465, H1). */
+    anchored_places: Array<{
+      id: string;
+      name: string;
+      kind: string;
+      description: string;
+      rect?: [number, number, number, number];
+    }>;
     nearby_places: Array<{ id: string; name: string; kind: string; tile?: [number, number] }>;
     /** true solo en el tile de ENTRADA de una partida nueva: lleva `player`.
      *  Con `bootstrap_world_map` el mapa está por sembrar (y el motor dice el

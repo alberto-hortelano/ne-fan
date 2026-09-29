@@ -16,6 +16,7 @@ import { loadWorldDoc } from "../../src/games/loader.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
 import { TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoord } from "../../src/scene/tile.js";
 import { oppositeEdge } from "../../src/world-map/edges.js";
+import { lugarEnLaCelda } from "../../src/world-map/lugar-en-la-celda.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext } from "../../src/narrative/types.js";
 import { motivoParaElJugador } from "../../src/protocol/status-motivo.js";
@@ -62,17 +63,23 @@ export function buildGenerateTileCtx(
   }
 
   // Places del vecindario (radio 2), situados por su `anchor` o por una
-  // escena realizada que sea un tile. El place anclado a ESTE tile no es
-  // "cercano": es lo que hay que construir aquí, y viaja aparte en `place`.
-  const nearby: NonNullable<LlmContext["generate_tile"]>["nearby_places"] = [];
-  let place: NonNullable<LlmContext["generate_tile"]>["place"];
+  // escena realizada que sea un tile. Lo anclado a ESTE tile no es
+  // "cercano": uno es lo que hay que construir aquí (`place`) y los demás
+  // ya tienen su huella aquí (`anchored_places`), con su rect para que el
+  // motor los construya dentro y no sobre una geometría que ya no existe.
+  type GenTile = NonNullable<LlmContext["generate_tile"]>;
+  const nearby: GenTile["nearby_places"] = [];
+  const anclados: GenTile["anchored_places"] = [];
+  let place: GenTile["place"];
   for (const p of Object.values(ctx.narrative.worldMap.map.places)) {
+    const rect = p.anchor?.rect ? { rect: p.anchor.rect } : {};
     const comoLugar = {
       id: p.id,
       name: p.name,
       kind: p.kind,
       description: p.description,
       attrs: p.attrs,
+      ...rect,
     };
     if (p.id === placeId) {
       place = comoLugar;
@@ -84,7 +91,8 @@ export function buildGenerateTileCtx(
     const coord: TileCoord | undefined = p.anchor ?? realizedTile;
     if (!coord) continue;
     if (coord.tx === tx && coord.ty === ty) {
-      if (placeId === undefined) place ??= comoLugar;
+      if (placeId === undefined && place === undefined) place = comoLugar;
+      else anclados.push({ id: p.id, name: p.name, kind: p.kind, description: p.description, ...rect });
       continue;
     }
     if (Math.abs(coord.tx - tx) <= 2 && Math.abs(coord.ty - ty) <= 2) {
@@ -99,6 +107,7 @@ export function buildGenerateTileCtx(
     // El jugador entra al tile nuevo por el borde OPUESTO al que cruza.
     entry: approachEdge ? { edge: oppositeEdge(approachEdge) } : undefined,
     ...(place ? { place } : {}),
+    anchored_places: anclados,
     nearby_places: nearby,
   };
 }
@@ -398,24 +407,10 @@ export async function activateByPosition(
   }
 
   // Place anclado que contiene la posición (rect en celdas del tile; sin
-  // rect = todo el tile). El más específico (con rect) gana.
+  // rect = todo el tile). Entre rects anidados gana el más pequeño.
   const col = Math.floor((x - rect.minX) / TILE_MPC);
   const row = Math.floor((z - rect.minZ) / TILE_MPC);
-  let placeId: string | null = null;
-  let hasRect = false;
-  for (const place of Object.values(ctx.narrative.worldMap.map.places)) {
-    const a = place.anchor;
-    if (!a || a.tx !== t.tx || a.ty !== t.ty) continue;
-    if (a.rect) {
-      const [c0, r0, w, h] = a.rect;
-      if (col >= c0 && col < c0 + w && row >= r0 && row < r0 + h) {
-        placeId = place.id;
-        hasRect = true;
-      }
-    } else if (!hasRect && placeId === null) {
-      placeId = place.id;
-    }
-  }
+  const placeId = lugarEnLaCelda(Object.values(ctx.narrative.worldMap.map.places), t, col, row);
 
   if (placeId && placeId !== ctx.posTracking.placeId) {
     const prev = ctx.narrative.worldMap.serialize().active_place_id;

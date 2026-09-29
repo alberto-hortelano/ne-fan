@@ -8,6 +8,7 @@ import { TILE_CELLS } from '@nefan/core/contracts/world-map-schema';
 import { validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene, validateAnchor } from './validators.js';
 import { ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
+import { rechazo } from './rechazo.js';
 import { bridgeGet, bridgePost, postProgress, setActiveSession, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 import type { VisionRequestMsg } from './protocol.js';
 
@@ -336,7 +337,7 @@ into context:
     async ({ room_data }) => {
       try {
         if (!currentRequestId) {
-          return { content: [{ type: 'text', text: 'No pending request. Call narrative_listen first.' }], isError: true };
+          return rechazo('sin_peticion', 'No pending request. Call narrative_listen first.', { kind: currentKind });
         }
 
         const parsed = JSON.parse(room_data);
@@ -350,10 +351,7 @@ into context:
         if (kind === 'narrative_event') {
           const check = validateNarrativeReaction(parsed);
           if (!check.ok) {
-            return {
-              content: [{ type: 'text', text: `Invalid consequences — fix the shape and call narrative_respond again: ${check.error}` }],
-              isError: true,
-            };
+            return rechazo('consequences', `Invalid consequences — fix the shape and call narrative_respond again: ${check.error}`, { kind, req: currentRequestId });
           }
         }
         // FAIL-LOUD de volumes/ground de una escena: si algo está mal NO se
@@ -371,15 +369,13 @@ into context:
               if (ent?.kind !== 'npc') continue;
               const ref = ent.style_ref;
               if (typeof ref === 'string' && ref && !currentCharacterRefIds.includes(ref)) {
-                return {
-                  content: [{
-                    type: 'text',
-                    text: `Invalid style_ref "${ref}" on npc "${String(ent.id ?? '?')}" — it must be one ` +
-                      `of the ids in world.style_refs.characters (${currentCharacterRefIds.join(', ')}). ` +
-                      `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
-                  }],
-                  isError: true,
-                };
+                return rechazo(
+                  'style_ref',
+                  `Invalid style_ref "${ref}" on npc "${String(ent.id ?? '?')}" — it must be one ` +
+                    `of the ids in world.style_refs.characters (${currentCharacterRefIds.join(', ')}). ` +
+                    `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
+                  { kind, req: currentRequestId },
+                );
               }
             }
           }
@@ -410,47 +406,37 @@ into context:
               }
             }
             if (declared.length > 0 && currentFpsFaceRefIds === null) {
-              return {
-                content: [{
-                  type: 'text',
-                  text: `Invalid surface_ref on volume "${declared[0].vol}" — this style pack declares ` +
-                    `no fps face references (world.style_refs.fps_faces is absent): remove every ` +
-                    `surface_ref and call narrative_respond again (do NOT drop the rest of the scene).`,
-                }],
-                isError: true,
-              };
+              return rechazo(
+                'surface_ref_sin_catalogo',
+                `Invalid surface_ref on volume "${declared[0].vol}" — this style pack declares ` +
+                  `no fps face references (world.style_refs.fps_faces is absent): remove every ` +
+                  `surface_ref and call narrative_respond again (do NOT drop the rest of the scene).`,
+                { kind, req: currentRequestId },
+              );
             }
             const bad = currentFpsFaceRefIds === null
               ? undefined
               : declared.find((d) => !currentFpsFaceRefIds!.includes(d.ref));
             if (bad) {
-              return {
-                content: [{
-                  type: 'text',
-                  text: `Invalid surface_ref "${bad.ref}" on volume "${bad.vol}" — it must be one of ` +
-                    `the ids in world.style_refs.fps_faces (${currentFpsFaceRefIds!.join(', ')}). ` +
-                    `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
-                }],
-                isError: true,
-              };
+              return rechazo(
+                'surface_ref',
+                `Invalid surface_ref "${bad.ref}" on volume "${bad.vol}" — it must be one of ` +
+                  `the ids in world.style_refs.fps_faces (${currentFpsFaceRefIds!.join(', ')}). ` +
+                  `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
+                { kind, req: currentRequestId },
+              );
             }
           }
           if (scene.volumes !== undefined) {
             const check = validateVolumes(scene.volumes);
             if (!check.ok) {
-              return {
-                content: [{ type: 'text', text: `Invalid volumes — fix them and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}` }],
-                isError: true,
-              };
+              return rechazo('volumes', `Invalid volumes — fix them and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}`, { kind, req: currentRequestId });
             }
           }
           if (scene.ground !== undefined) {
             const check = validateGroundFeatures(scene.ground);
             if (!check.ok) {
-              return {
-                content: [{ type: 'text', text: `Invalid ground — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}` }],
-                isError: true,
-              };
+              return rechazo('ground', `Invalid ground — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}`, { kind, req: currentRequestId });
             }
           }
           // Gate ESTRUCTURAL del top-level (entities, tile/biome,
@@ -460,10 +446,7 @@ into context:
           // jugabilidad la valida /scene/validate más abajo.
           const structural = validateFormatDScene(scene);
           if (!structural.ok) {
-            return {
-              content: [{ type: 'text', text: `Invalid scene shape — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${structural.error}` }],
-              isError: true,
-            };
+            return rechazo('forma_escena', `Invalid scene shape — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${structural.error}`, { kind, req: currentRequestId });
           }
         }
         if (kind === 'develop_world') {
@@ -491,10 +474,7 @@ into context:
           const brief = (parsed as { world_brief?: string }).world_brief ?? '';
           if (brief.length < 400) errs.push(`world_brief too short (${brief.length} chars, aim ~1200)`);
           if (errs.length) {
-            return {
-              content: [{ type: 'text', text: `Invalid develop_world response — fix and call narrative_respond again: ${errs.join(' · ')}` }],
-              isError: true,
-            };
+            return rechazo('develop_world', `Invalid develop_world response — fix and call narrative_respond again: ${errs.join(' · ')}`, { kind, req: currentRequestId });
           }
         }
         // Visión de armas: antes NO se validaba (el kind pasaba directo a
@@ -504,19 +484,13 @@ into context:
         if (kind === 'weapon_orient') {
           const check = validateWeaponOrient(parsed);
           if (!check.ok) {
-            return {
-              content: [{ type: 'text', text: `Invalid weapon orientation — fix and call narrative_respond again: ${check.error}` }],
-              isError: true,
-            };
+            return rechazo('weapon_orient', `Invalid weapon orientation — fix and call narrative_respond again: ${check.error}`, { kind, req: currentRequestId });
           }
         }
         if (kind === 'weapon_verify') {
           const check = validateWeaponVerify(parsed);
           if (!check.ok) {
-            return {
-              content: [{ type: 'text', text: `Invalid weapon verification — fix and call narrative_respond again: ${check.error}` }],
-              isError: true,
-            };
+            return rechazo('weapon_verify', `Invalid weapon verification — fix and call narrative_respond again: ${check.error}`, { kind, req: currentRequestId });
           }
         }
         // Pre-flight de jugabilidad para escenas: el bridge valida con
@@ -542,7 +516,7 @@ into context:
                 ...v.errors.map((e) => `- ${e}`),
               ];
               if (v.warnings?.length) lines.push('Warnings:', ...v.warnings.map((w) => `- ${w}`));
-              return { content: [{ type: 'text', text: lines.join('\n') }], isError: true };
+              return rechazo('injugable', lines.join('\n'), { kind, req: currentRequestId });
             }
             // Escena aceptada: warnings y utilización de presupuestos VUELVEN
             // al motor (antes iban a stderr y el modelo solo veía "Scene
@@ -588,7 +562,7 @@ into context:
         bridge.sendResponse(reqId, parsed);
         return { content: [{ type: 'text', text: `Scene sent for request ${reqId}${sceneReport}` }] };
       } catch (e) {
-        return { content: [{ type: 'text', text: (e as Error).message }], isError: true };
+        return rechazo('excepcion', (e as Error).message, { kind: currentKind, req: currentRequestId });
       }
     },
   );
@@ -704,10 +678,15 @@ into context:
       }).optional().describe(
         'Tile of the continuous plane where this place LIVES, optionally ' +
         'bounded to a cell rect [col,row,w,h] inside the tile: whole cells of ' +
-        `0.5 m, col,row >= 0, w,h >= 1, col+w <= ${TILE_CELLS}, row+h <= ${TILE_CELLS}. The bridge ` +
-        'activates the place (and fires its triggers) when the player steps ' +
-        'into the anchor, and a player travelling back to the place appears ' +
-        'inside the rect (without rect: at the centre of the tile).'),
+        `0.5 m, col,row >= 0, w,h >= 1, col+w <= ${TILE_CELLS}, row+h <= ${TILE_CELLS}. ` +
+        'The rect is the place\'s FOOTPRINT (built-up area of a settlement, a ' +
+        'building and its yard, a landmark and its ground), not a landing spot: ' +
+        'the bridge activates the place (and fires its triggers) while the ' +
+        'player stands inside it — where rects overlap, the smallest wins — and ' +
+        'a player travelling to the place appears at a free spot near the rect ' +
+        'centre (without rect: the whole tile, centre of the tile). While ' +
+        'generating the tile of generate_tile.place, call this BEFORE ' +
+        'narrative_respond: the player is placed the moment the tile is sent.'),
     },
     async ({ id, kind, parent_id, name, description, approx_position, approx_radius, attrs_json, anchor }) => {
       // Pre-flight con el zod del bridge (una sola fuente de reglas, #465):
@@ -715,7 +694,7 @@ into context:
       if (anchor !== undefined) {
         const check = validateAnchor(anchor);
         if (!check.ok) {
-          return { content: [{ type: 'text', text: `anchor inválido: ${check.error}` }], isError: true };
+          return rechazo('anchor', `anchor inválido: ${check.error}`, { kind: 'map_upsert_place' });
         }
       }
       let attrs: Record<string, unknown> | undefined;
@@ -723,7 +702,7 @@ into context:
         try {
           attrs = JSON.parse(attrs_json);
         } catch {
-          return { content: [{ type: 'text', text: 'attrs_json is not valid JSON' }], isError: true };
+          return rechazo('attrs_json', 'attrs_json is not valid JSON', { kind: 'map_upsert_place' });
         }
       }
       return reportBridge(await bridgePost('/map/place', {
