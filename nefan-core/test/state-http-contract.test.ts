@@ -13,6 +13,7 @@ import type { AddressInfo } from "node:net";
 
 import { escenaExpandidaDePrueba, makeNarrativeState } from "./helpers.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
+import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
@@ -44,7 +45,7 @@ before(async () => {
     gatewayUrl: "ws://127.0.0.1:0",
     port: 0,
     narrative,
-    npcDirector: new NpcDirector(narrative),
+    npcDirector: new NpcDirector(narrative, createSimCollisionProvider(narrative)),
     gamesDir: fileURLToPath(new URL("../data/games", import.meta.url)),
     sessionStorage: storage,
     onMutation: () => {},

@@ -12,6 +12,8 @@
 import type { NarrativeState } from "../narrative/narrative-state.js";
 import type { EntityRecord } from "../narrative/types.js";
 import { resolvePlaceTarget } from "./place-target.js";
+import { sitioParaAparecer, type SueloSolido } from "../simulation/salida-del-solido.js";
+import { NPC_RADIUS_M } from "../scene/terrain-collision.js";
 
 export interface NpcTransit {
   /** Destination place id. */
@@ -72,7 +74,12 @@ function placeInfo(npc: EntityRecord): NpcPlaceInfo {
 }
 
 export class NpcDirector {
-  constructor(private state: NarrativeState) {}
+  /** El `suelo` es OBLIGATORIO y no un parámetro con defecto: `arriveNpc`
+   *  teletransporta, y sin preguntar al suelo lo dejaba en el centro del
+   *  `anchor.rect`, que en un edificio del plan es macizo (#646). Un test o un
+   *  llamante nuevo que lo omitiera volvería a ese centro en verde; así no
+   *  compila. */
+  constructor(private state: NarrativeState, private suelo: SueloSolido) {}
 
   /** Command an NPC to travel to a place. Marks it in_transit; arrival is
    *  declared later by the narrative engine via arriveNpc. */
@@ -94,25 +101,32 @@ export class NpcDirector {
     return { ok: true, info: placeInfo(npc) };
   }
 
-  /** Declare that an in-transit NPC has arrived at its destination. */
+  /** Declare that an in-transit NPC has arrived at its destination.
+   *
+   *  Si el sim no lo trajo andando (sigue a más de 3 m del centro del lugar),
+   *  salta al SITIO LIBRE más cercano a ese centro —el mismo `sitioParaAparecer`
+   *  que usa el jugador al viajar—, no al centro crudo: el centro de un
+   *  edificio del plan es macizo, y ahí el NPC quedaba enterrado (#618, #646).
+   *  Si no hay sitio, falla SIN tocar nada: el candidato crudo es justo el
+   *  punto del que no se sale. */
   arriveNpc(npcId: string): NpcDirectorResult {
     const npc = this.state.getEntity(npcId);
     if (!npc) return { ok: false, error: `npc "${npcId}" not found` };
     const transit = readTransit(npc);
     if (!transit) return { ok: false, error: `npc "${npcId}" is not in transit` };
-    npc.data.current_place_id = transit.to;
-    npc.data.in_transit = null;
-    // Coherencia física del viaje narrative-paced: si el destino resuelve a
-    // coordenadas y el NPC sigue lejos (el sim NO lo llevó andando), su
-    // posición salta al place. Si llegó a pie (npc_reached_place), ya está
-    // encima y no hay salto visible.
+    // Se calcula ANTES de mutar: un fallo no puede dejar medio llegado al NPC.
+    let salto: { x: number; z: number } | null = null;
     const target = resolvePlaceTarget(this.state, transit.to);
-    if (target) {
-      const dist = Math.hypot(npc.position[0] - target.x, npc.position[2] - target.z);
-      if (dist > 3) {
-        npc.position = [target.x, npc.position[1], target.z];
+    if (target && Math.hypot(npc.position[0] - target.x, npc.position[2] - target.z) > 3) {
+      salto = sitioParaAparecer(target, NPC_RADIUS_M, this.suelo);
+      if (!salto) {
+        const nombre = this.state.worldMap.get(transit.to)?.name ?? transit.to;
+        return { ok: false, error: `no hay sitio libre para "${npcId}" en "${nombre}"` };
       }
     }
+    npc.data.current_place_id = transit.to;
+    npc.data.in_transit = null;
+    if (salto) npc.position = [salto.x, npc.position[1], salto.z];
     return { ok: true, info: placeInfo(npc) };
   }
 

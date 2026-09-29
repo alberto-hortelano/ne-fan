@@ -889,20 +889,24 @@ E, **#583**): el primer guion del banco que afirma que **un NPC no atraviesa nad
 `grep` de asertos sobre conducta de NPC contra geometría era **cero** — lo que sujetaba el arreglo
 eran los tests de core y una sonda en el scratchpad de quien lo escribió. No abre navegador y no
 gasta: el defecto vive en el SERVIDOR (el sim mueve a los NPCs en el bridge), así que monta el
-cableado real de `bridge/context.ts` sobre `nefan-core/dist` y conduce el sim, no el cliente. Seis
+cableado real de `bridge/context.ts` sobre `nefan-core/dist` y conduce el sim, no el cliente. Nueve
 bloques en verde o rojo: el **control** (sin caja, el aldeano llega), que la caja del motor **frena**
 (penetración máxima 0,000 m donde antes cruzaba con 3,500), que la geometría del **tile no se
 atraviesa nunca** ni estando encajonado, que el **escape existe y se declara** con NPC y caja, que al
 que le cae una caja encima **no se le encierra** (consulta) y que **se le SACA** (sistema): sale
 andando en 2,5 s por la cara más cercana. El bloque 6 nació como registro de esa misma revisión —290
 s de 300 dentro del carro, con todo lo demás en verde— y es hoy el candado de que «sale solo» no se
-vuelva a dar por bueno. **Registra sin ponerlo rojo** lo que esto NO arregla: el steering por
+vuelva a dar por bueno. Los bloques 7-9 (tanda BL, **#618** pieza B) eran el tercer `⚠ HALLAZGO`: al
+que NO anda —sin directiva con una caja más ancha que su paseo, en `hold`, o ya llegado a su meta— no
+le sacaba nadie (0,00 m en 120 s), porque la salida vivía dentro de `stepTowards`. Hoy vive en la
+cabeza de `move()` y los tres son aserto, con el «luego pasea» del 7 sujetando que su `home` salga
+con él. **Registra sin ponerlo rojo** lo que esto NO arregla: el steering por
 deflexión no rodea un obstáculo centrado en su camino, y no es cosa de esta frontera — el mismo cajón
 de 6 m en el mismo centro da `x máx −3,00` venga del TILE o de RUNTIME. Es el `TODO(A*)` de `npc-behavior.ts` y **hoy no tiene issue**: la decisión de abrírselo es del usuario (H-1 de la QA de #583).
 **PROBADO EN NEGATIVO**, un sabotaje por vez y recompilando `dist`: el bridge sin fuente de cajas →
 7 rojos; el escape aceptando `de:"tile"` → 2; sin la pasada del escape → 3; `cajaBloquea` encerrando
-al de dentro → 1; y sin la consulta de salida en `stepTowards` → el bloque 6 vuelve a imprimir «siguió
-dentro 290 s de 300». Unos 40 s, sin navegador y sin créditos:
+al de dentro → 1; y sin la consulta de salida → el bloque 6 vuelve a imprimir «siguió
+dentro 290 s de 300» y caen el 7, el 8 y el 9. Unos 40 s, sin navegador y sin créditos:
 
 ```bash
 node qa/el-mundo-solido-tambien-para-el-npc.mjs   # sale 1 si un NPC atraviesa algo o se queda dentro

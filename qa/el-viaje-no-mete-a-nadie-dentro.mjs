@@ -40,6 +40,11 @@
  *       ni escena ni spawn. Un spawn mudo —escena nueva, `spawn: undefined`—
  *       deja al jugador en el tile viejo mirando el de otro sitio sin que nada
  *       se lo diga, que es el cuelgue del #210 con otro traje.
+ *    5. EL NPC TAMPOCO (tanda BL, #618 / #646): `npc_arrive` teletransporta al
+ *       NPC que el sim no trajo andando, y lo dejaba en el MISMO centro crudo.
+ *       Con `NpcDirector` construido como en `ws-server.ts` —con el proveedor
+ *       de colisión de la sesión— los 13 caen libres; y tras el salto el NPC
+ *       pasea alrededor de donde llegó, no vuelve andando a donde estaba.
  *    4. EL OTRO CAMINO DEL SPAWN: el viaje que GENERA el tile (`viaje.sitio`), con
  *       el motor afinando el `anchor.rect` sobre el edificio que acaba de
  *       declarar. Nació de **H2 de la QA de G2**: los bloques 1-3 solo montan
@@ -63,7 +68,9 @@
  *      juzga el centro CRUDO de `resolvePlaceTarget` —la regla de ayer,
  *      escrita aquí y no en el árbol— en vez del spawn que difunde el bridge
  *      → **16 rojos, exit 1**: los 13 edificios, los dos agregados y el del
- *      bloque 4 (el tile recién generado).
+ *      bloque 4 (el tile recién generado). Desde la tanda BL, también los 13
+ *      NPC del bloque 5 y su agregado, porque ahí juzga el centro crudo igual:
+ *      **30 rojos** en total (medido en la tanda BL).
  *
  *  Y contra el ÁRBOL, revirtiendo cada sitio del bridge por separado a la
  *  regla de ayer (escrita para que compile, porque la cruda ya no compila:
@@ -101,6 +108,9 @@ try {
     MapTriggerEvaluator: (await import(`${DIST}/src/world-map/map-triggers.js`)).MapTriggerEvaluator,
     SceneGenQueue: (await import(`${DIST}/bridge/scene-gen-queue.js`)).SceneGenQueue,
     createWorldClaim: (await import(`${DIST}/bridge/world-claim.js`)).createWorldClaim,
+    NpcDirector: (await import(`${DIST}/src/world-map/npc-director.js`)).NpcDirector,
+    createSessionNpcBehavior: (await import(`${DIST}/bridge/context.js`)).createSessionNpcBehavior,
+    NPC_RADIUS_M: (await import(`${DIST}/src/scene/terrain-collision.js`)).NPC_RADIUS_M,
   };
 } catch (err) {
   console.error(`No se pudo leer nefan-core/dist: ${err?.message ?? err}`);
@@ -111,6 +121,7 @@ const {
   NarrativeState, MemorySessionStorage, expandScenePrimitives, createSimCollisionProvider,
   handlePlayerEnteredPlace, resolvePlaceTarget, sitioParaAparecer, PLAYER_RADIUS_M,
   GameStore, GameSimulation, loadConfig, MapTriggerEvaluator, SceneGenQueue, createWorldClaim,
+  NpcDirector, createSessionNpcBehavior, NPC_RADIUS_M,
 } = mod;
 
 /** Espera a que la cola de generación entregue algo. El viaje a un lugar sin
@@ -400,6 +411,75 @@ console.log("\n4 · EL VIAJE QUE GENERA EL TILE TAMPOCO DEJA A NADIE DENTRO (`vi
     spawn ? `(${spawn.x.toFixed(2)}, ${spawn.z.toFixed(2)}) ${libre ? "libre" : "OCUPADO"}` : "sin spawn");
   ok(d <= TOPE_DESPLAZAMIENTO_M, `a ≤ ${TOPE_DESPLAZAMIENTO_M} m del centro: la puerta del lugar`,
     Number.isFinite(d) ? `${d.toFixed(2)} m` : "sin medida");
+}
+
+
+// ── 5 · El NPC tampoco: `npc_arrive` ────────────────────────────────────────
+
+console.log("\n5 · EL NPC QUE LLEGA POR `npc_arrive` TAMPOCO CAE DENTRO (tanda BL, #618 / #646)");
+{
+  // `NpcDirector.arriveNpc` es el otro teletransporte del juego: el motor
+  // declara que un NPC en tránsito llegó, y si el sim no lo trajo andando salta
+  // al lugar. Saltaba al centro crudo, o sea DENTRO de los 13 edificios, y un
+  // NPC quieto dentro de un sólido no sale nunca. Se construye el director
+  // COMO `ws-server.ts`, con el proveedor de colisión de la sesión.
+  let libres = 0;
+  let total5 = 0;
+  for (const fixture of FIXTURES) {
+    for (const entity of edificiosDe(fixture)) {
+      total5++;
+      const narrative = sesionConElLugarEn(fixture, entity);
+      const provider = createSimCollisionProvider(narrative);
+      const director = new NpcDirector(narrative, provider);
+      narrative.recordEntitySpawned("viajero", "npc", "tile_0_0", [-30, 0, -30], { name: "Viajero" });
+      director.moveNpcToPlace("viajero", "destino");
+      const res = director.arriveNpc("viajero");
+      const centro = resolvePlaceTarget(narrative, "destino");
+      const pos = narrative.getEntity("viajero").position;
+      const donde = SIN_SITIO ? centro : { x: pos[0], z: pos[2] };
+      const libre = res.ok && !provider.ocupado(donde.x, donde.z, NPC_RADIUS_M);
+      const d = Math.hypot(donde.x - centro.x, donde.z - centro.z);
+      if (libre && d <= TOPE_DESPLAZAMIENTO_M) libres++;
+      ok(libre && d <= TOPE_DESPLAZAMIENTO_M, `${fixture} · ${entity.id} · el NPC`,
+        res.ok ? `(${donde.x.toFixed(2)}, ${donde.z.toFixed(2)}) ${libre ? "libre" : "OCUPADO"}, ${d.toFixed(2)} m`
+          : `arriveNpc falló: ${res.error}`);
+    }
+  }
+  ok(libres === total5, `los ${total5} NPC que llegan por \`npc_arrive\` caen en sitio libre`,
+    `${libres} de ${total5}`);
+
+  // Y SU CASA ES DONDE LLEGÓ: el sim ya lo tenía (re-sync de `npcSync`, que
+  // conserva el runtime) y su `home` era el sitio de partida. Medido antes de
+  // la tanda BL: 58 m de vuelta andando en 60 s.
+  const entity = edificiosDe("robledo_tile")[0];
+  const narrative = sesionConElLugarEn("robledo_tile", entity);
+  const provider = createSimCollisionProvider(narrative);
+  const director = new NpcDirector(narrative, provider);
+  const sys = createSessionNpcBehavior({ narrative, simCollision: provider }, undefined);
+  narrative.recordEntitySpawned("viajero", "npc", "tile_0_0", [-24, 0, -24], { name: "Viajero", role: "peasant" });
+  const npc = narrative.getEntity("viajero");
+  sys.addNpc(npc);
+  const ctxNpc = { playerPos: { x: 1000, y: 0, z: 1000 }, combatEvents: [], combatantPositions: new Map() };
+  const warn = console.warn;
+  console.warn = () => {};
+  let lejos = 0;
+  let llego;
+  try {
+    for (let i = 0; i < 5 * 60; i++) sys.tick(1 / 60, ctxNpc);
+    director.moveNpcToPlace("viajero", "destino");
+    director.arriveNpc("viajero");
+    sys.addNpc(npc);
+    llego = { x: npc.position[0], z: npc.position[2] };
+    for (let i = 0; i < 60 * 60; i++) {
+      sys.tick(1 / 60, ctxNpc);
+      const p = sys.states()[0].pos;
+      lejos = Math.max(lejos, Math.hypot(p.x - llego.x, p.z - llego.z));
+    }
+  } finally {
+    console.warn = warn;
+  }
+  ok(lejos <= 5 + 0.5, "y tras el salto pasea alrededor de donde llegó, no vuelve a donde estaba",
+    `a lo sumo ${lejos.toFixed(2)} m de su llegada en 60 s (paseo del campesino: 5 m)`);
 }
 
 console.log(`\n${rojos === 0 ? "✔ el viaje no mete a nadie dentro" : `✖ ${rojos} aserto(s) en rojo`}`);

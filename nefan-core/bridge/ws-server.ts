@@ -84,8 +84,10 @@ const store = new GameStore();
 const sim = new GameSimulation(config, store, Date.now());
 const sessionStorage = new FsSessionStorage(SAVES_DIR);
 const narrative = new NarrativeState(sessionStorage);
-const npcDirector = new NpcDirector(narrative);
 const simCollision = createSimCollisionProvider(narrative);
+// Tras `simCollision` y no antes: `npc_arrive` pregunta al suelo dónde soltar
+// al NPC (#618), con la misma colisión que el sim.
+const npcDirector = new NpcDirector(narrative, simCollision);
 
 // Players currently subscribed to narrative events (broadcast targets).
 const narrativeSubscribers = new Set<WebSocket>();

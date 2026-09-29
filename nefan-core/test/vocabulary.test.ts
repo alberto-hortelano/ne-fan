@@ -19,6 +19,7 @@ import {
 } from "../src/games/vocabulary.js";
 import { createStateHttpServer } from "../bridge/state-http-server.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
+import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { routeMessage } from "../bridge/router.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type { LlmContext } from "../src/narrative/types.js";
@@ -103,7 +104,7 @@ describe("POST /vocabulary (State API)", () => {
     gatewayUrl: "ws://127.0.0.1:0",
       port: 0,
       narrative,
-      npcDirector: new NpcDirector(narrative),
+      npcDirector: new NpcDirector(narrative, createSimCollisionProvider(narrative)),
       gamesDir,
       onMutation: () => {
         mutations++;
@@ -148,7 +149,7 @@ describe("POST /vocabulary (State API)", () => {
     gatewayUrl: "ws://127.0.0.1:0",
       port: 0,
       narrative,
-      npcDirector: new NpcDirector(narrative),
+      npcDirector: new NpcDirector(narrative, createSimCollisionProvider(narrative)),
       gamesDir,
       onMutation: () => {},
       onProgress: () => {},

@@ -5,6 +5,9 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { resolvePlaceTarget } from "../src/world-map/place-target.js";
+import { createSimCollisionProvider } from "../bridge/sim-collision.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
+import { NPC_RADIUS_M } from "../src/scene/terrain-collision.js";
 
 function makeSetup() {
   const s = new NarrativeState(new MemorySessionStorage());
@@ -17,7 +20,7 @@ function makeSetup() {
     name: "Boris",
     current_place_id: "robledo",
   });
-  const director = new NpcDirector(s);
+  const director = new NpcDirector(s, createSimCollisionProvider(s));
   return { s, director };
 }
 
@@ -68,14 +71,14 @@ describe("NpcDirector.arriveNpc", () => {
     const id = s1.startNewSession("g");
     s1.worldMap.upsertPlace({ id: "puerto", kind: "settlement", parent_id: "world", name: "Puerto" });
     s1.recordEntitySpawned("boris", "npc", "scene", [0, 0, 0], { name: "Boris", current_place_id: "world" });
-    const d1 = new NpcDirector(s1);
+    const d1 = new NpcDirector(s1, createSimCollisionProvider(s1));
     d1.moveNpcToPlace("boris", "puerto");
     d1.arriveNpc("boris");
     await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(id), true);
-    const info = new NpcDirector(s2).getNpcPlace("boris");
+    const info = new NpcDirector(s2, createSimCollisionProvider(s2)).getNpcPlace("boris");
     assert.equal(info?.current_place_id, "puerto");
     assert.equal(info?.in_transit, null);
   });
@@ -118,7 +121,7 @@ describe("NpcDirector.arriveNpc — teleport narrative-paced", () => {
       anchor: { tx: 0, ty: 0, rect: [64, 64, 4, 4] },
     });
     s.worldMap.upsertPlace({ id: "lejos", kind: "site", parent_id: "world", name: "Sin anchor" });
-    const director = new NpcDirector(s);
+    const director = new NpcDirector(s, createSimCollisionProvider(s));
 
     // Viaje narrative-paced: el NPC está a 20 m → teleport al centro.
     s.recordEntitySpawned("boris", "npc", "tile_0_0", [20, 0, 20], { name: "Boris" });
@@ -137,6 +140,59 @@ describe("NpcDirector.arriveNpc — teleport narrative-paced", () => {
     director.moveNpcToPlace("cleo", "lejos");
     director.arriveNpc("cleo");
     assert.deepEqual(s.getEntity("cleo")!.position, [7, 0, 7]);
+  });
+});
+
+/** EL SALTO NO ENTIERRA AL NPC (#618, mitad `npc_arrive` de #646). El centro
+ *  del `anchor.rect` de un lugar que es un edificio del plan es MACIZO: ahí el
+ *  NPC quedaba dentro, y un NPC quieto dentro de un sólido no sale. Se mide con
+ *  el proveedor de colisión de PRODUCCIÓN y una escena de tile de verdad, no
+ *  con un `ocupado` escrito aquí. */
+describe("NpcDirector.arriveNpc — el salto cae en sitio libre", () => {
+  /** Tile (0,0) con un edificio de 6 × 6 m (12 × 12 celdas desde la esquina
+   *  [60,60]) y el lugar anclado EXACTAMENTE sobre él: su centro es (1, 1). */
+  function conLaForjaEnMedio() {
+    const s = new NarrativeState(new MemorySessionStorage());
+    s.startNewSession("g");
+    s.recordSceneLoaded("tile_0_0", expandScenePrimitives({
+      tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", scene_description: "la forja", biome: "grass",
+      entities: [{ id: "forja", kind: "building", name: "forja", cell: [60, 60], footprint: [12, 12] }],
+    }));
+    s.worldMap.upsertPlace({
+      id: "forja", kind: "site", parent_id: "world", name: "La Forja",
+      anchor: { tx: 0, ty: 0, rect: [60, 60, 12, 12] },
+    });
+    s.recordEntitySpawned("boris", "npc", "tile_0_0", [20, 0, 20], { name: "Boris" });
+    return s;
+  }
+
+  it("salta al sitio LIBRE más cercano al centro del lugar, no al centro macizo", () => {
+    const s = conLaForjaEnMedio();
+    const suelo = createSimCollisionProvider(s);
+    const centro = resolvePlaceTarget(s, "forja")!;
+    assert.equal(suelo.ocupado(centro.x, centro.z, NPC_RADIUS_M), true,
+      "CONTROL: el centro del rect está ocupado — si no, esto no mide nada");
+    const director = new NpcDirector(s, suelo);
+    director.moveNpcToPlace("boris", "forja");
+    assert.equal(director.arriveNpc("boris").ok, true);
+    const [x, , z] = s.getEntity("boris")!.position;
+    assert.equal(suelo.ocupado(x, z, NPC_RADIUS_M), false, `cayó dentro de la forja: (${x}, ${z})`);
+    // Media huella (3 m) + el radio: la puerta de al lado, no el otro barrio.
+    const d = Math.hypot(x - centro.x, z - centro.z);
+    assert.ok(d <= 4, `a ≤ 4 m del centro: ${d.toFixed(2)} m`);
+  });
+
+  it("sin sitio libre falla DICIENDO dónde, y no toca nada", () => {
+    const s = conLaForjaEnMedio();
+    const director = new NpcDirector(s, { ocupado: () => true });
+    director.moveNpcToPlace("boris", "forja");
+    const res = director.arriveNpc("boris");
+    assert.equal(res.ok, false);
+    assert.match(res.error ?? "", /boris.*La Forja/);
+    const npc = s.getEntity("boris")!;
+    assert.deepEqual(npc.position, [20, 0, 20], "el candidato crudo es justo el punto del que no se sale");
+    assert.equal((npc.data.in_transit as { to?: string } | null)?.to, "forja", "sigue en tránsito");
+    assert.notEqual(npc.data.current_place_id, "forja", "y no ha llegado");
   });
 });
 

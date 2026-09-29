@@ -41,6 +41,7 @@ import type { AddressInfo } from "node:net";
 import { escenaExpandidaDePrueba, FIXTURE_GAMES, makeNarrativeState } from "./helpers.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
+import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
@@ -81,7 +82,7 @@ function levantar(opts: { conStorage: boolean; gamesDir: string }): Promise<Harn
     gatewayUrl: "ws://127.0.0.1:0",
     port: 0,
     narrative,
-    npcDirector: new NpcDirector(narrative),
+    npcDirector: new NpcDirector(narrative, createSimCollisionProvider(narrative)),
     gamesDir: opts.gamesDir,
     ...(opts.conStorage ? { sessionStorage: storage } : {}),
     onMutation: () => {
