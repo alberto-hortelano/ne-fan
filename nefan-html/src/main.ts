@@ -16,6 +16,8 @@ import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
 import { Frontera } from "@nefan-core/src/scene/frontera.js";
 import { crearFronteraEnPantalla } from "./ui/frontera-en-pantalla.js";
+import { accionDelCaido, atenderStatusDelDespertar, crearVeloDelDespertar } from "./ui/velo-del-despertar.js";
+import { elJugadorEsperaDespertar } from "@nefan-core/src/protocol/despertar-en-pantalla.js";
 import { crearFronteraDelJugador } from "./world/frontera-del-jugador.js";
 import { aplicarLoQueMandaElBridge } from "./world/lo-que-manda-el-bridge.js";
 import { MundoDelCliente } from "./world/mundo-del-cliente.js";
@@ -31,7 +33,7 @@ import { BASE_MODEL, CharacterSpriteManager } from "./renderer/character-sprites
 import { crearAspectoDelJugador } from "./renderer/aspecto-del-jugador.js";
 import { AnimacionDeEntidades } from "./renderer/animacion-de-entidades.js";
 import { BridgeClient } from "./net/bridge-client.js";
-import { NarrativeClient } from "./net/narrative-client.js";
+import { NarrativeClient, type NarrativeStatusListener } from "./net/narrative-client.js";
 import { serviceUrl } from "./net/service-urls.js";
 import { TitleScreen, type TitleAction } from "./ui/title-screen.js";
 import { crearPanelDePlugins } from "./ui/panel-de-plugins.js";
@@ -67,7 +69,6 @@ import {
   pasoDelJugador,
   velocidadDelJugador,
 } from "@nefan-core/src/simulation/paso-del-jugador.js";
-import { puntoDeReaparicion } from "@nefan-core/src/simulation/reaparicion.js";
 import { HablarConUnNpc } from "@nefan-core/src/simulation/hablar-con-un-npc.js";
 import {
   createGameClient,
@@ -75,6 +76,7 @@ import {
   type GameClient,
   type FrameResult,
 } from "./net/game-client.js";
+import { aplicarElDespertar } from "./net/frame-del-bridge.js";
 
 import { CONFIG } from "@nefan-core/src/config.js";
 /** Los números del jugador: velocidades, escala de arcade y alcance de la `E`.
@@ -252,6 +254,7 @@ const promptBar = new ActionBar(document.getElementById("interact-prompt") as HT
 /** Todo lo que el jugador ve del borde del mundo: el muro de niebla con su
  *  rótulo, la pregunta de sí/no y su silencio durante el diálogo (#515). */
 const fronteraEnPantalla = crearFronteraEnPantalla((edge) => fpsRenderer.setFrontierVeil(edge));
+const veloDelDespertar = crearVeloDelDespertar();
 /** El chip del cable: qué se lee cuando hay servidor de partida y qué cuando
  *  no (`ui/chip-de-conexion.ts`). El texto es suyo, no de aquí. */
 const chip = crearChipDeConexion();
@@ -337,7 +340,10 @@ const dialogoAbierto = (): boolean => conversacion.abierta() || plugins.abierto(
  *  `dialogoAbierto` de aquí arriba: una función que se evalúa cada vez no se
  *  puede desincronizar, porque no guarda nada. */
 const propuestaDeTileAbierta = (): boolean =>
-  !dialogoAbierto() && session.active && tileStore.hasGridTiles && frontier.propuesta !== null;
+  !dialogoAbierto() && !jugadorCaido() && session.active && tileStore.hasGridTiles && frontier.propuesta !== null;
+/** Caído (#613, QA S2 de BN): ni anda ni propone tiles — la Y de un caído GASTABA. Lo decide core. */
+const jugadorCaido = (): boolean => elJugadorEsperaDespertar({ playerHp: gameClient.jugadorEnCombate().health });
+const puedeMoverse = (): boolean => !dialogoAbierto() && !jugadorCaido();
 let input: InputProvider;
 try {
   input = inputRegistry.create(requestedInputId, { dialogoAbierto, propuestaDeTileAbierta });
@@ -523,18 +529,13 @@ fpsRenderer.setCollisionCellsProvider((tileKey) => {
 
 // --- Respawn ---
 
-/** R (one-shot del provider): revive al player si está muerto. La condición
- *  de negocio vive aquí; el provider solo transporta la intención. */
+/** R (one-shot del provider): revive al player si está muerto. DÓNDE se
+ *  vuelve lo decide el sim del bridge (#613) y llega en `result.reaparicion`;
+ *  el «Despiertas.» lo dice el panel de combate con `player_respawned`. */
 function handleRespawnRequest(): void {
   const p = gameClient?.jugadorEnCombate();
   if (!p || p.health > 0) return;
-  // DÓNDE se vuelve lo decide core (`puntoDeReaparicion`): aquí solo se le da
-  // la posición del cadáver.
-  const rp = puntoDeReaparicion(playerPos);
-  gameClient?.respawn(rp);
-  playerPos.x = rp.x;
-  playerPos.z = rp.z;
-  log("Respawned!");
+  gameClient?.respawn();
 }
 
 // --- Game Loop ---
@@ -591,13 +592,12 @@ function gameLoop(now: number): void {
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
   // generación de mundo: la frontera bloquea solo direccionalmente.
-  if (dialogoAbierto()) {
-    // El diálogo suspende la propuesta de tile: sus teclas Y/N quedan mudas.
+  if (!puedeMoverse()) {
+    // El diálogo (y estar caído) suspende la propuesta de tile: sus teclas Y/N quedan mudas.
     // Ya no hay que decírselo al proveedor — lo DERIVA él
     // (`propuestaDeTileAbierta`, #329) de la misma guarda que hay aquí.
     fronteraEnPantalla.callarDuranteElDialogo();
-  }
-  if (!dialogoAbierto()) {
+  } else {
     aplicarMirada();
 
     // El PASO: las reglas (marco relativo al facing, diagonal renormalizada,
@@ -644,9 +644,8 @@ function gameLoop(now: number): void {
   const saludo = hablar.frame(now, npcInRange, input.consumeInteract());
   promptBar.set([
     ...(saludo ? [{ ...saludo, invoke: () => input.queueInteract() }] : []),
-    ...(!eco.jugadorVivo
-      ? [{ id: "respawn", label: "reaparecer", key: "R", invoke: () => input.queueRespawn() }]
-      : []),
+    ...accionDelCaido(veloDelDespertar.frame(gameClient.jugadorEnCombate().health, session.id !== ""), () =>
+      input.queueRespawn()),
   ]);
 
   if (dialogoAbierto()) portrait.tick(now);
@@ -667,6 +666,9 @@ function gameLoop(now: number): void {
         attackRequested,
         attackType: attackRequested ? input.state.selectedAttack : undefined,
       });
+
+  // El punto de reaparición lo decide el sim (#613); se copia antes del siguiente input.
+  aplicarElDespertar(result, playerPos, (yaw) => mirada.ponYaw(yaw));
 
   // Lo que el jugador VE y LEE de lo que resolvió el sim: el aro del ataque,
   // las líneas del registro y si sigue de pie. Devuelve la animación de una vez
@@ -872,13 +874,7 @@ travelPanel.onTravel = (placeId) => {
 };
 
 narrativeClient.onStatusDeLaPartida((status) => {
-  // ── Latido de progreso del motor narrativo ────────────────────────────
-  // Un paso observable (petición recogida, tool de estado llamada): el
-  // loader deja de ser una espera muda de minutos y narra qué está pasando.
-  if (status.phase === "progress") {
-    if (status.message) muro.progreso(status.message);
-    return;
-  }
+  if (atendidoAntesQueNada(status)) return;
 
   // Core decide el desenlace del viaje, solo con un status SUYO (#737, #742).
   // `viajeAbierto` se lee ANTES de cerrarlo: el muro y el rótulo lo necesitan.
@@ -966,6 +962,24 @@ narrativeClient.onStatusDeLaPartida((status) => {
 narrativeClient.onFalloAjeno((fallo) => {
   pintarFalloDelMotor(fallo, travelLedger.viajeAbierto());
 });
+
+/** Lo que un status de la partida resuelve ANTES de mirar viajes y tiles: el
+ *  latido del motor (el loader narra qué está pasando) y el despertar (#613,
+ *  `atenderStatusDelDespertar`). Devuelve si ya está atendido. */
+function atendidoAntesQueNada(status: Parameters<NarrativeStatusListener>[0]): boolean {
+  if (status.phase === "progress") {
+    if (status.message) muro.progreso(status.message);
+    return true;
+  }
+  if (status.kind !== "despertar") return false;
+  atenderStatusDelDespertar(status, {
+    velo: veloDelDespertar,
+    cerrarViaje: (motivo) => travelLedger.fallo(motivo),
+    quitarMuroDeEspera: () => (muro.enPantalla() === "espera" ? muro.ocultar() : undefined),
+    pintarFallo: () => pintarFalloDelMotor(status, null),
+  });
+  return true;
+}
 
 /** Enseña un fallo del motor donde toque. El TÍTULO ya no se decide aquí:
  *  `main.ts` pintaba «Error al generar el mundo» y «Error al generar la
@@ -1227,6 +1241,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         uiTheme: res.uiTheme ?? BASE_UI_THEME,
         plugins: res.state.plugins,
       });
+      gameClient.empezarPartida(res.state.player.health); // QA H6 de BN: no 100 hasta el primer frame
       log(`Reanudada: ${res.state.session_id}`);
       // El mundo anterior ya se fue —lo vació la faceta `mundo` del
       // `session.enter` de arriba— y por eso se puede vestir al jugador aquí:

@@ -39,6 +39,7 @@ import {
   sinPartidaNoHayPlugins,
   vaciarPluginsActivos,
 } from "../plugins-activos.js";
+import { jugadorCaido, pedirDespertar } from "./despertar.js";
 import {
   broadcastScene,
   createSessionNpcBehavior,
@@ -277,6 +278,10 @@ function reseedSimForSession(
   al: "empezar" | "reanudar",
 ): void {
   ctx.sim.reset();
+  // El despertar en vuelo era del sim de antes (#613): su respuesta, si llega,
+  // ya no es de este jugador y se tira por `id`. El de ESTA partida, si vuelve
+  // caído, lo pide `handleSessionEntered` cuando el cliente ya ha entrado.
+  ctx.despertar.enVuelo = null;
   ctx.sim.setCombatSystem(combatRegistry.create(combatId, ctx.combatConfig));
   ctx.sim.setNpcBehavior(createSessionNpcBehavior(ctx, npcBehaviorId));
   const hp = ctx.narrative.player.health;
@@ -288,6 +293,10 @@ function reseedSimForSession(
       ctx.store.state.player.weapon_id,
       { x: pos[0], y: pos[1], z: pos[2] },
       { x: 0, y: 0, z: -1 },
+      // El MÁXIMO aparte de la vida (QA H2 de BN): sin él `createCombatant` lo
+      // igualaba a la vida guardada, y un jugador reanudado a 79 tenía 79 de
+      // máximo — la poción no le curaba nada y R le levantaba a 79.
+      ctx.store.state.player.max_hp,
     ),
   );
   ctx.store.dispatch("player_respawned", { hp, pos: [...pos] });
@@ -789,6 +798,7 @@ export async function handleResumeSession(
  *  se dicen en el log, no en silencio. */
 export async function handleSessionEntered(
   msg: SessionEnteredMessage,
+  ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
   if (msg.sessionId !== ctx.narrative.session_id) {
@@ -802,6 +812,11 @@ export async function handleSessionEntered(
     );
     return;
   }
+  // Entrar en una partida con el jugador CAÍDO (#613): el save guardó la
+  // muerte y el motor no llegó a decidir dónde despertaba —se cerró el juego
+  // esperando—. Se le vuelve a preguntar AHORA, y no al reanudar: aquí el
+  // cliente ya tiene la partida aplicada y su frame con el punto no se tira.
+  if (jugadorCaido(ctx) && ctx.world.kind === "session" && ctx.world.canDrive(ws)) pedirDespertar(ctx, ws);
   if (ctx.narrative.enDisco) return; // resume: la partida ya existía
   await ctx.narrative.establecer();
   console.log(`Bridge: partida ${ctx.narrative.session_id} establecida en disco (el jugador entró)`);

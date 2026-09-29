@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from narrative_schemas import (  # noqa: E402
+    validate_death_resolution,
     validate_ground,
     validate_volumes,
     validate_narrative_reaction,
@@ -133,6 +134,18 @@ class TestContractFixtures(unittest.TestCase):
                     "solo pasar el gate. Si el campo ya no viaja, quítalo del zod y de la fixture; "
                     "si viaja, arregla la allow-list de validate_narrative_reaction.",
                 )
+
+    def test_death(self):
+        """La respuesta a un `player_death` (#613): espejo de
+        `DeathResolutionSchema`. El lado TS corre el mismo set con el
+        validador de narrative-mcp."""
+        def acepta(fx):
+            try:
+                validate_death_resolution(copy.deepcopy(fx["payload"]))
+                return True
+            except ValueError:
+                return False
+        self._run("death", acepta)
 
     def test_scene(self):
         """Escena Format D: espejo de EmittedSceneSchema (el gate del

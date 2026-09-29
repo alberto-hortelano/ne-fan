@@ -251,9 +251,15 @@ describe("bridge request_tile (plano continuo)", () => {
     await waitFor(() => narrative.hasTile(1, 0));
   });
 
-  it("add_combatants es aditivo y respawn acepta pos", async () => {
+  it("add_combatants es aditivo y el respawn devuelve al punto seguro que decide el sim", async () => {
     const { ctx, sim } = makeCtx();
     const { socket, sent } = makeSocket();
+    // El punto seguro lo decide el SIM (#613): el último sitio fuera de
+    // combate. El jugador pasea por aquí ANTES de que llegue el lobo —que no
+    // declara radio de enganche, así que desde su alta está enganchado y ya
+    // no hay tick «fuera de combate»—.
+    const aqui = { x: 66, y: 0, z: 2 };
+    sim.tick(0.016, { playerPosition: aqui, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: false });
     await porElBorde(
       {
         type: "add_combatants",
@@ -293,9 +299,17 @@ describe("bridge request_tile (plano continuo)", () => {
     );
     assert.equal(sim.getCombatant("lobo_1")!.health, 40, "el duplicado no pisa el HP");
 
-    await porElBorde({ type: "respawn", pos: { x: 66, y: 0, z: 2 } }, socket, ctx);
-    assert.deepEqual(sim.getCombatant("player")!.position, { x: 66, y: 0, z: 2 });
-    assert.ok((sent.at(-1) as StateUpdateMessage).playerHp > 0);
+    // Cae en otro sitio, ya en combate; el `respawn` no lleva punto y la
+    // respuesta dice cuál es.
+    sim.tick(0.016, { playerPosition: { x: 69, y: 0, z: 4 }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: false });
+    const player = sim.getCombatant("player")!;
+    player.position = { x: 80, y: 0, z: 9 };
+    player.health = 0;
+    await porElBorde({ type: "respawn" }, socket, ctx);
+    assert.deepEqual(sim.getCombatant("player")!.position, aqui);
+    const respuesta = sent.at(-1) as StateUpdateMessage;
+    assert.ok(respuesta.playerHp > 0);
+    assert.deepEqual(respuesta.reaparicion, aqui, "el punto viaja al cliente para que lo aplique");
   });
 });
 

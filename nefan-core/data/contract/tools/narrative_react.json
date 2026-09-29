@@ -186,6 +186,24 @@
               "type": "object",
               "properties": {
                 "type": {
+                  "const": "player_healed",
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Puntos de vida que recupera el jugador (entero ≥ 1). El juego los topa en su máximo; a un jugador muerto no le hace nada. Su vida actual está en context.player.health"
+                }
+              },
+              "required": [
+                "type",
+                "amount"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
                   "const": "noop",
                   "type": "string"
                 }

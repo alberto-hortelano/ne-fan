@@ -61,6 +61,21 @@ export interface ReportPlayerChoiceResponse {
   consequences: Consequence[];
 }
 
+/** Muerte del jugador (#613, «que decida el motor»): el bridge manda el
+ *  contexto de siempre con `muerte` dentro (`narrative/contexto-de-la-muerte.ts`)
+ *  y el motor contesta dónde despierta y qué pasa. Kind MCP `player_death`. */
+export interface ReportPlayerDeathRequest {
+  event_id: string;
+  context: LlmContext;
+}
+
+/** La forma exacta es `DeathResolutionSchema` (contract/model-io/schemas.ts):
+ *  `wake` es `{type:"place", place_id}` o `{type:"point", x, z}`. */
+export interface ReportPlayerDeathResponse {
+  wake: { type: "place"; place_id: string } | { type: "point"; x: number; z: number };
+  consequences: Consequence[];
+}
+
 export interface DevelopWorldRequest {
   /** Borrador del jugador, ya recortado y dentro del umbral que aplica
    *  `validarBorrador` (`protocol/borrador-de-mundo.ts`). El número no se
@@ -137,6 +152,10 @@ export const NarrativeLlmApi = {
   reportPlayerChoice: endpoint<ReportPlayerChoiceRequest, ReportPlayerChoiceResponse>(
     "POST",
     "/report_player_choice",
+  ),
+  reportPlayerDeath: endpoint<ReportPlayerDeathRequest, ReportPlayerDeathResponse>(
+    "POST",
+    "/report_player_death",
   ),
   developWorld: endpoint<DevelopWorldRequest, DevelopWorldResponse>("POST", "/develop_world"),
   analyzeWeapon: endpoint<AnalyzeWeaponRequest, AnalyzeWeaponResponse>("POST", "/analyze_weapon"),

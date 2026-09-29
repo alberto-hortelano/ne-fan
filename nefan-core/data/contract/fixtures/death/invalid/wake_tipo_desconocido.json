@@ -1,0 +1,12 @@
+{
+  "description": "wake con un tipo que no existe (un tile no es un sitio)",
+  "expect": "reject",
+  "payload": {
+    "wake": {
+      "type": "tile",
+      "tx": 0,
+      "ty": 0
+    },
+    "consequences": []
+  }
+}

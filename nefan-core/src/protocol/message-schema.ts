@@ -96,10 +96,13 @@ const LoadRoomMessageSchema = z.object({
   enemies: z.array(EnemySpawnSchema),
 });
 
-const RespawnMessageSchema = z.object({
-  type: z.literal("respawn"),
-  pos: Vec3Schema.optional(),
-});
+// `.strict()`: el punto ya no lo manda el cliente (#613). Un `pos` es un
+// cliente de otra versión, y se rechaza en vez de ignorarse.
+const RespawnMessageSchema = z
+  .object({
+    type: z.literal("respawn"),
+  })
+  .strict();
 
 const PingMessageSchema = z.object({
   type: z.literal("ping"),

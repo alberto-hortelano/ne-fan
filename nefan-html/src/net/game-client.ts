@@ -8,38 +8,16 @@
  *  (main.ts, bootstrap) lo hace DESPUÉS de decir el error, nunca en su lugar. */
 
 import { GameStore } from "@nefan-core/src/store/game-store.js";
-import type { CombatEvent, Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
-import type { StateUpdateMessage } from "@nefan-core/src/protocol/messages.js";
-import {
-  identidadDelCliente,
-  repartirEstado,
-} from "@nefan-core/src/protocol/dueno-del-sim.js";
+import type { Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
+import { identidadDelCliente, repartirEstado } from "@nefan-core/src/protocol/dueno-del-sim.js";
+import { elJugadorEsperaDespertar } from "@nefan-core/src/protocol/despertar-en-pantalla.js";
 import type { WorldScene } from "@nefan-core/src/scene/scene-normalize.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { AVISO_PARTIDA, DETALLE_SIN_PARTIDA, errors } from "../ui/error-log.js";
 import { BridgeClient } from "./bridge-client.js";
+import { acumularFrame, frameDeArranque, type FrameResult } from "./frame-del-bridge.js";
 
-export interface FrameResult {
-  events: CombatEvent[];
-  playerHp: number;
-  /** Sobre cuánta vida, y con qué pega. Los dos los dice el bridge en cada
-   *  `state_update` (#504): antes eran dos constantes de `main.ts` y el
-   *  cliente decidía por su cuenta el máximo de la barra y el arma con la que
-   *  se calcula el aro del telegraph. */
-  playerMaxHp: number;
-  playerWeaponId: string;
-  enemies: {
-    id: string;
-    hp: number;
-    state: string;
-    alive: boolean;
-    pos?: { x: number; y: number; z: number };
-    forward?: { x: number; y: number; z: number };
-    attackType?: string;
-  }[];
-  /** Vida ambiental de NPCs del bridge (state_update.npcs). */
-  npcs?: StateUpdateMessage["npcs"];
-}
+export { acumularFrame, type FrameResult };
 
 export interface TickInputs {
   playerPosition: Vec3;
@@ -62,14 +40,6 @@ export interface RoomEnemy {
   personality: EnemyPersonality;
 }
 
-/** El arma y el máximo con los que se pinta ANTES del primer `state_update`:
- *  los del store, que son los MISMOS con los que arranca el bridge (el mismo
- *  `createInitialState`). Aquí no se escribe ningún literal: el día que el
- *  jugador nazca con otra arma, nace en un sitio. */
-const jugadorDeArranque = (store: GameStore) => ({
-  playerMaxHp: store.state.player.max_hp,
-  playerWeaponId: store.state.player.weapon_id,
-});
 
 /** DE QUIÉN ES EL SIM que este cliente espera ver, y a quién decírselo (#659).
  *
@@ -102,7 +72,11 @@ export interface GameClient {
   /** Alta aditiva de combatientes (enemigos de un tile nuevo): no resetea el
    *  sim ni al player — el mundo es un plano continuo. */
   addEnemies(enemies: RoomEnemy[]): void;
-  respawn(pos: Vec3): void;
+  /** R con el jugador caído. En partida es «reintentar»: dónde despierta lo
+   *  decide el motor (#613); en fixtures el bridge levanta al momento en el
+   *  punto seguro. El punto llega en `FrameResult.reaparicion` y, mientras
+   *  tanto, el cliente no manda input (`elJugadorEsperaDespertar`). */
+  respawn(): void;
   /** Los tres números del JUGADOR del último frame del bridge. Sin `id` a
    *  propósito (#526): la rama de ENEMIGO existía, no la llamaba nadie, y
    *  devolvía `maxHealth: e.hp` —el máximo derivado de la vida ACTUAL, la
@@ -116,6 +90,10 @@ export interface GameClient {
    *  `session-facets.ts` al cambiar de partida — volver al título incluido
    *  (#659); sin esto `idle()` repite el frame de la partida muerta. */
   olvidarElUltimoFrame(): void;
+  /** La vida con la que la partida EMPIEZA en el cliente, hasta el primer
+   *  frame del bridge: la del save. Sin esto, reanudar muerto pintaba 100 PV
+   *  unos frames (QA H6 de BN) — el neutro de `olvidarElUltimoFrame`. */
+  empezarPartida(vida: number): void;
   /** Cuántos `state_update` de OTRO sim se han tirado aquí. Lo lee el banco por
    *  `__nefan.estadosTirados()`, y existe por lo mismo que `descartados()` del
    *  embudo narrativo: sin contador, «no llegó» y «llegó y se descartó» son el
@@ -142,6 +120,11 @@ export class BridgeGameClient implements GameClient {
   private enPrueba = false;
   /** Frames de OTRO sim tirados aquí; lo lee el banco por `__nefan`. */
   private tirados = 0;
+  /** El último frame ENTREGADO al game loop. Mientras diga «caído», `tick()`
+   *  no manda input (`elJugadorEsperaDespertar`, core): el loop aún tiene la
+   *  posición del cadáver, y el frame con el punto de despertar se aplica al
+   *  entregarse, no al recibirse. */
+  private entregado: FrameResult;
   isConnected = false;
   isBridge = true;
   private handlers: Map<GameClientEvent, EventHandler[]> = new Map();
@@ -153,7 +136,8 @@ export class BridgeGameClient implements GameClient {
   ) {
     this.bridge = bridge;
     this.store = store;
-    this.lastState = { events: [], playerHp: 100, enemies: [], ...jugadorDeArranque(store) };
+    this.lastState = frameDeArranque(store);
+    this.entregado = this.lastState;
 
     bridge.on("state_update", (msg) => {
       if (!msg) return;
@@ -210,7 +194,14 @@ export class BridgeGameClient implements GameClient {
         enemies: msg.enemies ?? [],
         npcs: msg.npcs,
       };
-      this.pendingFrame = frame;
+      // El estado es el del ÚLTIMO frame; los EVENTOS y el punto de
+      // reaparición, de TODOS los que nadie ha consumido aún. Si llegan dos
+      // `state_update` entre dos frames del game loop, pisar el pendiente
+      // perdía los eventos del primero: tras la primera muerte, el
+      // `player_respawned` no llegaba nunca al panel de combate y el botón
+      // «R · reaparecer» se quedaba para siempre (QA de BK, #613). Y un
+      // `died` perdido es un jugador muerto que el cliente cree vivo.
+      this.pendingFrame = acumularFrame(this.pendingFrame, frame, msg.reaparicion, msg.miradaAlDespertar);
       this.lastState = frame;
     });
 
@@ -240,7 +231,9 @@ export class BridgeGameClient implements GameClient {
   }
 
   tick(delta: number, inputs: TickInputs): FrameResult {
-    this.bridge.sendInput(delta, inputs);
+    // Caído: el sitio donde despierta lo decide otro (#613), y este input
+    // llevaría la posición del cadáver.
+    if (!elJugadorEsperaDespertar(this.entregado)) this.bridge.sendInput(delta, inputs);
     return this.idle();
   }
 
@@ -260,9 +253,11 @@ export class BridgeGameClient implements GameClient {
     if (this.pendingFrame) {
       const frame = this.pendingFrame;
       this.pendingFrame = null;
+      this.entregado = frame;
       return frame;
     }
-    return { ...this.lastState, events: [] };
+    this.entregado = { ...this.lastState, events: [] };
+    return this.entregado;
   }
 
   loadRoom(roomData: Pick<WorldScene, "dimensions">, roomId: string, enemies: RoomEnemy[]): void {
@@ -289,18 +284,19 @@ export class BridgeGameClient implements GameClient {
     return this.tirados;
   }
 
+  /** Ver `GameClient.empezarPartida`. */
+  empezarPartida(vida: number): void {
+    this.lastState = frameDeArranque(this.store, vida);
+    this.entregado = this.lastState;
+  }
+
   /** Ver `GameClient.olvidarElUltimoFrame`. Vuelve al neutro EXACTO del
    *  constructor —el jugador de arranque del store, sin enemigos ni NPCs— y
    *  sale del modo fixtures: quien vuelve al título no está mirando ninguna. */
   olvidarElUltimoFrame(): void {
     this.pendingFrame = null;
-    this.lastState = {
-      events: [],
-      playerHp: 100,
-      enemies: [],
-      npcs: [],
-      ...jugadorDeArranque(this.store),
-    };
+    this.lastState = frameDeArranque(this.store);
+    this.entregado = this.lastState;
     this.enPrueba = false;
   }
 
@@ -314,8 +310,8 @@ export class BridgeGameClient implements GameClient {
     );
   }
 
-  respawn(pos: Vec3): void {
-    this.bridge.sendRespawn(pos);
+  respawn(): void {
+    this.bridge.sendRespawn();
   }
 
   jugadorEnCombate() {
@@ -351,7 +347,7 @@ export class ViewerGameClient implements GameClient {
 
   constructor(store: GameStore) {
     this.store = store;
-    this.frame = { events: [], playerHp: 100, enemies: [], ...jugadorDeArranque(store) };
+    this.frame = frameDeArranque(store);
   }
 
   tick(): FrameResult {
@@ -371,6 +367,7 @@ export class ViewerGameClient implements GameClient {
 
   /** No hay nada que olvidar: su frame es constante y no viene de ningún sim. */
   olvidarElUltimoFrame(): void {}
+  empezarPartida(): void {}
 
   /** Sin socket no llega nada que tirar. */
   estadosTirados(): number {

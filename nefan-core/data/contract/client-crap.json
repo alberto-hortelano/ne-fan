@@ -31,12 +31,12 @@
     {
       "fichero": "src/main.ts",
       "funcion": "<módulo>>(anónima)@narrativeClient.onStatusDeLaPartida()",
-      "crap": 1122
+      "crap": 1056
     },
     {
       "fichero": "src/main.ts",
       "funcion": "gameLoop",
-      "crap": 1560
+      "crap": 1406
     },
     {
       "fichero": "src/main.ts",
@@ -46,11 +46,6 @@
     {
       "fichero": "src/net/bridge-client.ts",
       "funcion": "dispatch",
-      "crap": 110
-    },
-    {
-      "fichero": "src/net/game-client.ts",
-      "funcion": "BridgeGameClient.constructor>(anónima)@bridge.on(\"state_update\")",
       "crap": 110
     },
     {

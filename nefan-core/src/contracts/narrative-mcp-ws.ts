@@ -43,7 +43,9 @@ export interface VisionRequestMsg {
 export interface NarrativeEventMsg {
   type: "narrative_event";
   request_id: string;
-  kind: "dialogue_choice" | "develop_world";
+  /** `player_death` (#613): el jugador ha caído y el motor decide dónde
+   *  despierta; `context.muerte` trae lo que necesita (player_death.md). */
+  kind: "dialogue_choice" | "develop_world" | "player_death";
   event_id: string;
   speaker: string;
   chosen_text: string;

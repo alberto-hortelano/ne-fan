@@ -1237,10 +1237,13 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
 
     sim.getCombatant("player")!.health = 0;
     sent.length = 0;
-    await porElBorde({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, socket, ctx);
+    // En partida R es «reintentar el despertar»: el motor (el falso de test,
+    // que despierta en el punto seguro) decide, y el frame llega después.
+    await porElBorde({ type: "respawn" }, socket, ctx);
+    await waitFor(() => sent.some((m) => m.type === "state_update"));
     const estados = sent.filter((m): m is StateUpdateMessage => m.type === "state_update");
-    assert.equal(estados.length, 1, "el respawn contesta con un state_update");
-    assert.equal(estados[0].events[0]?.type, "player_respawned", "premisa: es el frame del respawn");
+    assert.equal(estados.length, 1, "el despertar contesta con un state_update");
+    assert.equal(estados[0].events[0]?.type, "player_respawned", "premisa: es el frame del despertar");
     const bandido = estados[0].enemies.find((e) => e.id === "bandido_1");
     assert.ok(bandido, "el cadáver sigue en la lista: el cliente lo pinta caído");
     assert.equal(bandido.alive, false, "el muerto llega muerto al cliente tras pulsar R");
@@ -1447,7 +1450,9 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
       fixtura,
       ctx,
     );
-    await porElBorde({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, fixtura, ctx);
+    // R solo contesta con estado a un caído (H7 de BN).
+    ctx.sim.getCombatant("player")!.health = 0;
+    await porElBorde({ type: "respawn" }, fixtura, ctx);
     await porElBorde({ type: "add_combatants", enemies: [] }, fixtura, ctx);
     const estados = deEstado();
     assert.equal(estados.length, 4, "los CUATRO emisores contestan por este camino");
@@ -1558,8 +1563,13 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     sim.getCombatant("player")!.position = { x: 12, y: 1, z: -6 };
 
     const { socket: ajeno, sent: sentAjeno } = makeSocket();
-    await porElBorde({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, ajeno, ctx);
-    assert.equal(sentAjeno.length, 0, "al socket ajeno no se le contesta nada");
+    await porElBorde({ type: "respawn" }, ajeno, ctx);
+    // Se le CONTESTA (QA H5 de BN): un aviso, nunca un estado del sim.
+    assert.deepEqual(
+      sentAjeno.map((m) => [m.type, (m as { kind?: string }).kind]),
+      [["narrative_status", "despertar"]],
+      "al socket ajeno se le dice que no, y no se le manda estado",
+    );
     assert.deepEqual(sim.getCombatant("player")!.position, { x: 12, y: 1, z: -6 });
 
     await ctx.narrative.save();
@@ -1590,6 +1600,23 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     assert.equal(reseeded.health, 33);
     assert.deepEqual(reseeded.position, { x: -5, y: 1, z: 9 });
     assert.equal(store.state.player.hp, 33);
+    // QA H2 de BN: el MÁXIMO no es la vida guardada. Con 33 de máximo la poción
+    // no curaba nada tras reanudar herido, y el HUD decía /100 igualmente.
+    assert.equal(reseeded.maxHealth, 100, "el máximo es el del jugador, no la vida con la que vuelve");
+    assert.equal(sim.curarAlJugador(10), 10);
+    assert.equal(reseeded.health, 43);
+    sent2.length = 0;
+    await porElBorde(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: { playerPosition: reseeded.position, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: false },
+      },
+      socket2,
+      ctx,
+    );
+    const frame = sent2.find((m): m is StateUpdateMessage => m.type === "state_update");
+    assert.equal(frame?.playerMaxHp, 100, "el HUD y el sim dicen el mismo máximo");
   });
 
   it("start_session resetea el runtime: no hereda el HP de la sesión anterior", async () => {

@@ -26,7 +26,6 @@ test("un frame válido de cada tipo pasa la validación", () => {
     },
     { type: "ping" },
     { type: "respawn" },
-    { type: "respawn", pos: { x: 0, y: 1, z: 4 } },
     { type: "start_session", requestId: "r1", gameId: "toledo_1200" },
     { type: "resume_session", requestId: "r2", sessionId: "s1" },
     { type: "delete_session", requestId: "r3", sessionId: "s1" },
@@ -97,6 +96,16 @@ test("un input con playerPosition mal tipado se rechaza (no llega al sim)", () =
   });
   assert.equal(res.ok, false);
   if (!res.ok) assert.match(res.error, /playerPosition|x/);
+});
+
+/** DÓNDE se reaparece lo decide el sim del bridge desde #613: el `respawn`
+ *  ya no lleva punto. Un cliente que lo mande es de otra versión, y el frame
+ *  se RECHAZA (`.strict()`) en vez de aceptarse ignorando el campo — ignorarlo
+ *  dejaría a ese cliente creyendo que manda donde reaparece. */
+test("un respawn con `pos` se rechaza: el punto no lo decide el cliente (#613)", () => {
+  const res = validateContract(ClientMessageSchema, { type: "respawn", pos: { x: 0, y: 1, z: 4 } });
+  assert.equal(res.ok, false);
+  if (!res.ok) assert.match(res.error, /pos|unrecognized/i);
 });
 
 test("start_session sin gameId se rechaza (campo requerido)", () => {

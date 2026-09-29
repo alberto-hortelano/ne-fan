@@ -18,7 +18,8 @@ export interface NpcRoleParams {
   flees_from_combat: boolean;
   intervenes_in_combat: boolean;
   /** Hueco v2 (facciones): los guardias aún no entran al combate real —
-   *  findNearestTarget no distingue bandos y atacarían al jugador. */
+   *  la IA enemiga del sim solo tiene un blanco, el jugador (`game-loop.ts`),
+   *  y un guardia combatiente sería uno más que le ataca. */
   joins_combat: false;
 }
 

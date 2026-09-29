@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { TILE_CELLS } from '@nefan/core/contracts/world-map-schema';
-import { validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene, validateAnchor } from './validators.js';
+import { validateDeathResolution, validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene, validateAnchor } from './validators.js';
 import { ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { rechazo, vigilarErroresDeTool } from './rechazo.js';
@@ -80,6 +80,8 @@ const DEVELOP_WORLD_INSTRUCTIONS = loadPrompt('develop_world.md');
 
 const NARRATIVE_EVENT_INSTRUCTIONS = loadPrompt('narrative_event.md');
 
+const PLAYER_DEATH_INSTRUCTIONS = loadPrompt('player_death.md');
+
 
 /** Mensajes humanos para el latido de progreso según la ruta del State API
  *  que el motor acaba de llamar. Genérico para rutas nuevas. */
@@ -125,7 +127,7 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'scene' | 'weapon_orient' | 'weapon_verify' | 'narrative_event' | 'develop_world' = 'scene';
+  let currentKind: 'scene' | 'weapon_orient' | 'weapon_verify' | 'narrative_event' | 'develop_world' | 'player_death' = 'scene';
   // Catálogo de refs de estilo de la sesión (world.style_refs de la última
   // petición scene): pre-flight de `style_ref` de NPC y de `surface_ref` de
   // cara — un id fuera del catálogo rebota al motor con la lista válida.
@@ -164,6 +166,9 @@ Request kinds you may receive:
 - "weapon_verify"   → check a weapon is correctly placed in a character's hand.
 - "develop_world"   → a player-submitted world draft to develop into a full
                       world document (template embedded in the message).
+- "player_death"    → the player has died. Decide where they wake up and what
+                      happens when they do: { "wake": ..., "consequences": [ ... ] }
+                      (schema and the rules the game checks in the message).
 - "narrative_event" → the player answered an NPC. Return world consequences as
                       { "consequences": [ ... ] } — entries are
                       ${CONSEQUENCE_TYPES_TEXT}. (dialogue is an ENTRY in that
@@ -234,6 +239,21 @@ into context:
             content: [{
               type: 'text',
               text: `World draft to develop:\n${payload}\n\n${DEVELOP_WORLD_INSTRUCTIONS}`,
+            }],
+          };
+        }
+
+        if (msg.type === 'narrative_event' && msg.kind === 'player_death') {
+          currentKind = 'player_death';
+          const payload = JSON.stringify({
+            kind: 'player_death',
+            event_id: msg.event_id,
+            context: msg.context,
+          }, null, 2);
+          return {
+            content: [{
+              type: 'text',
+              text: `The player has died:\n${payload}\n\n${PLAYER_DEATH_INSTRUCTIONS}\n\n${WORLD_RULES}`,
             }],
           };
         }
@@ -465,6 +485,25 @@ into context:
           const rebote = preflightDeEscena(parsed as Record<string, unknown>, { kind, req: currentRequestId }, true);
           if (rebote) return rebote;
         }
+        // El despertar (#613): la FORMA con el zod SoT, y el SITIO con la misma
+        // regla que aplicará el bridge (`POST /despertar/validar`). Aquí no se
+        // deja pasar si el bridge no contesta, como en `scene`: un sitio sin
+        // validar puede ser el que devuelve al jugador junto a quien le mató.
+        // La petición sigue pendiente: el motor corrige y re-responde.
+        if (kind === 'player_death') {
+          const check = validateDeathResolution(parsed);
+          if (!check.ok) {
+            return rechazo('despertar', `Invalid death resolution — fix the shape and call narrative_respond again: ${check.error}`, { kind, req: currentRequestId });
+          }
+          const sitio = await bridgePost('/despertar/validar', { wake: (parsed as { wake: unknown }).wake });
+          if (!sitio.ok) {
+            return rechazo('despertar', `The game could not check that wake (state API: ${sitio.error}). The request is still pending — call narrative_respond again in a moment.`, { kind, req: currentRequestId });
+          }
+          const v = sitio.data as { ok: boolean; motivo?: string };
+          if (!v.ok) {
+            return rechazo('despertar', `The player cannot wake there — pick another place or point and call narrative_respond again (the request is still pending): ${v.motivo}`, { kind, req: currentRequestId });
+          }
+        }
         if (kind === 'develop_world') {
           // style_id incluido: la plantilla lo exige (elegir de
           // available_styles) y sin él el juego quedaría sin estilo asignado.
@@ -570,7 +609,7 @@ into context:
           return { content: [{ type: 'text', text: `Vision response sent for request ${reqId}` }] };
         }
 
-        if (kind === 'narrative_event' || kind === 'develop_world') {
+        if (kind === 'narrative_event' || kind === 'develop_world' || kind === 'player_death') {
           bridge.sendNarrativeEventResponse(reqId, parsed);
           return { content: [{ type: 'text', text: `${kind} response sent for request ${reqId}` }] };
         }

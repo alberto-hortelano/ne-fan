@@ -9,6 +9,7 @@
  *  mensajes con requestId, espera INFINITA para los fire-and-forget (el modal
  *  de diálogo colgado para siempre). */
 
+import { rechazarSiEstaCaido } from "./handlers/despertar.js";
 import {
   motivoDeSesionParaElJugador,
   motivoParaElJugador,
@@ -114,21 +115,26 @@ async function despachar(
       await handleDeleteSession(msg, ws, ctx);
       break;
     case "session_entered":
-      await handleSessionEntered(msg, ctx);
+      await handleSessionEntered(msg, ws, ctx);
       break;
     case "set_render_mode":
       await handleSetRenderMode(msg, ws, ctx);
       break;
     case "dialogue_choice":
+      if (rechazarSiEstaCaido(ctx, ws, "hablar")) break;
       await handleDialogueChoice(msg, ctx);
       break;
     case "player_entered_place":
+      if (rechazarSiEstaCaido(ctx, ws, "viajar", msg.placeId)) break;
       await handlePlayerEnteredPlace(msg, ctx);
       break;
     case "request_tile":
+      // Pedir un tile GASTA: un caído no explora (QA S2 de BN).
+      if (rechazarSiEstaCaido(ctx, ws, "explorar")) break;
       await handleRequestTile(msg, ctx);
       break;
     case "interact_entity":
+      if (rechazarSiEstaCaido(ctx, ws, "interactuar")) break;
       await handleInteractEntity(msg, ctx);
       break;
     default: {

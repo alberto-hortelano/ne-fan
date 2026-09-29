@@ -1,0 +1,12 @@
+{
+  "description": "player_healed con amount fraccionario: los PV son enteros, no se redondea en silencio",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "player_healed",
+        "amount": 12.5
+      }
+    ]
+  }
+}

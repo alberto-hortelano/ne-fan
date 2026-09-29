@@ -14,6 +14,8 @@ import type {
   NotifySessionRequest,
   ReportPlayerChoiceRequest,
   ReportPlayerChoiceResponse,
+  ReportPlayerDeathRequest,
+  ReportPlayerDeathResponse,
 } from "../contracts/narrative-llm.js";
 import type { Consequence, LlmContext } from "./types.js";
 
@@ -38,6 +40,15 @@ export interface SceneGenerationResult {
 
 export type ReportPlayerChoiceResult =
   | { ok: true; consequences: Consequence[] }
+  | { ok: false; error: string };
+
+/** El desenlace de preguntar al motor dónde despierta el jugador. `ok:false`
+ *  es un fallo (motor caído, respuesta inválida, timeout) y NUNCA un «no
+ *  despierta»: el bridge lo difunde como `narrative_status` de error. La forma
+ *  de `resolucion` ya la validó el motor (pre-flight zod) y el ai_server
+ *  (espejo Python); la GEOMETRÍA la vuelve a validar el bridge al aplicarla. */
+export type ReportPlayerDeathResult =
+  | { ok: true; resolucion: ReportPlayerDeathResponse }
   | { ok: false; error: string };
 
 export class AiClient {
@@ -125,6 +136,31 @@ export class AiClient {
         ok: true,
         consequences: Array.isArray(data.consequences) ? data.consequences : [],
       };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  /** El jugador ha muerto: el motor decide dónde despierta (#613). Mismo
+   *  techo de espera que una escena: el motor puede consultar el mapa antes
+   *  de contestar. */
+  async reportPlayerDeath(payload: { eventId: string; context: LlmContext }): Promise<ReportPlayerDeathResult> {
+    try {
+      const res = await this.request(
+        "POST",
+        "/report_player_death",
+        { event_id: payload.eventId, context: payload.context } satisfies ReportPlayerDeathRequest,
+        CONFIG.ai_server.llm_timeout_s * 1000 + 60_000,
+      );
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 2000)}` : ""}` };
+      }
+      const data = (await res.json()) as Partial<ReportPlayerDeathResponse>;
+      if (!data.wake || !Array.isArray(data.consequences)) {
+        return { ok: false, error: "report_player_death: la respuesta no trae `wake` y `consequences`" };
+      }
+      return { ok: true, resolucion: { wake: data.wake, consequences: data.consequences } };
     } catch (err) {
       return { ok: false, error: (err as Error).message };
     }

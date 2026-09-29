@@ -1,0 +1,17 @@
+{
+  "description": "una consequence con forma inválida: pasa por el mismo validador que un narrative_event",
+  "expect": "reject",
+  "payload": {
+    "wake": {
+      "type": "point",
+      "x": 1,
+      "z": 2
+    },
+    "consequences": [
+      {
+        "type": "player_healed",
+        "amount": 0
+      }
+    ]
+  }
+}

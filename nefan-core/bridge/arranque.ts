@@ -23,6 +23,7 @@ import { AiClient } from "../src/narrative/ai-client.js";
 import type { Entorno } from "../src/session/gates-de-imagen.js";
 import type { CombatConfig } from "../src/types.js";
 import { createStateHttpServer } from "./state-http-server.js";
+import { validarDespertarEnElBridge } from "./handlers/despertar.js";
 import { difundirSalidasDeLosTilesCargados } from "./salidas.js";
 import { crearContextoDelBridge } from "./contexto-del-bridge.js";
 import { hooksDePluginsDelBridge } from "./hooks-de-plugins.js";
@@ -143,6 +144,7 @@ export async function arrancarBridge(cfg: ConfigDelBridge): Promise<BridgeArranc
     },
     onMapChanged: () => difundirSalidasDeLosTilesCargados(ctx),
     plugins: hooksDePluginsDelBridge(ctx),
+    validarDespertar: (wake) => validarDespertarEnElBridge(ctx, wake),
   });
   let puertoStateApi: number;
   try {

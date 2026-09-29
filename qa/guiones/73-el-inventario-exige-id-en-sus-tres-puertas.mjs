@@ -46,8 +46,10 @@ import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { rutaDelSave } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
 import { reanudarPorElCable } from "../lib/cable.mjs";
+import { despertarSiEstaCaido, quitarDeEnMedioAlHostil } from "../lib/combate.mjs";
 
-export const aisla = ["saves"];
+/** `fake-ai`: el guion cambia dónde despierta el motor falso (ver el bucle). */
+export const aisla = ["saves", "fake-ai"];
 
 const GAME_ID = "toledo_1200";
 const API = URLS.state_api;
@@ -157,6 +159,27 @@ export default async function (ctx) {
 
   await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   const { sessionId } = await comenzar(ctx);
+
+  // El tile de bench trae un hostil que mataba al jugador a mitad de los
+  // tramos. Desde #613 un caído no manda input —no pisa zonas— y despierta
+  // donde decida el motor, que puede ser una de las zonas de abajo (son
+  // lugares del mapa). Así que se le quita de en medio ANTES de sembrarlas,
+  // como haría quien juega: pegándole. Si mata él primero, se espera a
+  // despertar y se vuelve a intentar una vez. Y luego el banco devuelve al
+  // jugador al sitio donde empezó (`setPlayerPos`): los rumbos y las zonas se
+  // miden desde ahí, no desde donde acabó la pelea.
+  const inicio = (await ctx.nefan("state")).pos;
+  await quitarDeEnMedioAlHostil(ctx);
+  await ctx.nefan("setPlayerPos", inicio.x, inicio.z);
+  await ctx.waitFor(
+    "el jugador vuelve al sitio donde empezó",
+    (a) => {
+      const p = window.__nefan.state().pos;
+      return Math.hypot(p.x - a.x, p.z - a.z) < 0.05 ? true : null;
+    },
+    5_000,
+    inicio,
+  );
 
   let regalo;
   if (puertaPlugin === "disco") {
@@ -283,17 +306,17 @@ export default async function (ctx) {
       await ctx.page.click("#narrative-loader-dismiss");
       await ctx.waitFor("el overlay anterior se cierra", () => !document.getElementById("narrative-loader")?.className.includes("visible"), 5_000);
     }
-    // El tile de bench trae un hostil que puede haber matado al jugador en el
-    // tramo anterior (medido en la corrida manual del 05-09: «Bandido de
-    // camino», HP 0). Un muerto no pisa zonas: se reaparece con R, como haría
-    // quien juega, antes de andar el siguiente tramo. El HP del State API se
-    // refresca con cada save, así que puede venir rancio: un R de más con el
-    // jugador vivo no hace nada (el game loop solo lo aplica muerto).
-    const hp = (await api("GET", "/entity/player")).body?.player?.health ?? 0;
-    if (hp <= 0) {
-      ctx.log(`${z.nombre}: el servidor da al jugador por muerto (hp=${hp}); reaparece con R antes de andar`);
-      await ctx.nefan("inputDriver.queueRespawn");
-    }
+    // El hostil del tile ya se quitó de en medio arriba, pero si algo matara al
+    // jugador en el tramo anterior, un caído no pisa zonas (no manda input).
+    // Desde #613 (tanda BN) dónde despierta lo decide el MOTOR, sin tecla. Este
+    // guion no mide el despertar, y sus zonas son LUGARES del mapa: si el motor
+    // le despertara en una, su trigger volvería a disparar. Así que se le pide
+    // al motor falso que despierte donde el jugador cayó… o, si el juego no lo
+    // acepta (el bandido está cerca), en el primer sitio que valga; y después
+    // el banco le devuelve al punto de partida del tramo (`setPlayerPos`, el
+    // teletransporte del banco), que no es ninguna zona.
+    const partida = (await ctx.nefan("state")).pos;
+    await despertarSiEstaCaido(ctx, z.nombre, { punto: partida });
     const desde = (await ctx.nefan("state")).pos;
     await ctx.holdUntil(
       "up",

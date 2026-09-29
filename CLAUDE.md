@@ -178,7 +178,7 @@ Teclado y ratón en `nefan-html/src/input/keyboard-input-provider.ts`, salvo don
 | 1..N | Seleccionar ataque del catálogo de la SESIÓN (con `basic` hay uno solo) |
 | LMB | Ejecutar ataque |
 | Y/N | Responder a la propuesta de explorar el tile vecino |
-| R | Respawn |
+| R | Caído: reintentar el despertar si el motor falló (dónde despiertas lo decide el motor, sin tecla); en las fixtures, reaparecer |
 | P | Abrir/cerrar el panel de sistemas de la partida. Suelta el raton mientras esta abierto y lo devuelve al cerrar; Esc tambien lo cierra. Se ata en `ui/panel-de-plugins.ts`, no en el provider |
 | Esc | Soltar/capturar raton |
 

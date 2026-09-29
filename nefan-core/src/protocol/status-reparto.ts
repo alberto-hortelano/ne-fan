@@ -131,9 +131,11 @@ export function deQuienEs(
 
 /** Qué esperas termina un fallo de MI partida (#593). Un aviso de enemigos,
  * guardado o plugins no es una contestación ni el desenlace de un viaje.
- * El takeover sí invalida ambas: esta página ya no conduce la partida. */
+ * El takeover sí invalida ambas: esta página ya no conduce la partida. Y el
+ * `despertar` también (#613): un caído no viaja ni habla, y el bridge rechaza
+ * con ese kind lo que el jugador pidió —la espera que abrió se cierra ahí—. */
 const ESPERA_POR_KIND: Record<NarrativeStatusDeSesion["kind"], "viaje" | "saludo" | "ambas" | null> = {
-  tile: "viaje", scene: "viaje", consequences: "saludo", takeover: "ambas",
+  tile: "viaje", scene: "viaje", consequences: "saludo", takeover: "ambas", despertar: "ambas",
   restore: null, save: null, plugin: null, action: null, protocolo: null, combatientes: null,
 };
 

@@ -15,6 +15,7 @@
  *  dispatch) se cubren con `z.custom<T>` superficial: el borde garantiza el
  *  sobre, el especialista el contenido. */
 import { z } from "zod";
+import { WakeSchema } from "../contract/model-io/schemas.js";
 
 import { EDGES, LINK_KINDS, PLACE_KINDS } from "../world-map/types.js";
 import type {
@@ -34,6 +35,7 @@ import type {
   PluginRegisterRequest,
   SceneAssetRefsRequest,
   SceneValidateRequest,
+  DespertarValidarRequest,
 } from "./world-state.js";
 import { HASH_DE_ASSET } from "./asset-store.js";
 import type {
@@ -141,6 +143,8 @@ export const InventoryAddRequestSchema = z.object({
 export const NarrativeProgressRequestSchema = z.object({
   message: z.string().min(1),
 });
+
+export const DespertarValidarRequestSchema = z.object({ wake: WakeSchema });
 
 export const SceneValidateRequestSchema = z.object({
   scene: z.custom<FormatDScene>(
@@ -263,6 +267,8 @@ assertMirror<z.infer<typeof InventoryRemoveRequestSchema>, InventoryRemoveReques
 assertMirror<NarrativeProgressRequest, z.infer<typeof NarrativeProgressRequestSchema>>();
 assertMirror<z.infer<typeof NarrativeProgressRequestSchema>, NarrativeProgressRequest>();
 assertMirror<SceneValidateRequest, z.infer<typeof SceneValidateRequestSchema>>();
+assertMirror<DespertarValidarRequest, z.infer<typeof DespertarValidarRequestSchema>>();
+assertMirror<z.infer<typeof DespertarValidarRequestSchema>, DespertarValidarRequest>();
 assertMirror<z.infer<typeof SceneValidateRequestSchema>, SceneValidateRequest>();
 assertMirror<PluginRegisterRequest, z.infer<typeof PluginRegisterRequestSchema>>();
 assertMirror<z.infer<typeof PluginRegisterRequestSchema>, PluginRegisterRequest>();
@@ -284,6 +290,7 @@ assertSameKeys<InventoryAddRequest, z.infer<typeof InventoryAddRequestSchema>>()
 assertSameKeys<InventoryRemoveRequest, z.infer<typeof InventoryRemoveRequestSchema>>();
 assertSameKeys<NarrativeProgressRequest, z.infer<typeof NarrativeProgressRequestSchema>>();
 assertSameKeys<SceneValidateRequest, z.infer<typeof SceneValidateRequestSchema>>();
+assertSameKeys<DespertarValidarRequest, z.infer<typeof DespertarValidarRequestSchema>>();
 assertSameKeys<PluginRegisterRequest, z.infer<typeof PluginRegisterRequestSchema>>();
 assertSameKeys<AssetRegisterRequest, z.infer<typeof AssetRegisterRequestSchema>>();
 assertSameKeys<AssetCharacterRegisterRequest, z.infer<typeof AssetCharacterRegisterRequestSchema>>();

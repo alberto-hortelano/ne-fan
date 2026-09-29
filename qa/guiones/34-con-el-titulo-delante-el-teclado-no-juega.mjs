@@ -84,7 +84,7 @@ const QUIETO_M = 0.001;
  *  frame (B cicla la vista, G pide el atlas, R revive). Sin esto tres de las
  *  nueve se medirían con los ojos cerrados: para cuando se lee el estado, ya
  *  se han consumido. */
-const HUELLA_DE_TECLA = /^(B · fps|Respawned|Atlas fps|GENERANDO)/;
+const HUELLA_DE_TECLA = /^(B · fps|Despiertas|Atlas fps|GENERANDO)/;
 
 /** Todo lo que una tecla de juego puede mover, en una foto. Se toma dos veces
  *  —con el título delante y sin él— y lo que vale es la diferencia. */
@@ -341,6 +341,23 @@ export default async function (ctx) {
     15_000,
   );
 
+  // Un CAÍDO no anda (#613, QA S2 de BN), y la fixture hereda la vida del
+  // jugador que el bridge tuviera en su sim: detrás de un guion que dejó al
+  // suyo caído, llega a 0 y las cuatro de movimiento no responden — con razón.
+  // Se le levanta como lo haría quien juega, con la R real (en fixtures
+  // reaparece al momento), antes de medir.
+  const vidaAntes = Number(await ctx.page.evaluate(() => document.getElementById("player-hp-text")?.textContent ?? "0"));
+  ctx.log(`vida antes del control: ${vidaAntes}`);
+  if (vidaAntes <= 0) await ctx.page.keyboard.press("r");
+  await ctx.expectEspera(
+    "antes del control el jugador está en pie (si llegó caído, la R lo levanta)",
+    true,
+    () => {
+      const hp = Number(document.getElementById("player-hp-text")?.textContent ?? "0");
+      return hp > 0 ? { hp } : null;
+    },
+    { sim: 3 },
+  );
   const antesControl = await ctx.page.evaluate(foto);
   const libroControl = await lasNueveEntradas(ctx);
   const despuesControl = await ctx.page.evaluate(foto);

@@ -7,6 +7,7 @@ de esos archivos — editar el texto allí, nunca aquí. Fail-loud si faltan.
 """
 
 import json
+import math
 import os
 from pathlib import Path
 
@@ -1371,7 +1372,7 @@ def validate_narrative_reaction(data: dict | None) -> dict:
     """Validate a Claude response to react_to_player.
 
     Strict mode — accepted types are exactly {dialogue, story_update,
-    spawn_entity, schedule_event, noop}. Any deviation (aliases like
+    spawn_entity, schedule_event, plugin_event, player_healed, noop}. Any deviation (aliases like
     show_dialogue, text instead of delta, missing required fields, malformed
     kinds) raises ValueError. The bridge surfaces the error to the client; the
     operator fixes the narrative engine's prompt.
@@ -1384,7 +1385,10 @@ def validate_narrative_reaction(data: dict | None) -> dict:
     if len(raw) > 4:
         raise ValueError(f"react_to_player returned {len(raw)} consequences, max is 4")
 
-    valid_types = {"dialogue", "story_update", "spawn_entity", "schedule_event", "plugin_event", "noop"}
+    valid_types = {
+        "dialogue", "story_update", "spawn_entity", "schedule_event", "plugin_event",
+        "player_healed", "noop",
+    }
     out: list[dict] = []
     for idx, c in enumerate(raw):
         if not isinstance(c, dict):
@@ -1443,6 +1447,15 @@ def validate_narrative_reaction(data: dict | None) -> dict:
                 "description": description,
                 "trigger": str(c.get("trigger", "next_scene")),
             })
+        elif t == "player_healed":
+            # Espejo del zod (`PlayerHealedConsequence`): entero ≥ 1. `bool` es
+            # subclase de `int` en Python y el zod no lo admite: se excluye.
+            amount = c.get("amount")
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount < 1:
+                raise ValueError(
+                    f"player_healed[{idx}].amount must be an integer >= 1, got {amount!r}"
+                )
+            out.append({"type": "player_healed", "amount": amount})
         elif t == "plugin_event":
             plugin_id = str(c.get("plugin_id", "")).strip()
             event_type = str(c.get("event_type", "")).strip()
@@ -1460,3 +1473,60 @@ def validate_narrative_reaction(data: dict | None) -> dict:
                 "payload": payload,
             })
     return {"consequences": out}
+
+
+# ============================================================================
+# player_death (#613, «que decida el motor») — el jugador ha caído y el motor
+# decide DÓNDE despierta (`wake`) y qué pasa al despertar (`consequences`).
+# Espejo de `DeathResolutionSchema` (nefan-core, zod). La GEOMETRÍA (tile
+# realizado, sitio libre, fuera del radio de los hostiles) no se mira aquí: la
+# regla es de nefan-core (`validarDespertar`) y la aplican el pre-flight del
+# motor y el bridge al recibir la respuesta.
+# ============================================================================
+
+PLAYER_DEATH_SYSTEM_PROMPT = (
+    """You are the narrative engine of a generative open-world RPG. The player has just died: decide where they wake up, inside the world described in `context.world`."""
+    + "\n\n"
+    + _prompt("player_death.md")
+    + "\n\n"
+    + GENERATE_SCENE_PROMPT_WORLD_RULES
+)
+
+NARRATIVE_WAKE_TOOL = _tool("narrative_wake.json")
+
+
+def _numero_finito(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def validate_death_resolution(data: dict | None) -> dict:
+    """Valida la respuesta a un `player_death`. Estricto como
+    `validate_narrative_reaction`: cualquier desviación lanza ValueError con el
+    motivo (el endpoint lo convierte en 422). Las consequences pasan por el
+    MISMO validador que las de un narrative_event, y además un `spawn_entity`
+    con `role: "hostile"` no cabe en un despertar."""
+    if not isinstance(data, dict):
+        raise ValueError(f"player_death payload must be an object, got {type(data).__name__}")
+    wake = data.get("wake")
+    if not isinstance(wake, dict):
+        raise ValueError("player_death payload missing object `wake`")
+    t = wake.get("type")
+    if t == "place":
+        place_id = wake.get("place_id")
+        if not isinstance(place_id, str) or not place_id:
+            raise ValueError("wake.place_id must be a non-empty string")
+        wake_out = {"type": "place", "place_id": place_id}
+    elif t == "point":
+        if not _numero_finito(wake.get("x")) or not _numero_finito(wake.get("z")):
+            raise ValueError("wake.x and wake.z must be finite numbers (world metres)")
+        wake_out = {"type": "point", "x": wake["x"], "z": wake["z"]}
+    else:
+        raise ValueError(f"wake.type='{t}' is invalid; allowed: ['place', 'point']")
+    reaccion = validate_narrative_reaction({"consequences": data.get("consequences")})
+    for idx, c in enumerate(reaccion["consequences"]):
+        if c.get("type") == "spawn_entity" and c.get("role") == "hostile":
+            raise ValueError(
+                f"consequences[{idx}]: no despiertes al jugador con un hostil al lado "
+                "(spawn_entity con role hostile no cabe en un despertar)"
+            )
+    return {"wake": wake_out, "consequences": reaccion["consequences"]}

@@ -69,11 +69,13 @@ export interface LoadRoomMessage {
   }[];
 }
 
+/** R con el jugador caído. Sin punto: en partida es «reintentar» —dónde
+ *  despierta lo decide el motor (#613, `bridge/handlers/despertar.ts`)—; sin
+ *  partida (fixtures) el bridge levanta al momento en el punto seguro del sim.
+ *  El punto viaja de vuelta en `StateUpdateMessage.reaparicion`. Un cliente
+ *  que mande `pos` es de otra versión y lo rechaza el zod (`.strict()`). */
 export interface RespawnMessage {
   type: "respawn";
-  /** Punto de reaparición en coordenadas globales (el cliente elige un punto
-   *  libre cercano en el tile actual). Ausente = legacy (0,0,4). */
-  pos?: Vec3;
 }
 
 export interface PingMessage {
@@ -371,6 +373,16 @@ export interface StateUpdateMessage {
     /** Modo del FSM (idle/wander/goto/visit/flee/intervene/react) — trazas. */
     state: string;
   }[];
+  /** Dónde despierta el jugador. SOLO en el frame que lo levanta: el del
+   *  despertar que decidió el motor (#613) o, sin partida, la respuesta a
+   *  `respawn`. El cliente lo copia a su posición antes de volver a mandar
+   *  input —la posición la conduce el input, y sin esto el siguiente frame lo
+   *  devolvería al cadáver—. Mismo patrón que `status.spawn` al arrancar. */
+  reaparicion?: Vec3;
+  /** Y hacia dónde mira (yaw, convención de `Mirada`), solo en el frame del
+   *  despertar que decidió el motor: hacia el lugar o el espacio abierto, no
+   *  hacia la pared que tenía delante el cadáver (QA S3 de BN). */
+  miradaAlDespertar?: number;
 }
 
 export interface PongMessage {
@@ -456,6 +468,11 @@ interface CuerpoDeNarrativeStatus {
   causaReaccion?: "conexion" | "respuesta";
   /** Diagnóstico completo para el registro, separado del texto de juego. */
   detalleTecnico?: string;
+  /** Solo kind `despertar` (#613): el bridge RECHAZA algo que un caído pidió
+   *  —hablar, viajar, un `respawn` que no toca— y lo dice. Es una respuesta a
+   *  esa petición, NO el estado de la decisión del motor: el velo del
+   *  despertar no cambia por él (`cambiaElDespertar`). */
+  rechazo?: true;
   elapsedMs?: number;
 }
 
@@ -497,6 +514,11 @@ interface CuerpoDeNarrativeStatus {
  *     encima de la partida— mientras el cliente, con el mismo criterio,
  *     descartaba un enemigo y seguía.
  *
+ *   · `despertar` — el jugador ha caído y el motor decide dónde despierta
+ *     (#613): `working` mientras decide, `error` si no pudo (o si el jugador
+ *     pidió algo que un caído no puede hacer). Lo pinta el velo del
+ *     despertar, no el muro (`protocol/despertar-en-pantalla.ts`).
+ *
  *  Añadir uno sin darle título propio NO COMPILA: `rotuloDeStatus` cierra
  *  su `switch` con `const nunca: never`, y `DETALLE_POR_DEFECTO` es un
  *  `Record` sobre esta misma unión. */
@@ -510,7 +532,8 @@ export type KindDeStatusDeSesion =
     | "plugin"
     | "action"
     | "protocolo"
-    | "combatientes";
+    | "combatientes"
+    | "despertar";
 
 /** Qué FASES admite cada kind. Un `ready` es «el sitio está listo» (`tile`:
  *  desde #405 toda escena servida es un tile, así que es el único ready del

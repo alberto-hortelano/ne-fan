@@ -1,0 +1,7 @@
+{
+  "description": "sin wake: el motor tiene que decir dónde despierta",
+  "expect": "reject",
+  "payload": {
+    "consequences": []
+  }
+}

@@ -12,6 +12,7 @@ import type {
 import type { Consequence } from "../src/narrative/types.js";
 import {
   capturarLogDelBridge,
+  entrarEnLaPartida,
   makeCtx,
   makeSocket,
   porElBorde,
@@ -222,3 +223,66 @@ describe("bridge dialogue_choice", () => {
   });
 });
 
+
+/** #613, pieza D: la ÚNICA curación del juego es la del motor (decisión del
+ *  usuario 2026-09-29, «se cura por consecuencias»). Todo por el borde: la
+ *  reacción entra por `dialogue_choice` con la consequence `player_healed`, y
+ *  se afirma en los TRES sitios donde tiene que acabar — el sim (lo que manda
+ *  el siguiente `state_update`), el store y el `state.json` guardado en el
+ *  mismo turno. */
+describe("bridge: player_healed cura al jugador (#613)", () => {
+  async function curarCon(amount: number, vidaAntes: number) {
+    const bundle = makeCtx({
+      ai: { reportPlayerChoice: async () => ({ ok: true, consequences: [{ type: "player_healed", amount }] }) },
+    });
+    const { ctx, sim, store, storage } = bundle;
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    const player = sim.getCombatant("player")!;
+    assert.equal(player.maxHealth, 100, "premisa: el jugador de la sesión tiene 100 de máximo");
+    player.health = vidaAntes;
+    await porElBorde(
+      { type: "dialogue_choice", eventId: "e", choiceIndex: 0, speaker: "Curandera", chosenText: "Dame la poción" },
+      socket,
+      ctx,
+    );
+    const guardado = (await storage.read(sessionId))!;
+    return { sim: player.health, store: store.state.player.hp, disco: guardado.player.health };
+  }
+
+  it("a un herido le suma la cantidad, en el sim, el store y el save del turno", async () => {
+    assert.deepEqual(await curarCon(25, 50), { sim: 75, store: 75, disco: 75 });
+  });
+
+  it("topa en el máximo: 90 + 25 son 100, no 115", async () => {
+    assert.deepEqual(await curarCon(25, 90), { sim: 100, store: 100, disco: 100 });
+  });
+
+  /** QA H3 de BN: un caído no habla. La conversación no llega al motor, el
+   *  jugador sigue a 0 y el bridge contesta al socket con `kind:"despertar"`
+   *  —«Estás caído»—. (Que `player_healed` no levante a un muerto lo sujeta
+   *  el unitario de `curarAlJugador`: por aquí la cura ni se pide.) */
+  it("un caído no habla: el diálogo se rechaza, no llega al motor y lo dice", async () => {
+    const bundle = makeCtx({
+      ai: { reportPlayerChoice: async () => ({ ok: true, consequences: [{ type: "player_healed", amount: 25 }] }) },
+    });
+    const { ctx, sim, aiCalls } = bundle;
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    sim.getCombatant("player")!.health = 0;
+    const antes = sent.length;
+    await porElBorde(
+      { type: "dialogue_choice", eventId: "e", choiceIndex: 0, speaker: "Curandera", chosenText: "Dame la poción" },
+      socket,
+      ctx,
+    );
+    assert.equal(aiCalls.choice.length, 0, "el motor no se entera");
+    assert.equal(sim.getCombatant("player")!.health, 0);
+    const aviso = sent.slice(antes).find((m) => m.type === "narrative_status") as NarrativeStatusMessage | undefined;
+    assert.equal((aviso as { kind?: string } | undefined)?.kind, "despertar");
+    assert.match(aviso?.message ?? "", /Estás caído/);
+  });});

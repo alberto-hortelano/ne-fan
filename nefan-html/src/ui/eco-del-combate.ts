@@ -114,13 +114,13 @@ export class EcoDelCombate {
         const quien = e.combatantId as string;
         if (quien === "player") {
           this.#vivo = false;
-          this.deps.log("YOU DIED — press R to respawn");
+          this.deps.log("Has caído.");
         } else {
           this.deps.log(`${quien} killed!`);
         }
       } else if (e.type === "player_respawned") {
         this.#vivo = true;
-        this.deps.log("Respawned!");
+        this.deps.log("Despiertas.");
       }
     }
     // El destello se apaga con el reloj del SIM (el `delta` del frame, topado a

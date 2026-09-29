@@ -980,6 +980,19 @@ describe("NarrativeState: runtime del jugador atado al save", () => {
     assert.equal((await storage.read(id))!.player.health, 8);
   });
 
+  /** #613: el motor decide si cura (`player_healed`) leyendo
+   *  `context.player.health`. Sin el volcado, era la vida del ÚLTIMO GUARDADO:
+   *  un jugador herido después de guardar le constaba al motor entero. */
+  it("serializeForLlm() también tira de la fuente: el motor ve la vida de AHORA", () => {
+    const { narrative: s } = makeNarrativeState();
+    s.startNewSession("g");
+    let vivo = { position: { x: 3, y: 1, z: -4 }, health: 61 };
+    s.bindPlayerRuntime(() => vivo);
+    assert.equal(s.serializeForLlm().player.health, 61);
+    vivo = { position: { x: 3, y: 1, z: -4 }, health: 12 };
+    assert.equal(s.serializeForLlm().player.health, 12, "sin guardar entre medias");
+  });
+
   it("sin jugador vivo se conserva lo persistido (no es un error)", async () => {
     const { narrative: s, storage } = makeNarrativeState();
     const id = s.startNewSession("g");

@@ -42,12 +42,13 @@
  *  podría estar diciéndolo encima de un juego que funciona. Y el control:
  *  quitada la intercepción, el título vuelve.
  *
- *  Y **bloque 4**: al morir y pulsar `R`, el jugador vuelve EXACTAMENTE donde
- *  cayó y ese punto se puede pisar (`puntoDeReaparicion`). Se afirma
- *  «exactamente donde cayó» y no solo «en un sitio libre» porque es lo único
- *  que separa la regla de hoy de cualquier otra: teletransportarle a cualquier
- *  hueco transitable del tile saldría igual de verde, y el jugador aparecería a
- *  treinta metros de donde le mataron sin que nada se pusiera rojo.
+ *  Y **bloque 4**: al morir y pulsar `R`, el jugador vuelve a un punto que se
+ *  puede pisar. Hasta #613 (tanda BN, 2026-09-29) se afirmaba además «vuelve
+ *  EXACTAMENTE donde cayó», que era la regla de entonces; hoy el punto lo
+ *  decide el sim —el último punto seguro, fuera de combate— y ese aserto se
+ *  invirtió: NO vuelve donde cayó (el hostil le enganchó a 1,2 m y el punto
+ *  seguro queda fuera de su radio). Dónde exactamente lo mide el guion 260,
+ *  que es el suyo; aquí solo se deja de afirmar la regla retirada.
  *
  *  Y el bloque 4 AFIRMA además POR QUÉ esa regla no puede preguntar por
  *  sólidos: `CollisionSystem.collidesAt(x, z)` no es una consulta de punto sino
@@ -84,6 +85,7 @@
  *   · **`nefan-core/src/simulation/reaparicion.ts`, los ejes cruzados**
  *     (`{ x: pos.z, …, z: pos.x }`) → rojo «vuelve EXACTAMENTE donde cayó»:
  *     cayó en (11,443, 0,338) y volvió a (0,338, 11,443), a 15,705 m de allí.
+ *     (Aserto retirado con #613: ver arriba.)
  *   · **`nefan-html/src/dev/nefan-hook.ts`, `probeCollide` preguntando desde
  *     6 m** — o sea la consulta de PUNTO que le falta al cliente, simulada
  *     sobre la de movimiento → rojo el aserto de la asimetría, y SOLO ese:
@@ -539,8 +541,8 @@ export default async function (ctx) {
   );
   const dist = Math.hypot(r.pos.x - r.cayoEn.x, r.pos.z - r.cayoEn.z);
   ctx.expect(
-    "vuelve EXACTAMENTE donde cayó",
-    dist < 0.01,
+    "NO vuelve donde cayó: vuelve al punto seguro que decide el sim (#613)",
+    dist > 1,
     `cayó en (${r.cayoEn.x.toFixed(3)}, ${r.cayoEn.z.toFixed(3)}) · volvió a (${r.pos.x.toFixed(3)}, ${r.pos.z.toFixed(3)}) · ${dist.toFixed(3)} m`,
   );
   // La solidez del punto se pregunta por PUNTO (#662). Aquí había un mirador a

@@ -303,8 +303,8 @@ export class BridgeClient {
     this.send({ type: "load_room", roomId, enemies, dimensions });
   }
 
-  sendRespawn(pos?: { x: number; y: number; z: number }): void {
-    this.send({ type: "respawn", pos });
+  sendRespawn(): void {
+    this.send({ type: "respawn" });
   }
 
   /** Pide un tile del plano continuo (prefetch en 2º plano o blocking). */

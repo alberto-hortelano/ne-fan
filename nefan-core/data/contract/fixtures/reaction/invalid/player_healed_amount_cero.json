@@ -1,0 +1,12 @@
+{
+  "description": "player_healed con amount 0: curar cero no es curar (entero ≥ 1)",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "player_healed",
+        "amount": 0
+      }
+    ]
+  }
+}

@@ -35,6 +35,7 @@
  *  del HUD. Lo único que cambia es CON QUÉ RELOJ se espera.
  */
 
+import { URLS } from "./stack.mjs";
 import { esperaExpiradaEn } from "./esperas.mjs";
 
 /** Las opciones que este helper entiende, o LANZA.
@@ -236,4 +237,126 @@ async function golpearHasta(ctx, id, objetivo, { sim, alcance }) {
       throw err;
     });
   return fin;
+}
+
+/** Se deja herir por `id` —quieto y encarado, sin devolver golpes— hasta que
+ *  la vida del HUD sea `hasta` o menos. Es la PRECONDICIÓN de quien necesita
+ *  un jugador herido (una poción que medir): herirse peleando dependía de cómo
+ *  saliera la pelea, y alguna corrida acababa a 100/100 (QA H8 de BN).
+ *
+ *  `sim` son segundos de mundo de cortafuegos. Devuelve `{hp}` o `null` si
+ *  expira: el `null` lo declara quien llama (`ctx.sinMedir`), no se traga. */
+export async function dejarseHerirHasta(ctx, id, hasta, opciones = {}) {
+  soloEstasOpciones("dejarseHerirHasta", opciones, ["sim"]);
+  const { sim = 60 } = opciones;
+  return ctx.absorbe(
+    `cortafuegos de la espera a que ${id} deje al jugador a ${hasta} PV o menos: es PRECONDICIÓN, ` +
+      "y si expira quien llama lo declara ⊘",
+    () =>
+      ctx.waitFor(
+        `${id} deja al jugador a ${hasta} PV o menos`,
+        (a) => {
+          const e = window.__nefan.enemies().find((x) => x.id === a.id);
+          const p = window.__nefan.state().pos;
+          if (e && p) window.__nefan.setYaw(Math.atan2(e.pos.x - p.x, e.pos.z - p.z));
+          const hp = Number(document.getElementById("player-hp-text")?.textContent ?? "NaN");
+          return hp <= a.hasta ? { hp } : null;
+        },
+        { sim },
+        { id, hasta },
+      ),
+  );
+}
+
+/** Cómo contesta el motor FALSO a un `player_death` (#613): `normal` (el primer
+ *  sitio que el juego acepta), `mal` (donde cayó, sin preguntar), `error` (un
+ *  500) o `tarda` (`ms` y luego `normal`). `/dev/reset` lo devuelve a
+ *  `normal`, así que quien lo cambie declara `aisla: ["fake-ai"]`. Con
+ *  `punto` ({x, z}), el modo `punto`: prueba PRIMERO ese sitio. */
+export async function conductaDelDespertar(ctx, modo, ms = 0, punto = null) {
+  const res = await fetch(`${URLS.fake_ai}/dev/despertar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ modo, ms, ...(punto ? { x: punto.x, z: punto.z } : {}) }),
+  });
+  if (!res.ok) throw new Error(`POST /dev/despertar HTTP ${res.status}: ${await res.text()}`);
+  ctx.log(`motor falso ante una muerte: ${JSON.stringify(await res.json())}`);
+}
+
+/** El velo «Has caído» tal como lo ve el jugador: si está, qué dice, y si se
+ *  le ofrece la R (y con qué rótulo). Se lee del DOM: es lo que se ve. Para
+ *  `ctx.page.evaluate(leerElVelo)`: corre en la página. */
+export const leerElVelo = () => {
+  const v = document.getElementById("velo-del-despertar");
+  const texto = document.getElementById("velo-del-despertar-texto")?.textContent ?? "";
+  const r = window.__nefan.ui.actions().prompt.find((a) => a.id === "respawn");
+  return { visible: Boolean(v && !v.hidden), texto, r: r ? r.label : null };
+};
+
+/** Caído en partida: el motor decide dónde despierta, SIN TECLA (#613). Afirma
+ *  que el velo lo dice («El mundo decide dónde despiertas…») y que no se
+ *  ofrece R, y espera a que el jugador esté en pie. Devuelve `{hp, pos}`.
+ *
+ *  Para que el velo se pueda VER, el motor tiene que tardar algo: quien lo
+ *  afirme pone antes `conductaDelDespertar(ctx, "tarda", ms)`. `velo: false`
+ *  solo espera. */
+export async function esperarElDespertar(ctx, etiqueta, opciones = {}) {
+  soloEstasOpciones("esperarElDespertar", opciones, ["velo", "sim"]);
+  const { velo = true, sim = 30 } = opciones;
+  if (velo) {
+    await ctx.expectEspera(
+      `${etiqueta}: el velo dice que el mundo decide dónde despiertas, y no hay R que pulsar`,
+      true,
+      () => {
+        const v = document.getElementById("velo-del-despertar");
+        const texto = document.getElementById("velo-del-despertar-texto")?.textContent ?? "";
+        const r = window.__nefan.ui.actions().prompt.some((a) => a.id === "respawn");
+        return v && !v.hidden && /decide dónde despiertas/.test(texto) && !r ? { texto } : null;
+      },
+      { sim: 2 },
+    );
+  }
+  return ctx.waitFor(
+    `${etiqueta}: el jugador despierta`,
+    () => {
+      const hp = Number(document.getElementById("player-hp-text")?.textContent ?? "0");
+      return hp > 0 ? { hp, pos: { ...window.__nefan.state().pos } } : null;
+    },
+    { sim },
+  );
+}
+
+/** Si el jugador está caído, espera a que despierte (afirmándolo) y, con
+ *  `punto`, se lo pide así al motor falso (modo `punto`) y después el banco le
+ *  devuelve allí (`setPlayerPos`). Para los guiones que no miden el despertar
+ *  y solo necesitan seguir desde donde estaban. Devuelve `{hp, pos}` o `null`
+ *  si estaba en pie. */
+export async function despertarSiEstaCaido(ctx, etiqueta, opciones = {}) {
+  soloEstasOpciones("despertarSiEstaCaido", opciones, ["punto"]);
+  const { punto = null } = opciones;
+  const hp = Number(await ctx.page.evaluate(() => document.getElementById("player-hp-text")?.textContent ?? "0"));
+  if (hp > 0) return null;
+  if (punto) await conductaDelDespertar(ctx, "punto", 0, punto);
+  const r = await esperarElDespertar(ctx, etiqueta, { velo: false });
+  ctx.expect(`${etiqueta}: el jugador caído despierta`, r.hp > 0, JSON.stringify(r));
+  if (punto) await ctx.nefan("setPlayerPos", punto.x, punto.z);
+  return r;
+}
+
+/** Quita de en medio al primer hostil vivo, pegándole, como haría quien juega.
+ *  Si gana él, espera a que el jugador despierte y lo vuelve a intentar (hasta
+ *  `intentos`). Afirma que al final cayó. */
+export async function quitarDeEnMedioAlHostil(ctx, intentos = 2) {
+  for (let intento = 1; intento <= intentos; intento++) {
+    const id = await ctx.page.evaluate(() => window.__nefan.enemies().find((e) => e.alive !== false)?.id ?? null);
+    if (!id) return;
+    await acercarse(ctx, id, { objetivo: 1.6, tramos: 14 });
+    const pelea = await herirHasta(ctx, id, 0, { sim: 90 });
+    if (pelea?.muerto) {
+      ctx.expect(`el jugador quita de en medio al hostil (${id})`, true, JSON.stringify(pelea));
+      return;
+    }
+    await despertarSiEstaCaido(ctx, `el hostil ${id} ganó la pelea ${intento}`);
+  }
+  ctx.expect("el jugador quita de en medio al hostil", false, `${intentos} intentos sin tumbarlo`);
 }

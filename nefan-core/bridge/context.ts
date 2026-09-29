@@ -63,7 +63,7 @@ export interface ClientSocket {
 /** Lo que los handlers necesitan del AiClient — permite fakes en tests. */
 export type NarrativeAiClient = Pick<
   AiClient,
-  "notifySessionStart" | "generateScene" | "reportPlayerChoice" | "developWorld"
+  "notifySessionStart" | "generateScene" | "reportPlayerChoice" | "reportPlayerDeath" | "developWorld"
 >;
 
 export interface BridgeContext {
@@ -106,6 +106,10 @@ export interface BridgeContext {
    *  adentro (`cadenaEnLaCelda`); ausente = todavía no se sabe (arranque,
    *  reanudar) y cuenta como vacía. Los triggers salen del cruce de la vieja
    *  con la nueva (#465, F1). */
+  /** El despertar en vuelo (#613): UNA petición al motor a la vez, con el
+   *  socket que conduce el mundo (a él va el frame con el punto). `null` sin
+   *  petición. Lo escribe solo `bridge/handlers/despertar.ts`. */
+  despertar: { enVuelo: { id: string; ws: ClientSocket } | null };
   posTracking: {
     cellKey: string | null;
     tileKey: string | null;
@@ -586,6 +590,30 @@ export function runPluginTick(
   return result.effects;
 }
 
+/** Aplica al sim las `player_healed` que recolectó `dispatchConsequences`
+ *  (#613: la única curación del juego es la del motor). Se llama DESPUÉS de
+ *  despachar y ANTES de `save()`: el sim está atado al save (`bindPlayerRuntime`),
+ *  así que la vida curada llega al disco con el mismo guardado del turno. La
+ *  barra la mueve el `playerHp` del siguiente `state_update`.
+ *
+ *  Lo que no cura se DICE en el log: un muerto (solo R deshace la muerte), un
+ *  sim sin jugador. Lleno no es un fallo — el motor no tiene por qué saber que
+ *  la poción sobraba. */
+export function aplicarCuraciones(ctx: BridgeContext, eventId: string, curaciones: number[]): void {
+  if (curaciones.length === 0) return;
+  const player = ctx.sim.getCombatant("player");
+  if (!player) {
+    console.error(`Bridge: player_healed en ${eventId} sin jugador en el sim — no se cura a nadie`);
+    return;
+  }
+  for (const cantidad of curaciones) {
+    const recuperado = ctx.sim.curarAlJugador(cantidad);
+    if (recuperado === 0 && player.health <= 0) {
+      console.warn(`Bridge: player_healed(${cantidad}) en ${eventId} sobre un jugador muerto — solo R lo levanta`);
+    }
+  }
+}
+
 /** Evaluate the map triggers crossed by a place transition and dispatch their
  *  consequences. Fires player_left on the old place, player_entered/first_visit
  *  on the new one. Pre-authored by the narrative engine via map_add_trigger. */
@@ -621,6 +649,7 @@ export async function fireMapCrossing(
     playerForward: { x: 0, y: 0, z: -1 },
   });
   const pluginFx = runPluginTick(ctx, eventId, dispatched.pluginEvents);
+  aplicarCuraciones(ctx, eventId, dispatched.curaciones);
   await ctx.narrative.save();
   ctx.broadcastNarrative({
     type: "narrative_event",

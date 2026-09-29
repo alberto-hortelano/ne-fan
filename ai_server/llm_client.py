@@ -24,6 +24,9 @@ from narrative_schemas import (
     WEAPON_ORIENT_TOOL,
     NARRATIVE_REACT_SYSTEM_PROMPT,
     NARRATIVE_REACT_TOOL,
+    NARRATIVE_WAKE_TOOL,
+    PLAYER_DEATH_SYSTEM_PROMPT,
+    validate_death_resolution,
     validate_scene_response,
     validate_weapon_orient_response,
     validate_narrative_reaction,
@@ -865,3 +868,89 @@ class LLMClient:
         # "no pasa nada" con {"consequences": []} y 200 OK (lo que el docstring
         # de report_player_choice dice EVITAR).
         raise ValueError("react_to_player: el modelo no emitió el bloque tool_use esperado")
+
+    # ── player_death (#613, «que decida el motor») ──────────────────────────
+
+    def report_player_death(self, event_id: str, context: dict) -> dict:
+        """El jugador ha caído: el motor decide dónde despierta. MCP primero
+        (kind `player_death`), API después. Sin ninguno de los dos, lanza
+        NarrativeUnavailable (→ 503). Una respuesta con forma inválida lanza
+        ValueError desde `validate_death_resolution` (→ 422)."""
+        context = self._inject_available_assets(dict(context))
+        if self._ws_connected and self._ws:
+            result = self._report_death_via_mcp(event_id, context)
+            if result is not None:
+                return result
+        if self.api_client:
+            result = self._report_death_via_api(event_id, context)
+            if result is not None:
+                return result
+        raise NarrativeUnavailable(
+            "report_player_death: no MCP listener and no API client produced a response"
+        )
+
+    def _report_death_via_mcp(self, event_id: str, context: dict) -> dict | None:
+        request_id = str(uuid.uuid4())
+        with self._pending_lock:
+            self._pending[request_id] = None
+        try:
+            self._ws.send(json.dumps({  # type: ignore
+                "type": "narrative_event",
+                "request_id": request_id,
+                "kind": "player_death",
+                "event_id": event_id,
+                "speaker": "",
+                "chosen_text": "",
+                "free_text": "",
+                "context": context,
+            }))
+        except Exception as e:
+            print(f"LLM: player_death MCP send failed ({e})")
+            with self._pending_lock:
+                self._pending.pop(request_id, None)
+            return None
+        print(f"LLM: player_death sent via MCP (id={request_id[:8]})")
+        # El motor puede consultar el mapa antes de decidir: el techo de una escena.
+        timeout = max(self.timeout, 120.0)
+        start = time.time()
+        while time.time() - start < timeout:
+            with self._pending_lock:
+                result = self._pending.get(request_id)
+                if result is not None:
+                    del self._pending[request_id]
+                    if isinstance(result, dict) and result.get("error") == "no_mcp_listener":
+                        print("LLM: player_death rejected — no MCP listener")
+                        return None
+                    validated = validate_death_resolution(result if isinstance(result, dict) else None)
+                    print(f"LLM: player_death resolved ({time.time() - start:.1f}s)")
+                    return validated
+            time.sleep(0.1)
+        with self._pending_lock:
+            self._pending.pop(request_id, None)
+        print(f"LLM: player_death MCP timeout ({timeout}s)")
+        return None
+
+    def _report_death_via_api(self, event_id: str, context: dict) -> dict | None:
+        if not self.api_client:
+            return None
+        user_text = (
+            f"event_id: {event_id}\n\n"
+            f"context: {json.dumps(context, ensure_ascii=False)[:8000]}\n\n"
+            "Decide where the player wakes up via the wake_player tool."
+        )
+        try:
+            response = self.api_client.messages.create(  # type: ignore
+                model=self.model,
+                max_tokens=1024,
+                system=PLAYER_DEATH_SYSTEM_PROMPT,
+                tools=[NARRATIVE_WAKE_TOOL],
+                tool_choice={"type": "tool", "name": "wake_player"},
+                messages=[{"role": "user", "content": user_text}],
+            )
+        except Exception as e:
+            print(f"LLM: wake_player API error ({e})")
+            return None
+        for block in response.content:
+            if block.type == "tool_use" and block.name == "wake_player":
+                return validate_death_resolution(block.input)
+        raise ValueError("wake_player: el modelo no emitió el bloque tool_use esperado")

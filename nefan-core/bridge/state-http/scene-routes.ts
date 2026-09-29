@@ -6,6 +6,7 @@
  *  debe salir como 500 (fail-loud), no disfrazado de `{ok:false}` que enseñe
  *  al motor a "corregir" su escena contra un validador roto. */
 import {
+  DespertarValidarRequestSchema,
   SceneAssetRefsRequestSchema,
   SceneValidateRequestSchema,
 } from "../../src/contracts/request-schemas.js";
@@ -56,6 +57,15 @@ export const sceneRoutes = {
     const scene = parsed.data.scene as Record<string, unknown>;
     const result = validateScene(scene, tileContextFor(ctx.narrative, scene));
     return ok(result satisfies ResponseOf<typeof WorldStateApi.validateScene>);
+  },
+
+  /** Pre-flight del despertar (#613): la misma regla que aplica el bridge al
+   *  recibir la respuesta del motor. No muta nada; un despertar que no vale es
+   *  un 200 con `ok:false` y el motivo, como la validación de escena. */
+  validarDespertar: (ctx, { body }) => {
+    const parsed = parseBody(DespertarValidarRequestSchema, body);
+    if (!parsed.ok) return parsed.result;
+    return ok(ctx.validarDespertar(parsed.data.wake) satisfies ResponseOf<typeof WorldStateApi.validarDespertar>);
   },
 
   appendSceneAssetRefs: (ctx, { body }) => {

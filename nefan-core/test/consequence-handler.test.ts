@@ -513,4 +513,28 @@ describe("dispatchConsequences", () => {
     ]);
     assert.equal(s.dialogue_history[0].narrative_consequences[0].type, "plugin_event");
   });
+
+  /** #613: la curación se RECOLECTA, como `plugin_event` — el sim no vive en
+   *  el handler. Dos del mismo turno son dos curaciones, en orden. */
+  it("player_healed is collected in order, produces no core effect, and is audited", () => {
+    const s = makeState();
+    const eventId = s.recordDialogueEvent("a", "b", [], -1);
+    const r = dispatchConsequences(s, eventId, [
+      { type: "player_healed", amount: 30 },
+      { type: "noop" },
+      { type: "player_healed", amount: 5 },
+    ]);
+    assert.deepEqual(r.curaciones, [30, 5]);
+    assert.deepEqual(r.effects, []);
+    assert.deepEqual(
+      s.dialogue_history[0].narrative_consequences.map((c) => c.type),
+      ["player_healed", "noop", "player_healed"],
+    );
+  });
+
+  it("sin player_healed, curaciones va vacío", () => {
+    const s = makeState();
+    const eventId = s.recordDialogueEvent("a", "b", [], -1);
+    assert.deepEqual(dispatchConsequences(s, eventId, [{ type: "noop" }]).curaciones, []);
+  });
 });
