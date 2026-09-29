@@ -32,10 +32,11 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   // ui_systems ya no describe un eje de vistas (hay una sola): sus
   // identificadores son los sistemas que el motor SÍ puede leer del ui_state.
   "ui_systems.md": ["dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
-  // generate_tile.place / nearby_places: los rellena buildGenerateTileCtx al
-  // anclar un place del world map a un tile (viaje desde «Salidas»). Si el
-  // prompt deja de nombrarlos, el motor recibe el campo sin saber qué es.
-  "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain", "surface_ref", "fps_faces", "generate_tile.place", "nearby_places"],
+  // generate_tile.place / anchored_places / nearby_places: los rellena
+  // buildGenerateTileCtx con los places del world map de este tile y de su
+  // vecindario. Si el prompt deja de nombrarlos, el motor recibe el campo sin
+  // saber qué es.
+  "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain", "surface_ref", "fps_faces", "generate_tile.place", "anchored_places", "nearby_places"],
   // `role` y `description` de NPC: el motor lee el PROMPT, no el tool JSON. Un
   // campo declarado solo en el JSON es un campo que el motor no emite nunca.
   //

@@ -1,0 +1,283 @@
+# QA — Tanda BM: playtest con el motor narrativo real (#239, #465)
+
+Fecha: 2026-09-29. Checkout `/home/al/code/ne-fan` en `main` @ `d0cc2231`, offset 0.
+Motor: `claude -p` headless, modelo `claude-opus-5-5` (línea `init` del stream), con
+`narrative-mcp` recién compilado (`npm run build` a las 13:06; `dist/` y `nefan-core/dist`
+con el zod de `role` y el `AnchorSchema` de hoy).
+
+Material de sesión (gitignored): `labs/narrative/runs/tanda-bm-20260929/`
+- `logs/motor-A.ndjson`, `logs/motor-B.ndjson`: transcripción completa de cada motor (tool_use + tool_result)
+- `logs/bridge.log`, `logs/ai_server.log`, `logs/narrative-mcp-{A,B}.log`, `logs/PIDS.txt`
+- `emulator-events.ndjson`: los dos sentidos del wire
+- `tiles-A.json`, `tiles-B.json`: el Format D ACEPTADO de cada tile, sacado del transcript
+- `snapshot-anillo-sano.json` (el mundo antes de romper la entrada), `entrada-B-request.txt` (el contexto que recibió el motor B)
+- `analiza.py`, `rects.py`, `overlap.py`: los scripts que producen los números de este informe
+
+## Montaje
+
+| Proceso | Cómo | Nota |
+|---|---|---|
+| asset-store :8767 | `npx tsx services/asset-store/server.ts` | |
+| bridge :9877/:9878 | `NEFAN_GAMES_DIR=<run>/games NEFAN_SAVES_DIR=<run>/saves npx tsx bridge/ws-server.ts` | copia de `data/games`: el bridge escribe el snapshot del mundo en `gamesDir`, y así no se toca `nefan-core/data/games/*/world/` |
+| ai_server :8765 | `python -u ai_server/main.py` | canal MCP |
+| motor A / motor B | `claude -p … --mcp-config <solo narrative> --strict-mcp-config --allowedTools mcp__narrative --output-format stream-json --verbose` | el stderr de narrative-mcp va a un log propio con un wrapper. Un motor FRESCO por sesión de juego |
+| game-emulator :9899 | `node labs/narrative/game-emulator.mjs` | |
+
+Sin remote-gen, sprite-forge ni placeholder de narrative-mcp, y con `NEFAN_ENTORNO` por defecto (desarrollo). Cero créditos de imagen.
+
+- Sesión A: `1790680146-3a36e8`. Mundo `alta_fantasia`, nueva, con su save en `<run>/saves`.
+- Sesión B: `1790682130-fe2c11`.
+- Al terminar se pararon por grupo de procesos los seis grupos arrancados (asset-store, bridge, ai_server, emulador, motor A y motor B). Después de pararlos, `ss` no mostraba ninguno de los puertos del stack.
+
+Recorrido de la sesión A (el jugador lo hace en el flujo real: título, arranque, diálogo y panel de salidas):
+1. `start_session`: bootstrap del tile (0,0) «Postas del Sedal». El motor siembra 13 lugares, 4 enlaces y 4 sitios con `anchor.rect`. Tardó 7 min 10 s.
+2. `player_entered_place vado_almar`: tile (0,-1), 288 s.
+3. Diálogo con el alguacil. Pido «una aldea con molino y herrería donde la alcaldesa necesite manos, y otro pueblo de tejedoras, alfareros y un carpintero». El motor crea `ondahonda` y `cisterna_clara` con `map_upsert_place` y los enlaza.
+4. Viaje a `ondahonda`: tile (0,1), 217 s.
+5. Viaje a `cisterna_clara`: tile (1,0), 272 s.
+6. Diálogo con la tejedora. Pido la aldea «con curandero, tonelero, panadera y pescador». El motor crea `juncarera`.
+7. Viaje a `juncarera`: tile (-1,0), 182 s.
+8. Viaje a `torre_del_hilo` (un landmark): tile (2,0), 115 s.
+
+Sesión B (#465.3), con el motor B fresco: la entrada se regenera en un mundo pre-generado con 5 vecinos. Tardó 221 s. El montaje está en «Workarounds».
+
+## Criterios
+
+| Criterio | Veredicto | Evidencia |
+|---|---|---|
+| **#239**: cuántas veces rechaza el pre-flight un `role` que es un oficio | ✅ **cero** | `grep -c "rol de conducta"` da 0 en `motor-A.ndjson` y 0 en `motor-B.ndjson`. Muestra: 7 tiles aceptados (5 de pueblo, 1 landmark y la entrada regenerada) con 30 NPC, más 2 `spawn_entity`. Roles: merchant 16, villager 7, guard 4, peasant 3; los dos spawn, villager. Todos los oficios pedidos van a `name`/`description` y ninguno a `role`: «Tomasa Yunquera» (herrera) y «Aurora Pajarera» (alcaldesa) son `merchant`, «Anselmo Tolva» (molinero) es `peasant`, «Bartolo Duela» (tonelero), «Remedios Hogaza» (panadera) y «maese Anís» (curandero) son `merchant`, «Rufo Nasas» (pescador) es `peasant`. Los 4 rechazos que hubo en toda la sesión son de otra clase (ver abajo) |
+| **#465.1a**: ¿llama a `map_upsert_place` con `anchor.rect` cuando construye un lugar de `generate_tile.place`? | ⚠️ **casi siempre, pero a destiempo en la mitad de los casos** | En 4 de los 5 viajes pone rect; Vado Almar se queda sin él (el lugar es entonces el tile entero, que es lo documentado). **2 de esos 4 llegan DESPUÉS de `narrative_respond`**: Ondahonda (`USE respond … RES 'Scene sent …'` y luego `USE map_upsert_place {"id":"ondahonda",…"anchor":{"tx":0,"ty":1,"rect":[42,58,28,16]}}`) y la Torre del Hilo (`RES 'Scene sent …'` y luego `rect [54,44,18,10]`). Cisterna Clara y Juncarera lo ponen antes. En el bootstrap, el settlement se queda sin rect y los 4 sitios hijos lo llevan todos antes del respond |
+| **#465.1b**: ¿el rect cae sobre lo que declaró? | ⚠️ **cae junto a ello, sobre el punto de llegada; no cubre el lugar** | Salida de `overlap.py`, sección «Qué cae bajo cada rect». Los sitios del bootstrap casan exactamente: el rect de `posta_del_farol` contiene el edificio `posada`, a Marela y su mobiliario; el de `lamparería_de_sael`, el edificio `lamparería` y a Sael; el de `torre_caudal_postas`, el prism `torre_caudal`; el de `plaza_de_postas`, fuente, puestos y carreta. En los viajes, el rect es la plaza o el tramo de camino que entra en ella, no el pueblo ni su monumento |
+| **#465.2**: ¿produce rects pegados al borde? | ✅ **no** | Distancia mínima al borde de los 8 rects: `torre_caudal_postas`, 18 celdas (9 m). En los lugares de viaje, 34 celdas (17 m) o más. Ninguno se acerca a la zona de riesgo de `sitioParaAparecer`, que queda por debajo de una celda |
+| **#465.3a**: al regenerar la entrada sin `bootstrap_world_map` y con vecinos, ¿continúa las costuras del anillo? | ✅ **sí, las 5** | Los vecinos le pidieron un path en el norte a 69, un río en el norte a 115, un río en el sur a 120, un path en el este a 60 y un path en el oeste a 66. La entrada nueva tiene `camino_norte` que termina en (69,0), el `arroyo` de 112–118 en la fila 0 (centro 115) y de 116,5–123,5 en la fila 128 (centro 120), y `camino_real` en el este a 60 y en el oeste a 66. El validador del bridge lo aceptó a la primera y se registró la escena. En el log del bridge: `se regenera SOLO la entrada, dentro de su mapa (16 lugares) y con 5 vecinos` |
+| **#465.3b**: ¿se abstiene de sembrar lugares? | ✅ **sí** | Motor B: 0 llamadas `map_upsert_place` y 0 `map_link`; solo `scene_validate` ×2 y `narrative_respond` ×1. El snapshot reescrito tiene 16 lugares y 7 enlaces, igual que antes, con los anchors idénticos (diff vacío). El contexto no llevaba `bootstrap_world_map` |
+| **#465.3c** (nuevo): ¿los lugares ya anclados DENTRO de la entrada siguen donde está lo que nombran? | ❌ **no**: ver H1 | |
+
+## Hallazgos
+
+### H1 — importante (#465.3/#578): la entrada regenerada deja con rects viejos los sitios anclados en ella
+
+**Reproducción.** Una partida nueva cuyo bootstrap ancla sitios con `rect` en el tile (0,0); en esta sesión, `posta_del_farol`, `lamparería_de_sael`, `torre_caudal_postas` y `plaza_de_postas`. Su entrada deja de pasar el validador y el mundo acaba en el camino `entrada-en-el-mapa-del-fichero`. El motor rehace la entrada con otra distribución y los rects del mapa siguen siendo los de la entrada anterior:
+
+| Sitio | Rect (el viejo, intacto) | Qué hay debajo en la entrada nueva |
+|---|---|---|
+| La Posta del Farol | [40,34,22,16] | el `establo` de relevos. La posada nueva está en [40,70,22,16] |
+| Lamparería de Sael | [72,40,14,16] | nada. La lamparería nueva está en [76,68,14,11] |
+| Torre-caudal de Postas | [94,38,16,16] | `casa_5`, la casa del correo de dirigibles y el mástil de amarre |
+| Plaza de las Postas | [40,52,38,20] | la posada, el establo, la lamparería y un abrevadero |
+
+Además, la descripción del sitio sigue diciendo «La lleva Marela Tresgavillas», y la entrada nueva pone de posadera a «Oria Trigal». El mapa y la escena cuentan dos historias distintas.
+
+**Qué espera el jugador.** Al elegir «La Posta del Farol» en el panel de salidas, aparecer en la posada, que es donde está la posadera. Con el mapa actual aparece junto al establo, y los triggers del sitio saltan en el sitio equivocado.
+
+**Causa, medida.** El motor no pudo saberlo. `entrada-B-request.txt` lleva en `generate_tile.place` solo el settlement (`postas_del_sedal`). `nearby_places` enumera solo lugares de OTROS tiles: vado_almar, torre_del_hilo, ondahonda, cisterna_clara y juncarera. Los cuatro sitios anclados en (0,0) no aparecen en ningún campo, y el prompt dice «do not seed it again». Es lo mismo que el `runEntradaEnElMapaDelFichero` declara que no sujeta, pero en otra forma: no es un lugar sembrado de más, es un lugar que ya existía y se queda anclado en una geometría que ya no existe. Ni el guion 214 ni el 144 lo ven, porque el motor falso repite la misma entrada.
+
+**Arreglo concreto** (lo decide el arquitecto). Que `generate_tile` lleve los lugares ya anclados en ESTE tile (`id`, `name`, `kind`, `rect`) y que `tile_instructions.md` diga «construye cada uno dentro de su rect». La otra opción es permitir de forma explícita que el motor RE-ancle esos lugares (sin crear ninguno nuevo) y decirlo en el párrafo BOOTSTRAP sin `bootstrap_world_map`. La primera es más barata y determinista: el rect lo decide el mapa y el motor construye sobre él. Afecta también a cualquier tile que se regenere con lugares ya anclados, no solo a la entrada.
+
+### H2 — importante (#465.1): el rect llega después de la escena, y la primera llegada ignora el rect
+
+**Reproducción.** Nueva partida, viaje a un lugar sin tile. En 2 de los 4 viajes con rect (Ondahonda y la Torre del Hilo), el motor llama `narrative_respond` y después `map_upsert_place` con el rect. El bridge difunde la llegada en cuanto recibe el tile, así que el `sitio` sale del anchor SIN rect, que es el centro del tile:
+
+- Torre del Hilo: `"spawn": {"x": 128, "z": 0}` = celda (64,64) del tile (2,0). El rect llegó después: [54,44,18,10], filas 44–53. **El jugador aparece unos 5 m al sur del lugar, fuera de su rect.**
+- Ondahonda: `"spawn": {"x": 0, "z": 64}` = celda (64,64), que por suerte cae dentro de [42,58,28,16].
+- Contraste con los dos que lo pusieron antes: Cisterna Clara `spawn x=52` = celda (40,63), dentro de [34,58,12,10]; Juncarera `spawn x=-61.5` = celda (69,62), dentro de [58,58,22,8].
+
+**Qué espera el jugador.** Que el primer viaje a un lugar le deje en el lugar, igual que los viajes siguientes, que ya leerán el rect.
+
+**Arreglo concreto.**
+- Mínimo, de prosa, en `tile_instructions.md` («WHERE A PLACE LIVES IN ITS TILE»): «when generate_tile.place is present, call map_upsert_place with its rect BEFORE narrative_respond: the player is placed the moment the tile is sent».
+- Preferible, porque la garantía va en el tipo: que el rect del lugar viaje DENTRO de la respuesta del tile (un campo del Format D presente cuando hay `generate_tile.place`) y el bridge lo aplique antes de difundir. Así la carrera deja de poder darse, en vez de depender de que el modelo lea una frase.
+
+### H3 — menor (#465.1): en los lugares de viaje, el rect es el punto de llegada, no el lugar
+
+Cuánto ocupa cada rect sobre las 16.384 celdas del tile: Cisterna Clara, 120 celdas (0,7 %: el tramo del camino oeste que toca la plaza; la cisterna, prism en 56–72, queda fuera); Juncarera, 176 (1,1 %: el camino sobre la mitad sur de la plaza); Ondahonda, 448 (2,7 %: la plaza y la fuente); la Torre del Hilo, 180 (1,1 %: el pie de la torre, con el prism de la torre en 57–71 × 27–41 fuera). El modelo ha leído la frase «they appear inside that rect» y ha optimizado el sitio de aterrizaje. Pero el mismo párrafo dice que el lugar se ACTIVA (sus triggers) al pisar el rect: el trigger de un pueblo solo salta en unos metros cuadrados de su plaza, y el de «Torre del Hilo» no salta dentro de la torre.
+
+**Arreglo de prosa** en el mismo párrafo: «the rect is the place's footprint — the built-up area of a settlement, a landmark and its yard —, not the landing spot: the player lands at a free spot near its centre». Si lo que se quiere es un punto de llegada distinto del área, eso es otro campo y no el rect.
+
+### H4 — menor: los rechazos no quedan en el log de narrative-mcp
+
+El issue #239 da por hecho que el rechazo «está en el log de narrative-mcp». No está: `logs/narrative-mcp-A.log` tiene 4 líneas (arranque, bind, listener, ai_server conectado). `server.ts` devuelve el `isError` al modelo y no escribe nada en stderr. El único registro es la transcripción del motor, y en una terminal interactiva de Claude Code nadie la guarda. Si se quiere contar sin transcripción, basta un `console.error` con el tipo de rechazo junto a cada `return { isError: true }` del pre-flight.
+
+### H5 — menor (banco): `--allowedTools "mcp__narrative"` no deja al motor solo con narrative
+
+El `init` de los dos motores dice `"permissionMode":"auto"`. Aun así usaron `Bash`, `Write` y `Read`: escribieron los tiles en `/tmp/tile00.json`, `/tmp/tile0m1.json` y `/tmp/motor/fix.py`, y corrigieron el JSON con python antes de responder. Es inocuo para la medida, pero la receta de `motor.sh` del protocolo no hace lo que parece. Si se quiere el motor restringido de verdad, hay que añadir `--disallowedTools` o `--tools`.
+
+### Otros rechazos de la sesión (fuera del alcance, anotados para el contador)
+
+Ninguno es de `role` y todos se corrigieron a la primera re-respuesta:
+- `scene_validate`: `vegetation_zones[0].seed: Expected string, received number` (A, en el bootstrap).
+- `narrative_respond`: `scatter_generators.leño.parts[0]: cylinder requiere 'rTop'` (A, en Cisterna Clara).
+- `narrative_respond`: `volumes[0.h]: Number must be less than or equal to 24` (A, en la Torre del Hilo: el motor quería una torre de más de 24 m).
+- `scene_validate`: `volumes[5.parts.0]: Unrecognized key(s) in object: 'dims'`, junto con el mismo error de `seed` (B).
+
+El `seed` numérico aparece en 2 de 2 motores. Es candidato a prosa o a coerción declarada si se repite.
+
+## Workarounds usados
+
+1. **`NEFAN_GAMES_DIR` y `NEFAN_SAVES_DIR` apuntando a copias en `runs/`.** No afecta al jugador: es para no escribir el snapshot en `nefan-core/data/games` ni tocar `saves/`. Los caminos de código son los mismos.
+2. **Emulador en vez de cliente: el jugador nunca camina.** Todos los viajes salen del tile (0,0), porque el rayo de `resolveTravelAnchor` parte del tile del jugador. Por eso Ondahonda («al oeste de Vado Almar», `approx_position [-2,-3]`) acabó en (0,1) y Cisterna Clara, en (1,0). Es un artefacto del banco, **no un hallazgo del juego**: en partida real el jugador estaría en Vado Almar al viajar. Tiene un efecto útil, y es que dejó la entrada rodeada por los cuatro lados para #465.3.
+3. **#465.3: snapshot montado a mano en vez de `generate_game`.** El mundo pre-generado se armó con el `world_map` y las 6 `scene_data` del save de la sesión A, tal como las expandió el bridge, sobre el `tile.json` que escribió el bootstrap. La entrada se rompió con la técnica de `romperLaEntrada` del guion 214 (el NPC `marela_tresgavillas` pasa a nacer dentro de la `lamparería`). `generate_game` habría costado 9 llamadas al motor, unos 40 min. Por qué vale: la puerta de carga juzga el fichero sin mirar quién lo escribió. Pasó el zod (el título lo marcó como `generation: stale, entradaARegenerar: true`) y el bridge tomó el camino correcto: `se regenera SOLO la entrada, dentro de su mapa (16 lugares) y con 5 vecinos … el NPC "marela_tresgavillas" nace en [79, 46], celda no transitable`. Diferencia con un mundo de `generate_game`: allí el anillo no tiene lugares propios, y aquí los 4 vecinos adyacentes son lugares (el quinto tile del «anillo» que cuenta el bridge es (2,0), que no toca la entrada). Para H1 da igual, porque lo que falla son los sitios de la propia entrada, y esos los siembra el bootstrap en los dos casos.
+
+## No probado
+
+- **La vía de API directa** (`llm_client.generate_scene` sin MCP), donde un `role` malo mata el tile: no gasto API.
+- **Otro modelo o más mundos.** La muestra de #239 es un modelo (`claude-opus-5-5`), un mundo (`alta_fantasia`) y 32 NPC. Cero rechazos es una medida, no una garantía para Sonnet ni para un mundo con gremios más raros.
+- **Hostiles**: no se pidió combate, así que no hay ningún `role: "hostile"` en la muestra.
+- **La activación del lugar (triggers) al pisar el rect y el segundo viaje de vuelta a un lugar con rect**: el emulador no mueve al jugador. H2 y H3 se deducen del `spawn` difundido y de las celdas del rect, no de haber visto saltar un trigger.
+- **El cliente**: no se abrió navegador, porque el objeto de la tanda es el motor. No hay capturas ni crítica visual.
+
+## Guion ejecutable
+
+No dejo guion en `qa/guiones/`: lo que se mide aquí es el comportamiento de un modelo real, que no es determinista y cuesta minutos de motor por tile, y el banco con motor falso no lo reproduce. Los scripts que sacan los números están en `runs/tanda-bm-20260929/` (`analiza.py`, `rects.py`, `overlap.py`) y se pueden volver a correr sobre cualquier transcripción `stream-json` de un motor.
+
+H1 SÍ es mecánico. Se puede candar con el motor falso haciendo que la entrada regenerada cambie de sitio un edificio de un sitio anclado. Pero su «rojo esperado» depende de qué arreglo elija el arquitecto, así que lo dejo para quien lo implemente.
+
+## Veredicto por issue
+
+- **#239 → cerrar.** Cero rechazos de `role` en 7 tiles y 32 NPC con oficios variados pedidos a propósito (herrera, alcaldesa, molinero, tonelero, panadera, curandero, pescador, tejedoras, alfareros). La prosa de `DRESSING AND BEHAVIOUR OF AN NPC` basta con este modelo. Opcional: H4, si se quiere poder contarlo sin transcripción.
+- **#465 → no cerrar; queda reducido a dos arreglos concretos:**
+  - **465.2 → cerrado por medida:** ningún rect a menos de 9 m del borde.
+  - **465.1 → arreglo:** que el rect llegue ANTES de la escena. Lo preferible es que viaje en la respuesta del tile; lo mínimo, una frase en `tile_instructions.md` (H2). Y prosa sobre qué es el rect: la huella del lugar, no el punto de llegada (H3).
+  - **465.3 → las dos preguntas del issue contestadas en verde** (costuras 5/5 y cero siembra), **pero aparece H1**: los sitios anclados en la entrada conservan rects de una geometría que ya no existe. El arreglo es pasar al motor los lugares anclados en su propio tile.
+
+**Veredicto global: apto con reservas.** El playtest contesta las preguntas que tenía. #239 se cierra; #465 no, por H1 y H2, que son defectos que el jugador vería.
+
+## Verificación de la fase 2
+
+Rama `feature/tanda-bm`, HEAD `56e30bb6`. El coordinador citó `db9450ac`: es un commit colgante con el mismo mensaje, y `git diff db9450ac 56e30bb6` sale vacío. Mismo árbol, así que lo que aquí se verifica es el mismo cambio.
+
+Todo con el motor FALSO y 0 créditos. El material está en `labs/narrative/runs/tanda-bm-20260929/fase2/`: logs, `PIDS.txt` y los scripts `huellas.mjs`, `huellas2.mjs`, `resume.mjs` y `muchos.mjs`.
+
+**Stack propio** en un bloque libre: fake-ai en :19465, bridge en :10577 con State API en :10578, emulador en :10599, y narrative-mcp del worktree con `NARRATIVE_WS_PORT=13737`. Para el bridge hay que dar `NEFAN_BRIDGE_PORT` y `NEFAN_STATE_HTTP_PORT`: `NEFAN_PORT_OFFSET` solo no lo mueve, y el primer arranque chocó con el :9877 de otro agente, sin tocarlo. Al terminar se pararon por grupo los tres grupos propios. `git status` del worktree queda limpio.
+
+### Criterios
+
+| Criterio | Veredicto | Evidencia |
+|---|---|---|
+| **H1** · la entrada regenerada conoce sus sitios (flujo real: título → «Generar mundo» → nueva partida → Comenzar) | ✅ | `node qa/run.mjs 280 214 74 144` (bloque del runner): **5 en verde · 0 en rojo de 5**. En 280 A, `"lugar":{"id":"taberna_bench_place","rect":[52,48,24,16]},"anclados":[{"id":"posada_del_fichero",…"rect":[56,50,8,6]}]` |
+| **H1 con el mundo REAL del playtest** | ✅ | El `snapshot-anillo-sano.json` de la fase 1 (16 lugares, 6 escenas), con la entrada rota como entonces y el bridge del worktree. El `start_session` toma `se regenera SOLO la entrada, dentro de su mapa (16 lugares) y con 5 vecinos`, y a `/dev/counters` le llega `lugar: postas_del_sedal` más los **4 sitios de H1** en `anclados`, cada uno con su rect y su descripción: `posta_del_farol [40,34,22,16]` («…La lleva Marela Tresgavillas»), `lamparería_de_sael [72,40,14,16]`, `torre_caudal_postas [94,38,16,16]` y `plaza_de_postas [40,52,38,20]`. Es exactamente lo que le faltó al motor B |
+| **H3** · entre rects anidados gana el más pequeño | ✅ | `huellas.mjs`: `input` del emulador con la posición, sobre el tile (0,-1) con `barrio [10,10,60,60]` y `taberna_t [20,20,10,10]` dentro. En celda (50,50) el activo es `barrio`; en (25,25), `taberna_t`; al volver a (50,50), `barrio` otra vez. También el guion 280 B |
+| **H3** · empate de área | ✅ | `gemelo_a [80,80,10,10]` y `gemelo_b [85,85,10,10]` (el orden de inserción es a, b). En el solape (87,87) sigue activo `gemelo_a` y no salta nada; en (93,93), solo en b, el activo es `gemelo_b` |
+| **H3** · los triggers saltan en la huella | ⚠️ **al entrar, sí; al salir, no siempre** | Ver F1 |
+| **H4** · los rechazos quedan en el log | ✅ | narrative-mcp del worktree por stdio, con un ai_server falso por WS. Un `narrative_respond` de una escena con `role:"herrero"` deja en stderr `[narrative-mcp] rechazo forma_escena kind=scene req=req-qa-1: … declara role "herrero", que no es un rol de conducta…`; la misma escena con `merchant`, `Scene sent`, sin línea de rechazo. También salen `rechazo sin_peticion kind=scene req=-`, `rechazo anchor kind=map_upsert_place … col + w = 140 > 128` y `rechazo attrs_json`. Logs: `fase2/logs/narrative-mcp-h4*.log` |
+| Resume | ✅ | `resume.mjs`: `resume_session` da `ok:true, isResume:true`, con 22 lugares (los que añadí sobreviven) y, en la celda de la taberna, `activo taberna_t` |
+| Tile con muchos lugares | ✅ funciona · ⚠️ ver F5 | `muchos.mjs`: 40 sitios anclados en (-1,1) con descripciones de 400 caracteres. El `request_tile` va de `generating` a `ready`, y a la petición llegan `lugar casa_0` y 39 `anclados` |
+| Los candados pueden ponerse rojos | ✅ | Mis sabotajes, distintos de los del ingeniero, en `lugar-en-la-celda.ts`, restaurando cada vez con el md5 comprobado: con el empate a `<=` sale rojo «a igual área, el primero»; con el borde `>` en vez de `>=`, rojo «los bordes…»; si se ignora el tile, rojo «otro tile… null»; si el sin-rect se queda con el último, rojo «si ningún rect casa…». El cableado de `activateByPosition` con `col` y `row` cambiados da rojo en `bridge activación por posición (tiles + anchors)` con la suite completa (1 fallo en 3665). Los 15 tests nuevos van en verde sin sabotaje |
+
+### Hallazgos de la fase 2
+
+**F1 — importante (H3, anterior a la tanda pero ahora prometido por el prompt): el trigger de salida no respeta la huella.**
+
+El prompt nuevo dice que el lugar «becomes active (its triggers fire) while the player stands inside it» y anima a anidar («a tavern inside its village»). Medido (`huellas.mjs`, `huellas2.mjs`), no pasa en dos casos:
+- **Salir de la huella a campo abierto, en un tile sin lugar que no tenga rect.** Se reproduce en la Torre del Hilo, tile (2,0), que es el caso típico con el rect-huella que ahora se pide:
+  - dentro (60,48): `activo=torre_del_hilo`, dispara `PLAYER_ENTERED:torre`;
+  - fuera (10,110): `activo=torre_del_hilo`, no dispara nada;
+  - otra vez dentro: vuelve a disparar `PLAYER_ENTERED:torre`.
+
+  `player_left` nunca salta, y el lugar sigue activo fuera de su huella. La causa es la rama `else if (!placeId) { ctx.posTracking.placeId = null; }` de `activateByPosition`, que no limpia el lugar activo ni dispara la salida.
+- **Anidados.** Al entrar en la taberna salta `PLAYER_LEFT:barrio` aunque el jugador sigue dentro del barrio, y al volver, `PLAYER_ENTERED:barrio` otra vez. Un trigger «al salir del pueblo» se dispara al entrar en su posada.
+
+Lo que espera el jugador: que «al salir de la torre» ocurra al salir de la torre, y que entrar en la posada no cuente como salir del pueblo.
+
+Arreglo propuesto (para el arquitecto): al quedarse sin lugar, poner `null` como lugar activo y disparar `player_left`. En anidados, las salidas y entradas que se disparan son las de los lugares cuyas huellas contienen la celda vieja y no la nueva, y viceversa, no las del «activo». Si no se arregla en esta tanda, al menos que la prosa no prometa algo que el bridge no hace, y abrir un issue.
+
+**F2 — menor (ya estaba en «visto y no hecho» del plan, pero ahora con consecuencia medida).** Un tile sin `placeId` (un `request_tile`) con un sitio con rect insertado antes que su pueblo sin rect le entrega el SITIO al motor como `place` («This tile IS the place»), y el pueblo acaba en `anchored_places`: `{"lugar":{"id":"herreria_x","rect":[30,30,12,10]},"anclados":[{"id":"aldea_x"}]}`. El tile se etiqueta además con `place_id = herreria_x`, mientras que la activación por posición fuera del rect elige `aldea_x`: el mapa y la escena discrepan sobre de qué lugar es el tile. Cuando no hay `placeId`, el `place` debería ser el lugar sin rect (el que ocupa el tile) o el de mayor huella.
+
+**F3 — menor, anterior a la tanda.** `scene_validate` da por buena una escena con `role:"herrero"` (`"ok": true`), y el mismo JSON en `narrative_respond` se rechaza. La descripción de la tool dice «Runs the same server-side checks as the respond pre-flight», y es falso para el gate estructural. En el playtest el motor usó `scene_validate` como paso previo en 3 de 7 tiles. No afecta al conteo de H4, porque el rechazo acaba en `respond` y se registra, pero el dry-run miente.
+
+**F4 — menor (el alcance de H4, dicho con un caso).** No dejan línea en el log:
+- el rechazo de validación de argumentos del SDK (`MCP error -32602 … map_upsert_place`, por ejemplo con `parent_id` ausente);
+- el rechazo que devuelve el bridge a un `map_upsert_place` sintácticamente bueno (`parent_id "no_existe_padre" not found`).
+
+Coincide con lo que declara el `_lo_que_esto_NO_sujeta`, así que no es una regresión. Lo anoto para que nadie cuente rechazos de mapa por el log y crea que son todos.
+
+**F5 — menor.** `anchored_places` no tiene tope: 39 lugares con 400 caracteres de descripción son unos 15 k caracteres más en cada petición de ese tile. Hoy no hay ningún mundo así. Si llega a pasar, un tope o descripciones recortadas.
+
+### Workarounds de la fase 2
+
+- **La posición entra por frames `input` del emulador (teletransporte), no caminando.** Para lo que se mide da igual: la activación es por celda y no depende de cómo se llegó.
+- **El mundo real del playtest se reinyecta desde el snapshot de la fase 1.** Pasa el zod del bridge y toma el camino de producción.
+- **H4 se prueba con un ai_server falso por WS.** El pre-flight de narrative-mcp es el real, compilado del worktree.
+
+### No probado en la fase 2
+
+- H2 y la parte de prosa de H1 y H3: que un modelo real ponga el rect antes de `respond`, lo use como huella y construya los `anchored_places` dentro de su rect. Va en el playtest corto tras el merge.
+- La mutación de `world-map`, que sigue pedida.
+
+### Veredicto de la fase 2
+
+**Apto con reservas.** H1, H3 (la activación del lugar) y H4 hacen lo que se pidió, desde el flujo real y también con el mundo del playtest, y los candados se ponen rojos. La reserva es F1: el prompt ahora promete triggers «en la huella» y el bridge no dispara la salida ni al pisar campo abierto ni con huellas anidadas. O se arregla antes del merge, o se retoca la prosa y se abre un issue. F2 a F5 son menores.
+
+## Segunda vuelta de la fase 2
+
+Rama `feature/tanda-bm`, HEAD `ad109b2f`. Todo con el motor falso y 0 créditos. El material está en `labs/narrative/runs/tanda-bm-20260929/fase3/`: scripts `cadena.mjs`, `extra*.mjs`, `viaje.mjs`, `f2f5.mjs` y `proxy.mjs`, más los logs y `PIDS.txt`.
+
+Stack propio en puertos libres: fake-ai en :19465, un proxy de captura en :19466 delante del fake, bridge del worktree en :10577 con State API en :10578, emulador en :10599 y narrative-mcp del worktree en :13737. El mundo es el del playtest, que ahora se sirve por replay, más los lugares y triggers que añado por `POST /map/place` y `POST /map/trigger`. Cada trigger apunta un `story_update` `E:<id>` o `L:<id>`, y los leo en los `narrative_event map_trigger` del wire. Al terminar se pararon por grupo los grupos propios. El worktree queda limpio.
+
+### F1: la cadena de huellas
+
+Tile (2,0) de la Torre del Hilo, que no tiene ningún lugar sin rect. Añado `barrio2 [0,0,50,50]` y, dentro, `taberna2 [10,10,10,10]`. La posición entra por frames `input`.
+
+| Paso | Disparos | Activo |
+|---|---|---|
+| campo abierto | `[]` | — |
+| entrar en el barrio | `E:barrio2` | barrio2 |
+| entrar en la taberna (anidada) | **solo** `E:taberna2` | taberna2 |
+| volver al barrio | **solo** `L:taberna2` | barrio2 |
+| de la taberna a campo abierto | `L:taberna2`, `L:barrio2` (de dentro afuera) | taberna2 (retenido) |
+| dos celdas más de campo abierto | `[]`, `[]` | taberna2 |
+| la torre | `E:torre_del_hilo` (sin ningún `L:barrio2` falso) | torre |
+| campo abierto | `L:torre_del_hilo` | torre |
+| la torre otra vez | UNA `E:torre_del_hilo` | torre |
+| de la torre al barrio directamente | `L:torre`, `E:barrio2` | barrio2 |
+| al tile (1,0), campo abierto | `L:barrio2` | barrio2 (retenido) |
+| la cisterna (rect) | `E:cisterna_clara` | cisterna |
+| a `vado_almar` (sin rect, el tile entero) | `L:cisterna_clara`, `E:vado_almar` | vado_almar |
+| otra celda de vado_almar | `[]` | vado_almar |
+
+Los 16 pasos cumplen lo esperado. El bloque C del guion 280 también sale en verde: `node qa/run.mjs 280 214 74 144` da **5 en verde · 0 en rojo de 5**.
+
+**La desviación aceptada no produce disparos falsos.** Con `active_place_id` retenido en campo abierto (taberna2):
+- moverse por campo abierto no dispara nada;
+- entrar directamente en la taberna da `E:barrio2` y `E:taberna2`, y ninguna salida;
+- volver a campo abierto da `L:taberna2` y `L:barrio2`, una sola vez;
+- cambiar de tile en campo abierto no dispara nada;
+- entrar en otro lugar da solo su entrada.
+
+**Viaje a un lugar realizado:**
+- Taberna → `cisterna_clara`: dispara `L:taberna2`, `L:barrio2` y `E:cisterna_clara` en la llegada, y los primeros frames en el `spawn` (52, -0.5) no disparan nada. **Sin duplicados.**
+- Taberna → `vado_almar`: igual; los frames en (0, -64) dan `[]`.
+- Cisterna → `taberna2`, un lugar que anclé por API y nunca se realizó: el viaje pasa por «Viajando a…», y la cadena se dispara en el primer frame en el sitio de llegada (col 15, row 15): `L:cisterna_clara`, `E:barrio2` y `E:taberna2`, una sola vez. Llega un frame más tarde, pero es correcto.
+
+**Resume:**
+- En el mismo proceso del bridge, reanudar dentro de la taberna y moverse a otra celda suya no dispara nada, y en el barrio tampoco.
+- **Con el bridge reiniciado** y la partida reanudada dentro del barrio, el primer frame dispara `E:barrio2` (G1).
+
+### F2 a F5
+
+| Criterio | Veredicto | Evidencia |
+|---|---|---|
+| **F2**: sin `placeId`, el `place` del tile es el que ocupa el tile | ✅ | Tile (1,1), con `herreria_x` (rect) insertado ANTES que `aldea_x` (sin rect). El motor recibe `lugar: aldea_x` y `anclados: [herreria_x con su rect]`, y el tile se etiqueta `place_id = aldea_x` (save). Con todo el tile con rect (`sitio_y [10,10,8,8]` antes que `pueblo_y [0,0,100,100]`), `lugar: pueblo_y` |
+| **F3**: `scene_validate` aplica la forma del respond | ✅ | Con `role:"herrero"` devuelve `ERR Invalid scene shape … role "herrero"`; con `merchant`, `ok: true` |
+| **F4**: todo rechazo deja UNA línea | ✅ | narrative-mcp del worktree por stdio, 9 llamadas. `rechazo forma_escena kind=scene_validate`, `rechazo argumentos kind=map_upsert_place` (sin `parent_id`), `rechazo bridge kind=map_upsert_place` (padre inexistente), `rechazo herramienta kind=no_existe_tool` y `rechazo forma_escena kind=scene req=req-f34`. Las 4 llamadas buenas (scene_validate, upsert, map_get, respond) no dejan ninguna línea. **Ninguna línea duplicada** |
+| **F5**: tope de `anchored_places` | ✅ | Con 40 lugares en (1,-1), el proxy captura el `generate_tile` real: `place casa_0`, `anchored_places: 12` y `anchored_places_omitted: 27` (1 + 12 + 27 = 40). La prosa lo nombra (`tile_instructions.md:87`) |
+
+### Candados en negativo (sabotajes míos, restaurados con el md5 comprobado)
+
+- Si `cruceDeCadenas` no invierte el orden de las salidas, salen **2 rojos**: «de la taberna a campo abierto se sale de las dos, de dentro afuera» y «cruceDeCadenas: salen de dentro afuera…».
+- Si el viaje no dispara por la cadena (la línea `pasarALaCadena` de `scene.ts` desactivada), **los 3678 tests siguen en verde**. Ver G2.
+- Los 28 tests de los cuatro ficheros nuevos o tocados van en verde sin sabotaje.
+
+### Hallazgos de la segunda vuelta
+
+**G1 — menor, anterior a la tanda.** Tras reiniciar el bridge y reanudar la partida con el jugador dentro de una huella, el primer frame dispara `player_entered` del lugar en el que ya estaba (`B1 … disparos=["E:barrio2"]`). Es porque `posTracking.cadena` no se siembra al reanudar. `first_visit` no se repite. En main pasa lo mismo, con el `placeId` nulo. Que «cargar la partida» cuente como «entrar» es discutible. Si no se quiere, basta sembrar la cadena con la posición del save al reanudar.
+
+**G2 — menor: el disparo del viaje no tiene candado.** Se puede quitar sin que se ponga rojo ningún test. El efecto observable es pequeño: sin esa línea, los triggers saltan en el primer frame en la llegada en vez de con el `ready`, y lo he visto en el viaje a `taberna2`. Pero la línea existe precisamente para eso. Si importa que la llegada y su trigger vayan juntos, hace falta un test que lo afirme.
+
+**G3 — nota para contar #239 por el log.** El mismo `role` inválido deja ahora hasta dos líneas: una con `kind=scene_validate` (el dry-run) y otra con `kind=scene` (el respond). Para contar rechazos reales del respond hay que filtrar por `kind=scene`.
+
+**G4 — nota sobre F5.** Pasan al motor los 12 primeros en orden del mapa, no los de mayor huella. Un pueblo insertado tarde puede quedar entre los omitidos. El motor tiene `map_get` para recuperarlo, así que no lo trato como defecto.
+
+### Veredicto de la segunda vuelta
+
+**Apto.** F1 cumple en anidados, a campo abierto, al volver y en viajes a lugares realizados. La desviación del `active_place_id` retenido no produce ningún disparo falso. F2, F3, F4 y F5 cumplen en el flujo real con el motor falso. G1 y G2 son menores y no bloquean. La conducta del modelo con la prosa nueva sigue pendiente del playtest corto tras el merge.

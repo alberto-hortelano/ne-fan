@@ -99,8 +99,20 @@ export interface BridgeContext {
   /** Tracking de la activación por posición (tile/place bajo el jugador),
    *  gateado por cambio de celda para no costar nada en el hot loop.
    *  `tileKey` es el gate del save por cambio de TILE (#395): una escritura
-   *  por 64 m, no una por celda. */
-  posTracking: { cellKey: string | null; tileKey: string | null; placeId: string | null };
+   *  por 64 m, no una por celda.
+   *
+   *  `cadena` son los lugares cuyas huellas contienen al jugador, de fuera
+   *  adentro (`cadenaEnLaCelda`); ausente = todavía no se sabe (arranque,
+   *  reanudar) y cuenta como vacía. Los triggers salen del cruce de la vieja
+   *  con la nueva (#465, F1). `placeId` es el campo de antes de la cadena y
+   *  ya no lo lee nadie: lo inicializa `ws-server.ts`, que reescribe la
+   *  tanda BJ, y se borra en cuanto se pueda tocar ese fichero. */
+  posTracking: {
+    cellKey: string | null;
+    tileKey: string | null;
+    placeId: string | null;
+    cadena?: readonly string[];
+  };
   /** El dueño del mundo del sim: quién puede escribir en él y si la partida
    *  guardada está escuchando (`bridge/world-claim.ts`). Tomar el mundo y
    *  decidir si el save escucha son la MISMA llamada — separarlos es lo que
@@ -584,11 +596,20 @@ export async function fireMapTriggers(
   prevPlaceId: string,
   newPlaceId: string,
 ): Promise<void> {
+  await fireMapCrossing(ctx, prevPlaceId && prevPlaceId !== newPlaceId ? [prevPlaceId] : [], [newPlaceId]);
+}
+
+/** Lo mismo con VARIOS lugares a la vez: los que se dejan (`salen`, de dentro
+ *  afuera) y en los que se entra (`entran`, de fuera adentro), que es lo que
+ *  da `cruceDeCadenas` al moverse entre huellas anidadas. */
+export async function fireMapCrossing(
+  ctx: BridgeContext,
+  salen: readonly string[],
+  entran: readonly string[],
+): Promise<void> {
   const fired: PlaceTriggerSpec[] = [];
-  if (prevPlaceId && prevPlaceId !== newPlaceId) {
-    fired.push(...ctx.mapTriggers.evaluateLeave(prevPlaceId));
-  }
-  fired.push(...ctx.mapTriggers.evaluateEnter(newPlaceId));
+  for (const id of salen) fired.push(...ctx.mapTriggers.evaluateLeave(id));
+  for (const id of entran) fired.push(...ctx.mapTriggers.evaluateEnter(id));
   if (fired.length === 0) return;
   // evaluateEnter may have stamped first_visit triggers — persist that.
   await ctx.narrative.save();

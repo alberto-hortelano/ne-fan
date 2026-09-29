@@ -49,6 +49,7 @@ export async function generateBootstrapTileScene(
     tx: 0,
     ty: 0,
     neighbors: {},
+    anchored_places: [],
     nearby_places: [],
     bootstrap: true,
   };

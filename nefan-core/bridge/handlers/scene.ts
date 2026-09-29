@@ -13,7 +13,7 @@ import { resolveExitEdge } from "../../src/world-map/edges.js";
 import { resolveTravelAnchor } from "../../src/world-map/place-anchor.js";
 import { resolvePlaceTarget } from "../../src/world-map/place-target.js";
 import { tileKey, type TileCoord } from "../../src/scene/tile.js";
-import { activeTileOf, runTileGeneration } from "./tile.js";
+import { activeTileOf, cadenaEnElPunto, pasarALaCadena, runTileGeneration } from "./tile.js";
 import type { SceneGenOutcome } from "../scene-gen-queue.js";
 import {
   FALLO_SIN_SITIO_DONDE_APARECER,
@@ -197,11 +197,14 @@ async function difundirPlaceRealizado(
   // Y con el `placeId` del viaje al lado (#742): es la LLEGADA de ESE viaje,
   // también cuando es `sin ancla` —nadie se mueve y el viaje llega igual—.
   broadcastScene(ctx, sceneId, scene, undefined, { viaje: { placeId, sitio: donde }, source: "cache" });
-  // Los triggers se disparan AQUÍ; sin esto, el activateByPosition del
-  // siguiente sim_input (el jugador acaba de aterrizar en el anchor) los
-  // volvería a disparar.
-  if (donde.de === "punto") ctx.posTracking.placeId = placeId;
-  await fireMapTriggers(ctx, prevPlaceId, placeId);
+  // Los triggers se disparan AQUÍ. Con punto, por la CADENA de huellas que
+  // contiene el sitio de llegada (`pasarALaCadena`, la misma que usará el
+  // activateByPosition del siguiente sim_input, que así no los repite): se
+  // sale de donde se estaba y se entra en el lugar y en los que lo contienen
+  // (#465, F1). Sin ancla nadie se mueve y no hay cadena que mirar: se sale
+  // del lugar activo y se entra en el destino.
+  if (donde.de === "punto") await pasarALaCadena(ctx, cadenaEnElPunto(ctx, donde.spawn.x, donde.spawn.z));
+  else await fireMapTriggers(ctx, prevPlaceId, placeId);
   return true;
 }
 

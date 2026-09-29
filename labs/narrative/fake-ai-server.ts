@@ -326,6 +326,10 @@ let ultimaPeticionDeEscena: {
   bootstrap: boolean;
   bootstrap_world_map: boolean;
   vecinos: string[];
+  /** El `generate_tile.place` y los `anchored_places` recibidos (#465, H1):
+   *  solo registro, el fake no cambia de conducta con ellos. */
+  lugar: { id: string; rect?: [number, number, number, number] } | null;
+  anclados: Array<{ id: string; description: string; rect?: [number, number, number, number] }>;
 } | null = null;
 
 async function handleGenerateTile(gt: GenerateTile, { sembrarMapa }: { sembrarMapa: boolean }) {
@@ -1127,6 +1131,17 @@ const server = http.createServer((req, res) => {
             bootstrap: body.generate_tile.bootstrap === true,
             bootstrap_world_map: body.bootstrap_world_map === true,
             vecinos: Object.keys(body.generate_tile.neighbors ?? {}),
+            lugar: body.generate_tile.place
+              ? {
+                  id: body.generate_tile.place.id,
+                  ...(body.generate_tile.place.rect ? { rect: body.generate_tile.place.rect } : {}),
+                }
+              : null,
+            anclados: (body.generate_tile.anchored_places ?? []).map((p) => ({
+              id: p.id,
+              description: p.description,
+              ...(p.rect ? { rect: p.rect } : {}),
+            })),
           };
           try {
             return send(200, await handleGenerateTile(body.generate_tile, {

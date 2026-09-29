@@ -45,17 +45,30 @@ at least two edges), a `landmark` is the thing it is named after, an
 and `attrs` are what the story already told the player — honour them. The
 place's NAME belongs in scene_description. Nothing "arrives" later: what you
 declare now is the whole place. Without `place`, the tile is open world
-between places and there is nothing specific to build.
+between places and there is nothing specific to build. When `place` carries
+a `rect`, the place already has its footprint on the map: build it inside
+that rect.
 
 WHERE A PLACE LIVES IN ITS TILE — map_upsert_place.anchor = {tx, ty, rect?}.
 `rect` is [col, row, w, h] in CELLS of that tile (0.5 m each; the tile is
 128×128 cells, cols 0..127 west→east, rows 0..127 north→south): whole
 numbers, col,row ≥ 0, w,h ≥ 1, col+w ≤ 128 and row+h ≤ 128 — the server
-rejects anything else and says which bound failed. What it does: when the
-player travels back to the place from the exits panel they appear inside
-that rect (at a free spot near its centre), and the place becomes active
-(its triggers fire) when the player steps into it. Without `rect` the place
-is the whole tile: the player lands at the centre of the tile, wherever the
+rejects anything else and says which bound failed. What it is: the place's
+FOOTPRINT in the tile — the built-up area of a settlement, a building and
+its yard, a landmark and the ground around it — not a landing spot. What it
+does: the player is IN every place whose footprint contains them, so
+footprints nest (a tavern inside its village): entering a footprint fires
+that place's player_entered/first_visit triggers, stepping out of it fires
+its player_left, and entering the tavern does not take the player out of
+the village; where rects overlap, the SMALLEST one is the active place. A
+player travelling to the place from the exits panel appears inside that
+rect, at a free spot near its centre: the landing point is derived from the
+footprint, never declared. When you are
+generating the tile of generate_tile.place and give it a rect, call
+map_upsert_place BEFORE narrative_respond: the player is placed the moment
+the tile is sent, and a rect declared afterwards is only read on later
+trips. Without `rect` the place is the whole tile — right for a place that
+fills its tile —: the player lands at the centre of the tile, wherever the
 place actually stands.
 
 NEIGHBOURING PLACES — generate_tile.nearby_places lists the world-map places
@@ -63,6 +76,18 @@ already sitting on tiles within 2 tiles of this one, as {id, name, kind,
 tile:[tx,ty]}. They are NOT in your tile: use them for direction and
 continuity — a road heading towards the edge that faces them, the silhouette
 of a town on the horizon, signposts naming them. Never re-build one here.
+
+PLACES ALREADY ANCHORED HERE — generate_tile.anchored_places lists the other
+world-map places that already live on THIS tile, as {id, name, kind,
+description, rect?}. They already exist on the map with that footprint
+(without `rect`: the whole tile): the player lands in them and their
+triggers fire there, and their `description` is what the story already
+told. Build each one inside its rect, as described. The map is the source
+of their position: do not move them with map_upsert_place and do not create
+them again. The list is capped: when generate_tile.anchored_places_omitted
+is present, that many more places are anchored here and were left out —
+read the full map with map_get (it lists every anchor) before building over
+their ground.
 
 MAP PLAN — the tile's semantic blueprint. You declare WHAT exists in flat
 world cells as PURE DATA — never draw anything yourself. The engine builds a
@@ -337,6 +362,7 @@ BOOTSTRAP (generate_tile.bootstrap === true — the ENTRY tile (0,0) of a new ga
   do not seed it again — and `neighbors` lists the tiles around this one.
   Continue their crossings exactly as in any other tile. The starting place
   arrives in generate_tile.place and the server tags the tile with it.
+  Places already anchored inside it arrive in generate_tile.anchored_places.
 
 Everything else (SOLIDITY, NPC rules, ASSET REUSE, WORLD MAP tools) works
 exactly as in the standard scene reference that follows.

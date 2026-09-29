@@ -59,6 +59,7 @@ import {
 } from "../../src/session/eleccion-de-estilo.js";
 import { validarBorrador } from "../../src/protocol/borrador-de-mundo.js";
 import { runBootstrapTile, runEntradaEnElMapaDelFichero } from "./bootstrap-tile.js";
+import { cadenaEnElPunto } from "./tile.js";
 import { caminoDeArranque } from "../../src/world-map/entrada-del-fichero.js";
 import type {
   CreateGameMessage,
@@ -259,12 +260,21 @@ export async function handleListSessions(
 /** Resembra el sim para la sesión vigente: runtime nuevo (sin este reset el
  *  sim arrastra los combatientes y el HP de la sesión anterior del proceso) +
  *  player con el HP/posición del NarrativeState (defaults en start, save en
- *  resume — misma fuente). Común a start_session y resume_session. */
+ *  resume — misma fuente). Común a start_session y resume_session.
+ *
+ *  Y la CADENA de huellas en la que está el jugador (`posTracking.cadena`),
+ *  que es de lo que salen los triggers de entrar y salir: al reanudar se
+ *  siembra con la posición del save SIN disparar —cargar la partida no es
+ *  entrar en el lugar donde ya estabas; el primer frame solo confirmaba lo
+ *  que el save ya sabía y disparaba su `player_entered` (QA de BM, G1)—; al
+ *  empezar se vacía, porque la de la sesión anterior del proceso habla de
+ *  otro mapa, y la entrada en el lugar de partida sí es una entrada. */
 function reseedSimForSession(
   ctx: BridgeContext,
   ws: ClientSocket,
   combatId: string,
   npcBehaviorId: string | undefined,
+  al: "empezar" | "reanudar",
 ): void {
   ctx.sim.reset();
   ctx.sim.setCombatSystem(combatRegistry.create(combatId, ctx.combatConfig));
@@ -281,6 +291,7 @@ function reseedSimForSession(
     ),
   );
   ctx.store.dispatch("player_respawned", { hp, pos: [...pos] });
+  ctx.posTracking.cadena = al === "reanudar" ? cadenaEnElPunto(ctx, pos[0], pos[2]) : undefined;
   // …y la proyección de enemigos se vacía con él. `sim.reset()` se lleva los
   // combatientes pero `store.state.enemies` es OTRA lista, y arrastraba la de
   // la sesión anterior del proceso: el `add_combatants` del resume ve su id ya
@@ -485,7 +496,7 @@ export async function handleStartSession(
     });
     return;
   }
-  reseedSimForSession(ctx, ws, combatId, npcBehaviorId);
+  reseedSimForSession(ctx, ws, combatId, npcBehaviorId, "empezar");
   await ctx.aiClient.notifySessionStart(ctx.narrative.session_id, msg.gameId, false);
   // Aquí NO se guarda (#279). La sesión nace provisional —en memoria y en
   // ningún otro sitio— y solo se escribe cuando el cliente confirma que el
@@ -741,7 +752,7 @@ export async function handleResumeSession(
         `catálogo de refs del save conservado: ${(err as Error).message ?? err}`,
     );
   }
-  reseedSimForSession(ctx, ws, combatId, npcBehaviorId);
+  reseedSimForSession(ctx, ws, combatId, npcBehaviorId, "reanudar");
   // Los NPC del save vuelven a la vida ambiental donde se quedaron (su
   // posición vive en el EntityRecord persistido).
   npcSync(ctx);
