@@ -239,6 +239,12 @@
 }
 #frontier-veil[hidden] { display: none; }
 
+/* Has caído (#613): el motor decide dónde despiertas. */
+#velo-del-despertar { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+#velo-del-despertar[hidden] { display: none; }
+#velo-del-despertar b { color: var(--nf-accent); }
+#velo-del-despertar-texto { color: var(--nf-ink); font-style: italic; }
+
 /* ── Diálogo con retrato ────────────────────────────────────────────────── */
 #dialogue-panel {
   display: grid;

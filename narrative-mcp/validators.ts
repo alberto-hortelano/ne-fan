@@ -9,6 +9,7 @@ import {
   parseGround,
   validateContract,
   NarrativeReactionSchema,
+  DeathResolutionSchema,
   WeaponOrientSchema,
   WeaponVerifySchema,
   EmittedSceneSchema,
@@ -55,6 +56,14 @@ export function validateWeaponVerify(data: unknown): { ok: true } | { ok: false;
  *  engine the precise error so it can fix the shape and resend. */
 export function validateNarrativeReaction(data: unknown): { ok: true } | { ok: false; error: string } {
   return validateContract(NarrativeReactionSchema, data);
+}
+
+/** Pre-flight de la respuesta a un `player_death` (#613): dónde despierta el
+ *  jugador y qué pasa. Delega en el zod SoT (`DeathResolutionSchema`); la
+ *  GEOMETRÍA del sitio la valida después el bridge (`POST /despertar/validar`),
+ *  que es quien conoce el mundo. Espejo Python: `validate_death_resolution`. */
+export function validateDeathResolution(data: unknown): { ok: true } | { ok: false; error: string } {
+  return validateContract(DeathResolutionSchema, data);
 }
 
 /** Pre-flight estructural del array `ground` (rasgos de suelo declarativos:

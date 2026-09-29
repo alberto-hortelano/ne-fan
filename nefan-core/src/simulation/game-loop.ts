@@ -38,10 +38,15 @@ export class GameSimulation {
    *  cadáver y el punto seguro caía dentro de su radio. */
   private casas = new Map<string, Vec3>();
   /** El último punto donde el jugador estaba vivo y FUERA DE COMBATE (ninguna
-   *  IA de un vivo enganchada). Es donde reaparece. Lo siembra el alta del
-   *  jugador y lo avanza `tick`; no se persiste: al reanudar, la posición
-   *  guardada vuelve a sembrarlo. */
+   *  IA de un vivo enganchada). En partida es una SUGERENCIA para el motor,
+   *  que decide dónde despierta (`context.muerte.punto_seguro`, #613); sin
+   *  motor (fixtures) es donde R reaparece. Lo siembra el alta del jugador y
+   *  lo avanza `tick`; no se persiste: al reanudar, la posición guardada
+   *  vuelve a sembrarlo. */
   private puntoSeguro: Vec3 | null = null;
+  /** Quién dio el último golpe al jugador: el `asesino` del contexto de la
+   *  muerte. Se olvida al reaparecer. */
+  private ultimoAtacante: string | null = null;
 
   constructor(config: CombatConfig, store?: GameStore, seed?: number, combat?: CombatSystem) {
     this.store = store ?? new GameStore();
@@ -120,23 +125,7 @@ export class GameSimulation {
     const player = this.combatants.get("player");
 
     // 1. Update player state from frontend
-    if (player) {
-      player.position = inputs.playerPosition;
-      player.forward = inputs.playerForward;
-      Combatant.setMoving(player, inputs.playerMoving);
-
-      // Handle attack request
-      if (inputs.attackRequested && inputs.attackType) {
-        const norm = this.combat.normalizeAttack(inputs.attackType);
-        if (norm === null) {
-          throw new Error(
-            `GameSimulation: unknown attack type '${inputs.attackType}' for combat system '${this.combat.id}'`,
-          );
-        }
-        const events = Combatant.startAttack(player, norm, this.combat.windUpTime(norm, player.weaponId));
-        allEvents.push(...events);
-      }
-    }
+    if (player) allEvents.push(...this.aplicarInputDelJugador(player, inputs));
 
     // El blanco de toda IA enemiga es el JUGADOR (QA H4 de BN). Elegía al
     // combatiente vivo más cercano, sin bandos: dos hostiles a menos de su
@@ -207,6 +196,7 @@ export class GameSimulation {
         const targetId = e.targetId as string;
         const isPlayer = targetId === "player";
         if (isPlayer) {
+          this.ultimoAtacante = e.attackerId as string;
           this.store.dispatch("player_damaged", {
             amount: e.damage,
             from: e.attackerId,
@@ -235,34 +225,54 @@ export class GameSimulation {
     // a su alcance al reaparecer. Así el punto es el del último tick en que
     // nadie te hizo caso — fuera de todos los radios, porque un enemigo sin
     // enganchar no se mueve de su sitio.
-    if (player && player.health > 0 && !this.algunoEnganchado()) {
-      this.puntoSeguro = puntoDeReaparicion(player.position);
-    }
+    if (player) this.apuntarPuntoSeguro(player);
 
     return { events: allEvents, npcEvents };
   }
 
-  /** Reaparecer tras morir (R). DÓNDE lo decide el sim, no el cliente (#613,
-   *  decisión del usuario 2026-09-29): en el último punto seguro, fuera de
-   *  combate. Y al morir TODOS te sueltan: cada enemigo vivo olvida el
-   *  enganche y vuelve a su sitio de alta —teletransporte; el jugador está
-   *  muerto y no lo ve—, así que no te espera junto al punto seguro.
-   *
-   *  Devuelve el punto porque el cliente lo aplica: la posición del jugador la
-   *  conduce su input (`tick`), y sin el punto el siguiente input lo devolvería
-   *  al cadáver. Sin jugador no hay nada que reaparecer, y se dice. */
-  respawn(): { events: CombatEvent[]; punto: Vec3 } {
-    const player = this.combatants.get("player");
-    if (!player || !this.puntoSeguro) {
-      throw new Error("GameSimulation.respawn: no hay jugador en el sim (o no tiene punto seguro)");
+  /** El paso 1 del tick: lo que el cliente dice del jugador. */
+  private aplicarInputDelJugador(player: CombatantState, inputs: FrameInputs): CombatEvent[] {
+    // Un cadáver no se mueve (#613): mientras el motor decide dónde
+    // despierta, un input rezagado con la posición del cliente no lo pasea.
+    if (player.health > 0) player.position = inputs.playerPosition;
+    player.forward = inputs.playerForward;
+    Combatant.setMoving(player, inputs.playerMoving);
+    if (!inputs.attackRequested || !inputs.attackType) return [];
+    const norm = this.combat.normalizeAttack(inputs.attackType);
+    if (norm === null) {
+      throw new Error(
+        `GameSimulation: unknown attack type '${inputs.attackType}' for combat system '${this.combat.id}'`,
+      );
     }
+    return Combatant.startAttack(player, norm, this.combat.windUpTime(norm, player.weaponId));
+  }
+
+  /** El paso 7 del tick (ver allí): vivo y sin nadie enganchado, el punto
+   *  donde está es seguro. */
+  private apuntarPuntoSeguro(player: CombatantState): void {
+    if (player.health > 0 && !this.algunoEnganchado()) {
+      this.puntoSeguro = puntoDeReaparicion(player.position);
+    }
+  }
+
+  /** Levantar al jugador EN `punto`. Quién decide el punto no es el sim: en
+   *  partida, el motor (`bridge/handlers/despertar.ts`, validado por
+   *  `validarDespertar`); sin motor, el punto seguro (`puntoSeguroActual`).
+   *  Al morir TODOS te sueltan: cada enemigo vivo olvida el enganche y vuelve
+   *  a su sitio de alta —teletransporte; el jugador está muerto y no lo ve—.
+   *  Sin jugador no hay nada que levantar, y se dice. */
+  respawn(punto: Vec3): { events: CombatEvent[]; punto: Vec3 } {
+    const player = this.combatants.get("player");
+    if (!player) throw new Error("GameSimulation.respawn: no hay jugador en el sim");
 
     // Reset player
     player.health = player.maxHealth;
     player.state = "idle";
     player.currentAttackType = "";
     player.windUpTimer = 0;
-    player.position = { ...this.puntoSeguro };
+    player.position = { x: punto.x, y: 0, z: punto.z };
+    this.puntoSeguro = { ...player.position };
+    this.ultimoAtacante = null;
 
     // Reset all enemies
     for (const [, c] of this.combatants) {
@@ -319,6 +329,31 @@ export class GameSimulation {
     return recuperado;
   }
 
+  /** El último punto seguro (ver `puntoSeguro`), o `null` sin jugador. */
+  get puntoSeguroActual(): Vec3 | null {
+    return this.puntoSeguro ? { ...this.puntoSeguro } : null;
+  }
+
+  /** Quién dio el último golpe al jugador, o `null`. */
+  get ultimoAtacanteDelJugador(): string | null {
+    return this.ultimoAtacante;
+  }
+
+  /** Los enemigos VIVOS con IA: dónde están, su sitio de alta (a donde
+   *  vuelven cuando el jugador muere) y su radio de enganche. Es lo que el
+   *  motor ve para decidir dónde despierta el jugador, y lo que
+   *  `validarDespertar` exige dejar atrás. */
+  hostilesVivos(): Array<{ id: string; pos: Vec3; casa: Vec3; radio: number }> {
+    const out: Array<{ id: string; pos: Vec3; casa: Vec3; radio: number }> = [];
+    for (const [id, ai] of this.enemyAIs) {
+      const c = this.combatants.get(id);
+      if (!c || c.health <= 0) continue;
+      const casa = this.casas.get(id) ?? c.position;
+      out.push({ id, pos: { ...c.position }, casa: { ...casa }, radio: ai.aggroRadius });
+    }
+    return out;
+  }
+
   /** ¿Hay algún enemigo VIVO enganchado? Es la definición de «en combate» del
    *  punto seguro. */
   private algunoEnganchado(): boolean {
@@ -334,6 +369,7 @@ export class GameSimulation {
     this.enemyAIs.clear();
     this.casas.clear();
     this.puntoSeguro = null;
+    this.ultimoAtacante = null;
     this.combat.reset();
     this.npcBehavior?.clear();
   }

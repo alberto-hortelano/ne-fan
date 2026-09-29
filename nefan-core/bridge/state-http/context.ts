@@ -11,7 +11,11 @@ import type { NarrativeState } from "../../src/narrative/narrative-state.js";
 import type { SessionStorage } from "../../src/narrative/session-storage.js";
 import type { NpcDirector } from "../../src/world-map/npc-director.js";
 import type { ErrorResponse, PluginInspectResult } from "../../src/contracts/common.js";
-import type { PluginRegisterResponse } from "../../src/contracts/world-state.js";
+import type {
+  DespertarValidarRequest,
+  DespertarValidarResponse,
+  PluginRegisterResponse,
+} from "../../src/contracts/world-state.js";
 import type { RegisteredPlugin } from "../../src/plugins/register.js";
 import { formatZodError } from "../../src/contract/model-io/validate.js";
 import type { z, ZodTypeAny } from "zod";
@@ -60,6 +64,10 @@ export interface StateHttpContext {
   /** El gateway WS de este mismo proceso: la IDENTIDAD de esa vía. Sin ella,
    *  quien pregunta no puede saber si está hablando con SU bridge. */
   gatewayUrl: string;
+  /** ¿Vale este despertar? (#613). La regla es de core (`validarDespertar`);
+   *  el mundo contra el que se mide (sim, mapa, colisión) es del bridge, que
+   *  es quien la ata (`bridge/handlers/despertar.ts`). */
+  validarDespertar: (wake: DespertarValidarRequest["wake"]) => DespertarValidarResponse;
 }
 
 /** El request ya despiezado: el handler no vuelve a mirar la URL. */

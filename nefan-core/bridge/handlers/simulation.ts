@@ -9,6 +9,7 @@ import {
 } from "../../src/combat/criba-de-hostiles.js";
 import { activateByPosition } from "./tile.js";
 import { guardarOAvisar } from "../guardar.js";
+import { pedirDespertar } from "./despertar.js";
 import { vaciarPluginsActivos } from "../plugins-activos.js";
 import {
   getEnemyStates,
@@ -40,7 +41,7 @@ import type {
  *  `handleLoadRoom`: `state.player` lo pueden parchear los plugins
  *  (`plugins/dispatcher.ts`, root "player") y un máximo a 0 dejaría al cliente
  *  dividiendo por cero la barra de vida. */
-function estadoDelJugador(ctx: BridgeContext): { playerMaxHp: number; playerWeaponId: string } {
+export function estadoDelJugador(ctx: BridgeContext): { playerMaxHp: number; playerWeaponId: string } {
   return {
     playerMaxHp: ctx.store.state.player.max_hp || 100,
     playerWeaponId: ctx.store.state.player.weapon_id,
@@ -130,6 +131,13 @@ export async function handleInput(
       "El enemigo al que acabas de matar podría seguir vivo si reanudas la partida.",
     );
   }
+  // Y LA DEL JUGADOR TAMBIÉN (#613): es lo que vuelve al reanudar, y reanudar
+  // caído relanza el despertar. En partida, el motor decide dónde despierta.
+  const caeElJugador =
+    ctx.world.kind === "session" && result.events.some((e) => e.type === "died" && e.combatantId === "player");
+  if (caeElJugador) {
+    await guardarOAvisar(ctx, "la muerte del jugador", "Si reanudas, podrías volver en pie donde caíste.");
+  }
 
   ctx.enviarEstado(ws, {
     type: "state_update",
@@ -139,6 +147,7 @@ export async function handleInput(
     enemies: getEnemyStates(ctx),
     npcs: getNpcStates(ctx),
   });
+  if (caeElJugador) pedirDespertar(ctx, ws);
 }
 
 /** La línea de `ambient_events` de una huida. Si el NPC ABANDONÓ una meta al
@@ -316,21 +325,46 @@ export function handleLoadRoom(
   ctx.enviarEstado(ws, roomResponse);
 }
 
+/** R. En PARTIDA no decide nada: el despertar lo decide el motor
+ *  (`handlers/despertar.ts`), y R es «reintentar» cuando la última decisión
+ *  falló. Sin partida (fixtures del selector «Room») no hay motor que
+ *  preguntar, y R levanta al jugador al momento en el punto seguro del sim:
+ *  es la regla de ESE régimen, escrita aquí, no un respaldo mudo del otro.
+ *
+ *  Cada `respawn` que no se atiende SE CONTESTA al socket que lo mandó
+ *  (#613, QA H5): otra pestaña tiene el mundo, no hay jugador, el jugador no
+ *  está caído (H7: R no cura a un vivo), o ya hay una decisión en vuelo (se le
+ *  repite el «decidiendo»). Callarlo dejaba al jugador pulsando R sin ver nada. */
 export function handleRespawn(_msg: RespawnMessage, ws: ClientSocket, ctx: BridgeContext): void {
+  const rechazar = (motivo: string): void => {
+    console.warn(`Bridge: respawn rechazado — ${motivo}`);
+    ctx.enviarNarrativo(ws, { type: "narrative_status", phase: "error", kind: "despertar", message: motivo });
+  };
   // Reaparecer MUEVE al jugador, y con el save escuchando al sim eso acaba en
   // el `state.json`: mismo dueño que el input.
-  if (!ctx.world.canDrive(ws)) return;
-  // Sin jugador no hay a quién reaparecer: el sim no está sembrado (título,
-  // bridge recién reiniciado). Antes se contestaba con `playerHp ?? 100`, un
-  // jugador inventado a tope de vida; hoy se dice y no se contesta.
-  const player = ctx.sim.getCombatant("player");
-  if (!player) {
-    console.error("Bridge: respawn sin jugador en el sim — nada que reaparecer");
+  if (!ctx.world.canDrive(ws)) {
+    rechazar("Esta partida se está jugando desde otro sitio: desde aquí no se puede despertar.");
     return;
   }
-  // DÓNDE lo decide el sim (el último punto seguro, #613); el cliente lo
-  // recibe en `reaparicion` y lo aplica, como `status.spawn` al arrancar.
-  const { events, punto } = ctx.sim.respawn();
+  const player = ctx.sim.getCombatant("player");
+  if (!player) {
+    rechazar("No hay partida en marcha: no hay a quién despertar.");
+    return;
+  }
+  if (player.health > 0) {
+    rechazar("No estás caído: no hay nada que reintentar.");
+    return;
+  }
+  if (ctx.world.kind === "session") {
+    pedirDespertar(ctx, ws);
+    return;
+  }
+  const seguro = ctx.sim.puntoSeguroActual;
+  if (!seguro) {
+    rechazar("El jugador no tiene punto seguro donde reaparecer.");
+    return;
+  }
+  const { events, punto } = ctx.sim.respawn(seguro);
   const response: SinDuenoDelSim<StateUpdateMessage> = {
     type: "state_update",
     events,
@@ -340,7 +374,7 @@ export function handleRespawn(_msg: RespawnMessage, ws: ClientSocket, ctx: Bridg
     reaparicion: punto,
   };
   ctx.enviarEstado(ws, response);
-  console.log(`Bridge: player respawned en (${punto.x.toFixed(2)}, ${punto.z.toFixed(2)})`);
+  console.log(`Bridge: player respawned (fixture) en (${punto.x.toFixed(2)}, ${punto.z.toFixed(2)})`);
 }
 
 /** Alta ADITIVA de combatientes (enemigos de un tile recién cargado en el

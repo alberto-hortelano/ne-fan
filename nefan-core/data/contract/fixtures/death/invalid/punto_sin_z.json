@@ -1,0 +1,11 @@
+{
+  "description": "punto sin z",
+  "expect": "reject",
+  "payload": {
+    "wake": {
+      "type": "point",
+      "x": 1
+    },
+    "consequences": []
+  }
+}

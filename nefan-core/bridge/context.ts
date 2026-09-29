@@ -63,7 +63,7 @@ export interface ClientSocket {
 /** Lo que los handlers necesitan del AiClient — permite fakes en tests. */
 export type NarrativeAiClient = Pick<
   AiClient,
-  "notifySessionStart" | "generateScene" | "reportPlayerChoice" | "developWorld"
+  "notifySessionStart" | "generateScene" | "reportPlayerChoice" | "reportPlayerDeath" | "developWorld"
 >;
 
 export interface BridgeContext {
@@ -106,6 +106,10 @@ export interface BridgeContext {
    *  adentro (`cadenaEnLaCelda`); ausente = todavía no se sabe (arranque,
    *  reanudar) y cuenta como vacía. Los triggers salen del cruce de la vieja
    *  con la nueva (#465, F1). */
+  /** El despertar en vuelo (#613): UNA petición al motor a la vez, con el
+   *  socket que conduce el mundo (a él va el frame con el punto). `null` sin
+   *  petición. Lo escribe solo `bridge/handlers/despertar.ts`. */
+  despertar: { enVuelo: { id: string; ws: ClientSocket } | null };
   posTracking: {
     cellKey: string | null;
     tileKey: string | null;

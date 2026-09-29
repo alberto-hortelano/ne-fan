@@ -8,6 +8,7 @@ import type {
   ClientMessage,
   ServerMessage,
   StateUpdateMessage,
+  NarrativeStatusMessage,
 } from "../src/protocol/messages.js";
 import { join } from "node:path";
 
@@ -98,13 +99,34 @@ describe("bridge routing básico", () => {
     assert.equal(store.state.enemies.length, 1);
   });
 
-  it("respawn responde con state_update y HP restaurado", async () => {
-    const { ctx } = makeCtx();
+  it("respawn sin partida (fixtures) levanta al caído en el punto seguro, con HP restaurado", async () => {
+    const { ctx, sim } = makeCtx();
+    sim.getCombatant("player")!.health = 0;
     const { socket, sent } = makeSocket();
     await porElBorde({ type: "respawn" }, socket, ctx);
     const update = sent[0] as StateUpdateMessage;
     assert.equal(update.type, "state_update");
     assert.equal(update.playerHp, 100);
+    assert.deepEqual(update.reaparicion, { x: 0, y: 0, z: 0 }, "el punto seguro del alta: sin ticks no hay otro");
+  });
+
+  /** QA H7 de BN: R con el jugador en pie no cura ni devuelve a nadie a casa
+   *  —«solo cura el motor»—. Y no se calla (H5): se contesta a quien lo pidió. */
+  it("respawn con el jugador EN PIE se rechaza y se dice: ni cura ni mueve a nadie", async () => {
+    const { ctx, sim } = makeCtx();
+    const player = sim.getCombatant("player")!;
+    player.health = 40;
+    player.position = { x: 5, y: 0, z: 5 };
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "respawn" }, socket, ctx);
+    assert.equal(player.health, 40);
+    assert.deepEqual(player.position, { x: 5, y: 0, z: 5 });
+    assert.equal(sent.length, 1);
+    const aviso = sent[0] as NarrativeStatusMessage;
+    assert.equal(aviso.type, "narrative_status");
+    assert.equal(aviso.phase, "error");
+    assert.equal((aviso as { kind?: string }).kind, "despertar");
+    assert.match(aviso.message ?? "", /No estás caído/);
   });
 
   it("un handler que revienta con requestId contesta el frame de error, no el silencio", async () => {
@@ -239,6 +261,8 @@ describe("bridge routing básico", () => {
         // leía el store recién creado seguía verde).
         store.dispatch("weapon_changed", { weapon_id: "war_hammer" });
         (store.state.player as { max_hp: number }).max_hp = 77;
+        // R solo contesta con estado a un caído (H7 de BN).
+        if (nombre === "respawn") ctx.sim.getCombatant("player")!.health = 0;
         const { socket, sent } = makeSocket();
         await porElBorde(msg, socket, ctx);
         const update = sent.find((m) => m.type === "state_update") as StateUpdateMessage;
@@ -267,6 +291,7 @@ describe("bridge routing básico", () => {
       // que ya tenía `handleLoadRoom` antes de que el máximo viajara.
       const { ctx, store } = makeCtx();
       (store.state.player as { max_hp: number }).max_hp = 0;
+      ctx.sim.getCombatant("player")!.health = 0;
       const { socket, sent } = makeSocket();
       await porElBorde(mensajes.respawn, socket, ctx);
       assert.equal((sent[0] as StateUpdateMessage).playerMaxHp, 100);

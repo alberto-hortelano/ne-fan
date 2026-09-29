@@ -1,0 +1,11 @@
+{
+  "description": "lugar con place_id vacío",
+  "expect": "reject",
+  "payload": {
+    "wake": {
+      "type": "place",
+      "place_id": ""
+    },
+    "consequences": []
+  }
+}

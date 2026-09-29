@@ -112,6 +112,13 @@
           <span class="nf-question" id="tile-confirm-text"></span>
           <div id="tile-confirm-actions"></div>
         </div>
+        <!-- Has caído (#613): mientras el motor decide dónde despiertas, o si
+             no pudo. Lo que dice lo deriva core (`despertar-en-pantalla.ts`);
+             la tecla (R · reintentar / reaparecer) va en la barra de abajo. -->
+        <div id="velo-del-despertar" class="nf-panel" role="status" aria-live="polite" hidden>
+          <b class="nf-question">Has caído</b>
+          <span id="velo-del-despertar-texto"></span>
+        </div>
         <div id="interact-prompt" class="nf-panel"></div>
         <div id="dialogue-panel" class="nf-panel" hidden>
           <!-- Retrato del hablante: lo rellena PortraitView con una imagen

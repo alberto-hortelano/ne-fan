@@ -53,6 +53,7 @@ function makeCtx(): { ctx: StateHttpContext; progreso: string[]; cambiosDeMapa: 
     sessionStorage: storage,
     aiServerUrl: MOTOR_DE_PRUEBA,
     gatewayUrl: GATEWAY_DE_PRUEBA,
+    validarDespertar: () => ({ ok: false as const, motivo: "este test no tiene sim" }),
     onProgress: (m) => progreso.push(m),
     onMapChanged: () => {
       cambiosDeMapa.n += 1;
@@ -217,7 +218,7 @@ describe("la tabla ROUTES está completa por construcción", () => {
   it("hay exactamente un handler por endpoint del contrato, salvo los PLANNED", () => {
     const contrato = Object.keys(WorldStateApi).filter((k) => !PLANNED_ROUTES.includes(k as never));
     assert.deepEqual(Object.keys(ROUTES).sort(), contrato.sort());
-    assert.equal(contrato.length, 28);
+    assert.equal(contrato.length, 29);
     // El tipo `Record<RouteKey, RouteHandler>` es quien lo garantiza (un
     // endpoint sin handler NO COMPILA); esto solo lo hace visible en la
     // salida del test y caza un PLANNED_ROUTES que ya no lo esté.

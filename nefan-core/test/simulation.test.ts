@@ -361,7 +361,7 @@ describe("GameSimulation.respawn", () => {
     b.health = 20; // `b` no es el sujeto: basta con que esté herido y vivo
     player.health = 0;
     const dondeCayo = { ...a.position };
-    sim.respawn();
+    sim.respawn({ x: 0, y: 0, z: -1 });
 
     assert.equal(a.health, 0, "el muerto sigue a 0 tras reaparecer");
     assert.equal(a.state, "dead", "…y sigue `dead`");
@@ -431,12 +431,15 @@ describe("GameSimulation.respawn", () => {
     return { sim, player, bandido, casa, huida };
   }
 
-  it("A: reapareces en el último punto FUERA de combate, a ras de suelo, no donde caíste", () => {
+  it("A: el punto seguro es el último FUERA de combate, a ras de suelo, no donde caíste", () => {
     const { sim, player, huida } = morirContraElBandido();
-    const { punto, events } = sim.respawn();
-    assert.deepEqual(punto, { x: 0, y: 0, z: 6.5 });
-    assert.notDeepEqual(punto, { ...huida, y: 0 }, "no donde caíste: ahí ya había alguien enganchado");
-    assert.deepEqual(player.position, punto, "el sim pone al jugador en el punto que devuelve");
+    // En partida es una SUGERENCIA para el motor (`context.muerte`); sin
+    // motor, es donde R levanta al jugador. En los dos casos, el mismo dato.
+    const seguro = sim.puntoSeguroActual;
+    assert.deepEqual(seguro, { x: 0, y: 0, z: 6.5 });
+    assert.notDeepEqual(seguro, { ...huida, y: 0 }, "no donde caíste: ahí ya había alguien enganchado");
+    const { punto, events } = sim.respawn(seguro!);
+    assert.deepEqual(player.position, punto, "el sim pone al jugador en el punto que se le da");
     assert.equal(player.health, player.maxHealth);
     assert.deepEqual(events, [{ type: "player_respawned", hp: player.maxHealth }]);
     assert.deepEqual(sim.store.state.player.pos, [0, 0, 6.5], "el store se entera del punto");
@@ -445,7 +448,7 @@ describe("GameSimulation.respawn", () => {
   it("B: al morir te suelta, vuelve a su sitio y no vuelve a por ti desde el punto seguro", () => {
     const { sim, bandido, casa } = morirContraElBandido();
     bandido.health = 20; // C1: el vivo herido se cura al reaparecer tú
-    const { punto } = sim.respawn();
+    const { punto } = sim.respawn(sim.puntoSeguroActual!);
     assert.deepEqual(bandido.position, casa, "el bandido vuelve a su sitio de alta");
     assert.equal(bandido.state, "idle");
     assert.equal(bandido.health, bandido.maxHealth, "C1: morir cura a los vivos (decisión 2026-09-29)");
@@ -469,15 +472,46 @@ describe("GameSimulation.respawn", () => {
     sim.addCombatant(player);
     player.position = { x: 40, y: 0, z: 40 };
     player.health = 0;
-    assert.deepEqual(sim.respawn().punto, { x: 3, y: 0, z: -7 });
+    assert.deepEqual(sim.puntoSeguroActual, { x: 3, y: 0, z: -7 });
+  });
+
+  /** #613, «que decida el motor»: el sim ya no decide DÓNDE — levanta al
+   *  jugador en el punto que se le da, a ras de suelo, y desde ahí vuelve a
+   *  contar el punto seguro y el asesino. */
+  it("respawn(punto): levanta en el punto dado, con y=0, y olvida al asesino", () => {
+    const { sim, player } = morirContraElBandido();
+    assert.equal(sim.ultimoAtacanteDelJugador, "bandido", "el golpe que le mató queda apuntado");
+    const { punto } = sim.respawn({ x: -20, y: 3, z: 12 });
+    assert.deepEqual(punto, { x: -20, y: 0, z: 12 });
+    assert.deepEqual(player.position, punto);
+    assert.deepEqual(sim.puntoSeguroActual, punto, "despertar es estar a salvo");
+    assert.equal(sim.ultimoAtacanteDelJugador, null);
+  });
+
+  it("un cadáver no se mueve: el input de un jugador caído no cambia su posición", () => {
+    const { sim, player } = morirContraElBandido();
+    const cadaver = { ...player.position };
+    sim.tick(0.05, quietoEn({ x: 50, y: 0, z: 50 }));
+    assert.deepEqual(player.position, cadaver);
+  });
+
+  it("hostilesVivos: los vivos con IA, con su sitio de alta y su radio; el muerto no", () => {
+    const { sim, bandido, casa } = morirContraElBandido();
+    const [h, ...resto] = sim.hostilesVivos();
+    assert.deepEqual(resto, []);
+    assert.deepEqual(h, { id: "bandido", pos: bandido.position, casa, radio: 6 });
+    assert.notDeepEqual(h.pos, casa, "premisa: el bandido se movió de su sitio al perseguir");
+    bandido.health = 0;
+    assert.deepEqual(sim.hostilesVivos(), []);
   });
 
   it("sin jugador no hay a quién reaparecer, y se dice", () => {
     const sim = new GameSimulation(config, new GameStore(), 42);
-    assert.throws(() => sim.respawn(), /no hay jugador/);
+    assert.throws(() => sim.respawn({ x: 0, y: 0, z: 0 }), /no hay jugador/);
     sim.addCombatant(createCombatant("player"));
     sim.removeCombatant("player");
-    assert.throws(() => sim.respawn(), /no hay jugador/);
+    assert.throws(() => sim.respawn({ x: 0, y: 0, z: 0 }), /no hay jugador/);
+    assert.equal(sim.puntoSeguroActual, null);
   });
 });
 
@@ -507,8 +541,7 @@ describe("GameSimulation — los hostiles no se pelean entre sí", () => {
     assert.deepEqual(eventos.filter((e) => e.type === "attack_started" || e.type === "attack_landed"), []);
     assert.equal(sim.getCombatant("b1")!.health, 60);
     assert.equal(sim.getCombatant("b2")!.health, 60);
-    player.health = 0;
-    assert.deepEqual(sim.respawn().punto, { x: 0, y: 0, z: 30 - 99 * 0.1 }, "nadie enganchado: el punto sigue al jugador");
+    assert.deepEqual(sim.puntoSeguroActual, { x: 0, y: 0, z: 30 - 99 * 0.1 }, "nadie enganchado: el punto sigue al jugador");
   });
 });
 

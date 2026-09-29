@@ -1,0 +1,28 @@
+{
+  "description": "despertar en un punto (metros de mundo) con una curandera que habla y cura",
+  "expect": "accept",
+  "payload": {
+    "wake": {
+      "type": "point",
+      "x": -12.5,
+      "z": 20
+    },
+    "consequences": [
+      {
+        "type": "dialogue",
+        "speaker": "Curandera",
+        "text": "Te encontré en el camino."
+      },
+      {
+        "type": "player_healed",
+        "amount": 10
+      },
+      {
+        "type": "spawn_entity",
+        "entity_kind": "npc",
+        "name": "Curandera",
+        "role": "merchant"
+      }
+    ]
+  }
+}

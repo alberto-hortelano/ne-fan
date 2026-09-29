@@ -71,6 +71,8 @@ import type {
   NotifySessionResponse,
   ReportPlayerChoiceRequest,
   ReportPlayerChoiceResponse,
+  ReportPlayerDeathRequest,
+  ReportPlayerDeathResponse,
 } from "../../nefan-core/src/contracts/narrative-llm.js";
 import type {
   SpriteCatalog,
@@ -419,6 +421,63 @@ async function handleGenerateTile(gt: GenerateTile, { sembrarMapa }: { sembrarMa
   return tileByKey.get(key);
 }
 
+// ── El despertar (#613, «que decida el motor») ──────────────────────────────
+
+/** Cómo contesta este motor a un `player_death`, EN CALIENTE (`POST
+ *  /dev/despertar`), como `/dev/tiles` para los tiles:
+ *   · `normal` — hace lo que haría el motor con su pre-flight: prueba sitios
+ *     en orden (el `punto_seguro`, los `lugares` por distancia y anillos de
+ *     puntos alrededor del cadáver) contra `POST /despertar/validar` y devuelve
+ *     el primero que el juego acepta. Y tarda `DESPERTAR_MS_NORMAL` en
+ *     contestar, como un motor que piensa: con 0 ms el jugador caía y se
+ *     levantaba entre dos sondeos del banco, y los guiones que esperan a «vida
+ *     0» no veían la muerte nunca;
+ *   · `mal` — devuelve el sitio donde cayó, sin preguntar (el bridge lo tiene
+ *     que rechazar: es la segunda puerta);
+ *   · `error` — un 500;
+ *   · `tarda` — espera `ms` y luego contesta como `normal`;
+ *   · `punto` — prueba PRIMERO el punto `{x, z}` que le dio el guion, y si el
+ *     juego no lo acepta sigue como `normal`. Es lo que necesita un guion que
+ *     no mide el despertar y quiere que el jugador vuelva a donde estaba (el
+ *     73: sus zonas son lugares del mapa, y despertar en una dispara su
+ *     trigger).
+ *  `/dev/reset` lo devuelve a `normal`. */
+const MODOS_DE_DESPERTAR = ["normal", "mal", "error", "tarda", "punto"] as const;
+type ModoDeDespertar = (typeof MODOS_DE_DESPERTAR)[number];
+let despertarModo: ModoDeDespertar = "normal";
+let despertarMs = 0;
+let despertarPunto: { x: number; z: number } | null = null;
+/** Lo que tarda el motor en `normal` (ver arriba). */
+const DESPERTAR_MS_NORMAL = 1500;
+
+type Wake = ReportPlayerDeathResponse["wake"];
+
+function candidatosDeDespertar(muerte: Record<string, unknown>): Wake[] {
+  const out: Wake[] = [];
+  if (despertarModo === "punto" && despertarPunto) out.push({ type: "point", ...despertarPunto });
+  const seguro = muerte.punto_seguro as { x: number; z: number } | null | undefined;
+  if (seguro) out.push({ type: "point", x: seguro.x, z: seguro.z });
+  for (const l of (muerte.lugares as Array<{ place_id: string }> | undefined) ?? []) {
+    out.push({ type: "place", place_id: l.place_id });
+  }
+  const c = (muerte.cayo_en as { x: number; z: number } | undefined) ?? { x: 0, z: 0 };
+  for (const r of [14, 20, 26, 32]) {
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      out.push({ type: "point", x: c.x + Math.cos(a) * r, z: c.z + Math.sin(a) * r });
+    }
+  }
+  return out;
+}
+
+async function despertarNormal(muerte: Record<string, unknown>): Promise<Wake | null> {
+  for (const wake of candidatosDeDespertar(muerte)) {
+    const v = (await statePost("/despertar/validar", { wake })) as { ok: boolean; motivo?: string };
+    if (v.ok) return wake;
+  }
+  return null;
+}
+
 async function statePost(path: string, body: unknown) {
   const res = await fetch(`${STATE_API}${path}`, {
     method: "POST",
@@ -678,6 +737,30 @@ const server = http.createServer((req, res) => {
           },
         } satisfies DevelopWorldResponse);
       }
+      if (req.method === "POST" && ruta === "/report_player_death") {
+        const body = leerBody<ReportPlayerDeathRequest>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
+        const muerte = ((body.context ?? {}) as { muerte?: Record<string, unknown> }).muerte;
+        if (!muerte) return send(422, { detail: "fake-ai: report_player_death sin context.muerte" });
+        console.error(`[fake-ai] player_death (${despertarModo}${despertarModo === "tarda" ? ` ${despertarMs} ms` : ""})`);
+        if (despertarModo === "error") {
+          return send(500, { detail: "el motor se cayó decidiendo dónde despiertas (simulado por el banco)" });
+        }
+        if (despertarModo === "mal") {
+          const c = muerte.cayo_en as { x: number; z: number };
+          return send(200, { wake: { type: "point", x: c.x, z: c.z }, consequences: [] } satisfies ReportPlayerDeathResponse);
+        }
+        await new Promise((r) => setTimeout(r, despertarModo === "tarda" ? despertarMs : DESPERTAR_MS_NORMAL));
+        const wake = await despertarNormal(muerte);
+        if (!wake) return send(422, { detail: "fake-ai: ningún sitio candidato vale para despertar" });
+        return send(200, {
+          wake,
+          // Un `story_update` y no un diálogo: ejerce el camino de las
+          // consequences del despertar sin abrir un panel que, en los guiones,
+          // congela al jugador (el diálogo suspende el movimiento).
+          consequences: [{ type: "story_update", delta: "(bench) El jugador despertó lejos de donde cayó." }],
+        } satisfies ReportPlayerDeathResponse);
+      }
       if (req.method === "POST" && ruta === "/report_player_choice") {
         // Responder con una línea de diálogo (no con silencio): es lo que
         // ejercita el panel, el retrato y las opciones en el E2E sin créditos.
@@ -902,6 +985,9 @@ const server = http.createServer((req, res) => {
         // y el reset entre guiones no está para desdecirle. Lo que sí deshace
         // es lo que pidió el guion anterior por `/dev/tiles` (#516).
         tileDelayMs = TILE_DELAY_MS_AL_ARRANCAR;
+        despertarModo = "normal";
+        despertarMs = 0;
+        despertarPunto = null;
         tileMode = modoDeTileDelArranque();
         console.error(
           `[fake-ai] /dev/reset: ${JSON.stringify(antes)} → contadores a cero, ` +
@@ -938,6 +1024,25 @@ const server = http.createServer((req, res) => {
         }
         console.error(`[fake-ai] /dev/tiles → ${JSON.stringify(conductaDeTiles())}`);
         return send(200, conductaDeTiles());
+      }
+      if (req.method === "POST" && ruta === "/dev/despertar") {
+        const body = leerBody<{ modo?: unknown; ms?: unknown; x?: unknown; z?: unknown }>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
+        if (!MODOS_DE_DESPERTAR.includes(body.modo as ModoDeDespertar)) {
+          return send(400, {
+            detail: `fake-ai: modo ${JSON.stringify(body.modo)} no es uno de ${MODOS_DE_DESPERTAR.join(", ")}`,
+          });
+        }
+        const ms = body.ms === undefined ? 0 : Number(body.ms);
+        if (!Number.isFinite(ms) || ms < 0) return send(400, { detail: `fake-ai: ms debe ser ≥ 0, no ${JSON.stringify(body.ms)}` });
+        if (body.modo === "punto" && !(Number.isFinite(Number(body.x)) && Number.isFinite(Number(body.z)))) {
+          return send(400, { detail: `fake-ai: el modo punto necesita x y z numéricos, no ${JSON.stringify(body)}` });
+        }
+        despertarModo = body.modo as ModoDeDespertar;
+        despertarMs = ms;
+        despertarPunto = body.modo === "punto" ? { x: Number(body.x), z: Number(body.z) } : null;
+        console.error(`[fake-ai] /dev/despertar → ${despertarModo} ${despertarMs} ms`);
+        return send(200, { modo: despertarModo, ms: despertarMs, punto: despertarPunto });
       }
       if (req.method === "POST" && ruta === "/dev/api_cache") {
         const body = leerBody<{ enabled?: boolean }>(raw);

@@ -47,6 +47,33 @@ describe("AiClient", () => {
     assert.deepEqual(captured.body, { session_id: "s1", game_id: "g1", is_resume: true });
   });
 
+  /** #613: el despertar. `ok:false` es SIEMPRE un fallo con motivo, nunca un
+   *  «no despierta»: el bridge lo difunde como narrative_status de error. */
+  it("reportPlayerDeath manda event_id y context, y devuelve wake + consequences", async () => {
+    let captured: { url: string; body: unknown } | null = null;
+    const client = new AiClient({
+      baseUrl: "http://test",
+      fetchImpl: (async (url: string, init: RequestInit) => {
+        captured = { url, body: JSON.parse(String(init.body)) };
+        return new Response(JSON.stringify({ wake: { type: "place", place_id: "posada" }, consequences: [] }), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    const r = await client.reportPlayerDeath({ eventId: "d1", context: ctx });
+    assert.deepEqual(r, { ok: true, resolucion: { wake: { type: "place", place_id: "posada" }, consequences: [] } });
+    assert.equal(captured!.url, "http://test/report_player_death");
+    assert.deepEqual(captured!.body, { event_id: "d1", context: ctx });
+  });
+
+  it("reportPlayerDeath: HTTP de error, cuerpo sin wake o red caída son fallos con motivo", async () => {
+    const con = (f: typeof fetch) => new AiClient({ baseUrl: "http://test", fetchImpl: f });
+    const http = await con(mockFetch(() => new Response("sin listener", { status: 503 }))).reportPlayerDeath({ eventId: "d", context: ctx });
+    assert.ok(!http.ok && /HTTP 503: sin listener/.test(http.error));
+    const cojo = await con(mockFetch(() => new Response(JSON.stringify({ consequences: [] }), { status: 200 }))).reportPlayerDeath({ eventId: "d", context: ctx });
+    assert.ok(!cojo.ok && /wake/.test(cojo.error));
+    const red = await con((() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch).reportPlayerDeath({ eventId: "d", context: ctx });
+    assert.ok(!red.ok && /ECONNREFUSED/.test(red.error));
+  });
+
   it("reportPlayerChoice returns parsed consequences on 200", async () => {
     const client = new AiClient({
       baseUrl: "http://test",

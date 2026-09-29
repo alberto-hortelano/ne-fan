@@ -1,13 +1,13 @@
 /** A RAS DE SUELO: el punto donde vuelve el jugador al morir, sacado de una
  *  posición.
  *
- *  QUÉ posición lo decide el sim y no esta función (#613, decisión del usuario
- *  2026-09-29): el ÚLTIMO PUNTO SEGURO, el del último tick en que el jugador
- *  estaba vivo y ningún enemigo vivo le tenía enganchado. Esa regla vive en
- *  `GameSimulation` (`game-loop.ts`) porque consulta las IAs, y el punto viaja
- *  al cliente en `StateUpdateMessage.reaparicion`. Hasta entonces era «donde
- *  cayó» y lo calculaba el cliente (`main.ts`), que se lo mandaba al bridge
- *  en el `respawn` y el bridge se lo creía.
+ *  QUÉ posición no la decide esta función. En partida la elige el MOTOR
+ *  narrativo al morir el jugador (#613, decisión del usuario 2026-09-29: «Que
+ *  decida el motor»), y la valida `simulation/despertar.ts`; sin motor
+ *  (fixtures), R levanta en el último punto seguro del sim, que es donde esta
+ *  función se sigue usando: `GameSimulation` apunta con ella el último sitio
+ *  en que el jugador estaba vivo y nadie le tenía enganchado. Hasta la tanda
+ *  BN el punto era «donde cayó» y lo calculaba el cliente (`main.ts`).
  *
  *  Aquí queda lo que no depende del combate: la `y` a 0. No es cosmética:
  *  `position.y` es la BASE en la world scene, y un punto con otra cosa entierra
@@ -26,8 +26,8 @@
  *  Y SI EL JUGADOR REAPARECE DENTRO DE ALGO, SALE ANDANDO: es el arreglo de
  *  #616 (`simulation/salida-del-solido.ts`, tanda G, 2026-09-17) — el terreno
  *  tiene la consulta de PUNTO, la penetración baja monótona y el paso que saca
- *  no se frena. Con el punto seguro es aún menos probable: es un sitio por
- *  el que el jugador ya pasó andando.
+ *  no se frena. Y el despertar del motor pasa además por `sitioParaAparecer`
+ *  (`validarDespertar`): nunca se despierta dentro de un sólido.
  */
 
 import type { Vec3 } from "../types.js";

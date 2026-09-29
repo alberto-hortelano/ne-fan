@@ -198,6 +198,17 @@ export interface SceneValidateRequest {
   scene: FormatDScene;
 }
 
+/** Pre-flight del despertar (#613): la MISMA regla que aplica el bridge al
+ *  recibir la respuesta (`simulation/despertar.ts`). El motor pregunta antes
+ *  de responder para corregir sin perder la petición. */
+export interface DespertarValidarRequest {
+  wake: { type: "place"; place_id: string } | { type: "point"; x: number; z: number };
+}
+
+export type DespertarValidarResponse =
+  | { ok: true; punto: { x: number; y: number; z: number } }
+  | { ok: false; motivo: string };
+
 export interface PluginListResponse {
   /** Resumen por plugin activo: {id, name, version, description,
    *  origin_author, events_consumed, events_produced, derived_views}. */
@@ -323,6 +334,14 @@ export const WorldStateApi = {
   // scene_validate; el SERVIDOR construye el TileValidationContext desde los
   // edges de los vecinos — el motor no puede olvidarse de pasarlo).
   validateScene: endpoint<SceneValidateRequest, SceneValidationResult>("POST", "/scene/validate"),
+
+  // El despertar del jugador (#613): pre-flight del kind `player_death`. No
+  // muta nada; exige partida porque la regla mira el mundo de ESA partida.
+  validarDespertar: endpoint<DespertarValidarRequest, DespertarValidarResponse>(
+    "POST",
+    "/despertar/validar",
+    EXIGE_PARTIDA,
+  ),
 
   // Plugins
   listPlugins: endpoint<void, PluginListResponse>("GET", "/plugins"),

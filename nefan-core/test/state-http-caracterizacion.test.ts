@@ -80,6 +80,7 @@ function levantar(opts: { conStorage: boolean; gamesDir: string }): Promise<Harn
     // El motor al que apuntaría el bridge: GET /health lo publica.
     aiServerUrl: "http://127.0.0.1:0",
     gatewayUrl: "ws://127.0.0.1:0",
+    validarDespertar: () => ({ ok: false as const, motivo: "este test no tiene sim" }),
     port: 0,
     narrative,
     npcDirector: new NpcDirector(narrative, createSimCollisionProvider(narrative)),

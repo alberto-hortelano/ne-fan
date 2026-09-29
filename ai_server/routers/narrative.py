@@ -27,6 +27,12 @@ class ReportPlayerChoiceRequest(BaseModel):
     context: dict = Field(default_factory=dict)
 
 
+class ReportPlayerDeathRequest(BaseModel):
+    """El jugador ha caído (#613): el contexto de siempre con `muerte` dentro."""
+    event_id: str = Field(min_length=1)
+    context: dict = Field(default_factory=dict)
+
+
 class DevelopWorldRequest(BaseModel):
     """Borrador de mundo del jugador (textarea o archivo .md/.txt) que el
     motor narrativo desarrolla contra la plantilla de 10 secciones.
@@ -117,6 +123,37 @@ async def report_player_choice(body: ReportPlayerChoiceRequest):
         raise HTTPException(
             status_code=422,
             detail=f"narrative engine returned invalid response: {e}",
+        ) from e
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=502,
+            detail=f"narrative engine returned non-dict result: {type(result).__name__}",
+        )
+    return result
+
+
+@router.post("/report_player_death")
+async def report_player_death(body: ReportPlayerDeathRequest):
+    """El motor narrativo decide dónde despierta el jugador (#613). Sin
+    respaldo mudo: sin backend → 503, respuesta con forma inválida → 422. La
+    geometría la valida el bridge (y el pre-flight del motor), no este
+    endpoint."""
+    import asyncio
+    if deps.llm_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="ai_server has no deps.llm_client configured — no MCP listener, no API key",
+        )
+    try:
+        result = await asyncio.to_thread(
+            deps.llm_client.report_player_death, body.event_id, body.context
+        )
+    except NarrativeUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"narrative engine returned invalid death resolution: {e}",
         ) from e
     if not isinstance(result, dict):
         raise HTTPException(

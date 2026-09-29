@@ -10,6 +10,7 @@
 import { GameStore } from "@nefan-core/src/store/game-store.js";
 import type { Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
 import { identidadDelCliente, repartirEstado } from "@nefan-core/src/protocol/dueno-del-sim.js";
+import { elJugadorEsperaDespertar } from "@nefan-core/src/protocol/despertar-en-pantalla.js";
 import type { WorldScene } from "@nefan-core/src/scene/scene-normalize.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { AVISO_PARTIDA, DETALLE_SIN_PARTIDA, errors } from "../ui/error-log.js";
@@ -71,10 +72,10 @@ export interface GameClient {
   /** Alta aditiva de combatientes (enemigos de un tile nuevo): no resetea el
    *  sim ni al player — el mundo es un plano continuo. */
   addEnemies(enemies: RoomEnemy[]): void;
-  /** Pide reaparecer. DÓNDE lo decide el sim del bridge (#613) y llega en
-   *  `FrameResult.reaparicion`; hasta entonces el cliente NO manda input —la
-   *  posición la conduce el input, y un frame con la del cadáver devolvería
-   *  al sim allí—. */
+  /** R con el jugador caído. En partida es «reintentar»: dónde despierta lo
+   *  decide el motor (#613); en fixtures el bridge levanta al momento en el
+   *  punto seguro. El punto llega en `FrameResult.reaparicion` y, mientras
+   *  tanto, el cliente no manda input (`elJugadorEsperaDespertar`). */
   respawn(): void;
   /** Los tres números del JUGADOR del último frame del bridge. Sin `id` a
    *  propósito (#526): la rama de ENEMIGO existía, no la llamaba nadie, y
@@ -119,11 +120,11 @@ export class BridgeGameClient implements GameClient {
   private enPrueba = false;
   /** Frames de OTRO sim tirados aquí; lo lee el banco por `__nefan`. */
   private tirados = 0;
-  /** Se ha pedido `respawn` y aún no ha llegado el frame con el punto. Mientras
-   *  tanto `tick()` no manda input (ver `GameClient.respawn`). Se limpia al
-   *  ENTREGAR ese frame, no al recibirlo: entre las dos cosas el game loop
-   *  aún tiene la posición del cadáver, y un input la mandaría. */
-  private esperandoReaparicion = false;
+  /** El último frame ENTREGADO al game loop. Mientras diga «caído», `tick()`
+   *  no manda input (`elJugadorEsperaDespertar`, core): el loop aún tiene la
+   *  posición del cadáver, y el frame con el punto de despertar se aplica al
+   *  entregarse, no al recibirse. */
+  private entregado: FrameResult;
   isConnected = false;
   isBridge = true;
   private handlers: Map<GameClientEvent, EventHandler[]> = new Map();
@@ -136,6 +137,7 @@ export class BridgeGameClient implements GameClient {
     this.bridge = bridge;
     this.store = store;
     this.lastState = frameDeArranque(store);
+    this.entregado = this.lastState;
 
     bridge.on("state_update", (msg) => {
       if (!msg) return;
@@ -229,9 +231,9 @@ export class BridgeGameClient implements GameClient {
   }
 
   tick(delta: number, inputs: TickInputs): FrameResult {
-    // Esperando el punto de reaparición: este input llevaría la posición del
-    // cadáver y el sim devolvería allí al jugador (ver `respawn`).
-    if (!this.esperandoReaparicion) this.bridge.sendInput(delta, inputs);
+    // Caído: el sitio donde despierta lo decide otro (#613), y este input
+    // llevaría la posición del cadáver.
+    if (!elJugadorEsperaDespertar(this.entregado)) this.bridge.sendInput(delta, inputs);
     return this.idle();
   }
 
@@ -251,10 +253,11 @@ export class BridgeGameClient implements GameClient {
     if (this.pendingFrame) {
       const frame = this.pendingFrame;
       this.pendingFrame = null;
-      if (frame.reaparicion) this.esperandoReaparicion = false;
+      this.entregado = frame;
       return frame;
     }
-    return { ...this.lastState, events: [] };
+    this.entregado = { ...this.lastState, events: [] };
+    return this.entregado;
   }
 
   loadRoom(roomData: Pick<WorldScene, "dimensions">, roomId: string, enemies: RoomEnemy[]): void {
@@ -265,7 +268,6 @@ export class BridgeGameClient implements GameClient {
     this.enPrueba = true;
     // El mundo anterior ya se retiró: su último frame no describe esta fixture.
     this.pendingFrame = null;
-    this.esperandoReaparicion = false;
     this.lastState = { ...this.lastState, events: [], enemies: [], npcs: [] };
     const { width, depth } = roomData.dimensions;
     this.bridge.sendLoadRoom(
@@ -285,6 +287,7 @@ export class BridgeGameClient implements GameClient {
   /** Ver `GameClient.empezarPartida`. */
   empezarPartida(vida: number): void {
     this.lastState = frameDeArranque(this.store, vida);
+    this.entregado = this.lastState;
   }
 
   /** Ver `GameClient.olvidarElUltimoFrame`. Vuelve al neutro EXACTO del
@@ -292,8 +295,8 @@ export class BridgeGameClient implements GameClient {
    *  sale del modo fixtures: quien vuelve al título no está mirando ninguna. */
   olvidarElUltimoFrame(): void {
     this.pendingFrame = null;
-    this.esperandoReaparicion = false;
     this.lastState = frameDeArranque(this.store);
+    this.entregado = this.lastState;
     this.enPrueba = false;
   }
 
@@ -308,7 +311,6 @@ export class BridgeGameClient implements GameClient {
   }
 
   respawn(): void {
-    this.esperandoReaparicion = true;
     this.bridge.sendRespawn();
   }
 

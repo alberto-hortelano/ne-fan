@@ -32,7 +32,7 @@
  *  Cero créditos: preset `e2e-sin-creditos`.
  */
 import { nuevaPartida, comenzar, reanudar } from "../lib/sesion.mjs";
-import { acercarse, herirHasta } from "../lib/combate.mjs";
+import { acercarse, esperarElDespertar, herirHasta } from "../lib/combate.mjs";
 import { viajarSiSePuede } from "../lib/viaje.mjs";
 
 /** `saves` para arrancar en el tile de bootstrap (el del bandido); `fake-ai`
@@ -67,17 +67,25 @@ const esperarMuerte = (ctx, quien) =>
       ),
   );
 
-/** R hasta estar en pie; devuelve la vida con la que se vuelve. */
+/** Despertar y volver a donde se cayó; devuelve la vida con la que se vuelve.
+ *
+ *  Desde #613 (tanda BN) dónde despierta lo decide el MOTOR, sin tecla, y el
+ *  motor falso despierta lejos. Este guion no mide el despertar sino que el
+ *  enemigo MUERTO no se levante (C2), y sus bloques siguen andando desde donde
+ *  se cayó: así que, despierto, el banco le devuelve allí (`setPlayerPos`, su
+ *  teletransporte). Es lo que antes hacía R al reaparecer en el sitio. */
 const reaparecer = async (ctx) => {
-  const r = await ctx.waitFor(
-    "el jugador reaparece al pulsar R",
-    () => {
-      const hp = Number(document.getElementById("player-hp-text")?.textContent ?? "0");
-      if (hp > 0) return { hp };
-      window.__nefan.inputDriver.queueRespawn();
-      return null;
+  const cayo = await ctx.nefan("state");
+  const r = await esperarElDespertar(ctx, "el jugador caído", { velo: false });
+  await ctx.nefan("setPlayerPos", cayo.pos.x, cayo.pos.z);
+  await ctx.waitFor(
+    "el banco devuelve al jugador a donde cayó",
+    (a) => {
+      const p = window.__nefan.state().pos;
+      return Math.hypot(p.x - a.x, p.z - a.z) < 0.05 ? true : null;
     },
-    15_000,
+    5_000,
+    cayo.pos,
   );
   return r.hp;
 };

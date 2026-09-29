@@ -41,6 +41,7 @@ const DESTINO_POR_KIND: Record<NarrativeStatusDeSesion["kind"], "overlay" | "log
   action: "overlay",
   protocolo: "overlay",
   combatientes: "log",
+  despertar: "log",
 };
 const TODOS_LOS_KINDS = Object.keys(DESTINO_POR_KIND) as NarrativeStatusDeSesion["kind"][];
 const KINDS_DE_OVERLAY = TODOS_LOS_KINDS.filter((k) => DESTINO_POR_KIND[k] === "overlay");
@@ -206,10 +207,13 @@ describe("rótulo de un fallo del motor", () => {
     assert.equal(cuerpo("action"), "El juego no pudo completar esa acción.");
     assert.equal(cuerpo("protocolo"), "El juego mandó un mensaje que el servidor no pudo leer.");
     assert.equal(cuerpo("combatientes"), "Alguno de los enemigos de ese lote no pudo entrar al mundo.");
+    // El del despertar lleva su titular delante: va a la línea de mensajes,
+    // donde no hay título que lo diga (#613).
+    assert.equal(cuerpo("despertar"), "Has caído: El mundo no pudo decidir dónde despiertas.");
     // Y el conjunto es TOTAL: si mañana entra un kind más, esta línea cae con
     // su nombre en vez de dejarlo sin cuerpo comprobado.
-    assert.equal(TODOS_LOS_KINDS.length, 10, JSON.stringify(TODOS_LOS_KINDS));
-    assert.equal(new Set(TODOS_LOS_KINDS.map(cuerpo)).size, 10, "dos kinds comparten cuerpo por defecto");
+    assert.equal(TODOS_LOS_KINDS.length, 11, JSON.stringify(TODOS_LOS_KINDS));
+    assert.equal(new Set(TODOS_LOS_KINDS.map(cuerpo)).size, 11, "dos kinds comparten cuerpo por defecto");
   });
 
   it("un `message` vacío NO se sustituye por el de por defecto", () => {

@@ -158,6 +158,7 @@ const DETALLE_POR_DEFECTO: Record<NarrativeStatusDeSesion["kind"], string> = {
   action: "El juego no pudo completar esa acción.",
   protocolo: "El juego mandó un mensaje que el servidor no pudo leer.",
   combatientes: "Alguno de los enemigos de ese lote no pudo entrar al mundo.",
+  despertar: "El mundo no pudo decidir dónde despiertas.",
 };
 
 /** Lo que `rotuloDeStatus` LEE de un status, y nada más.
@@ -299,6 +300,14 @@ export function rotuloDeStatus(
       // al registro de errores, que es donde el jugador lo puede leer sin
       // dejar de jugar.
       return { destino: "log", detalle };
+
+    case "despertar":
+      // «Has caído»: el fallo de decidir dónde despiertas (o el rechazo de algo
+      // que un caído no puede hacer) NO tapa la pantalla con el muro: su sitio
+      // es el velo del despertar, que ya está puesto y ofrece «R · reintentar»
+      // (`protocol/despertar-en-pantalla.ts`). Aquí solo va a la línea de
+      // mensajes, con el titular delante para que se lea qué ha pasado.
+      return { destino: "log", detalle: `Has caído: ${detalle}` };
   }
 
   // Exhaustividad: un kind nuevo sin titular propio no compila. Es el candado

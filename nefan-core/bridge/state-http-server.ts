@@ -57,6 +57,8 @@ export interface StateHttpServerOptions {
    *  `aiServerUrl`: es lo que permite comprobar que la State API a la que se
    *  pregunta es la del bridge que uno está usando, y no la del vecino. */
   gatewayUrl: string;
+  /** El despertar (#613): ver `StateHttpContext.validarDespertar`. */
+  validarDespertar: StateHttpContext["validarDespertar"];
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -73,6 +75,7 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
     sessionStorage: opts.sessionStorage,
     aiServerUrl: opts.aiServerUrl,
     gatewayUrl: opts.gatewayUrl,
+    validarDespertar: opts.validarDespertar,
   };
 
   const server = createServer((req, res) => {

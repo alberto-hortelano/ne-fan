@@ -114,7 +114,7 @@ export class EcoDelCombate {
         const quien = e.combatantId as string;
         if (quien === "player") {
           this.#vivo = false;
-          this.deps.log("YOU DIED — press R to respawn");
+          this.deps.log("Has caído.");
         } else {
           this.deps.log(`${quien} killed!`);
         }

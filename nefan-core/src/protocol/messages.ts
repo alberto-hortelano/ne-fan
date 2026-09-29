@@ -69,10 +69,11 @@ export interface LoadRoomMessage {
   }[];
 }
 
-/** R tras morir. Sin punto: DÓNDE se reaparece lo decide el sim del bridge
- *  (el último punto seguro, #613) y viaja de vuelta en
- *  `StateUpdateMessage.reaparicion`. Un cliente que mande `pos` es de otra
- *  versión y lo rechaza el zod (`.strict()`), no se ignora. */
+/** R con el jugador caído. Sin punto: en partida es «reintentar» —dónde
+ *  despierta lo decide el motor (#613, `bridge/handlers/despertar.ts`)—; sin
+ *  partida (fixtures) el bridge levanta al momento en el punto seguro del sim.
+ *  El punto viaja de vuelta en `StateUpdateMessage.reaparicion`. Un cliente
+ *  que mande `pos` es de otra versión y lo rechaza el zod (`.strict()`). */
 export interface RespawnMessage {
   type: "respawn";
 }
@@ -372,11 +373,11 @@ export interface StateUpdateMessage {
     /** Modo del FSM (idle/wander/goto/visit/flee/intervene/react) — trazas. */
     state: string;
   }[];
-  /** Dónde reaparece el jugador. SOLO en la respuesta a `respawn`: el punto
-   *  lo decide el sim (el último punto seguro, #613) y el cliente lo copia a
-   *  su posición antes de volver a mandar input —la posición la conduce el
-   *  input, y sin esto el siguiente frame lo devolvería al cadáver—. Mismo
-   *  patrón que `status.spawn` al arrancar. */
+  /** Dónde despierta el jugador. SOLO en el frame que lo levanta: el del
+   *  despertar que decidió el motor (#613) o, sin partida, la respuesta a
+   *  `respawn`. El cliente lo copia a su posición antes de volver a mandar
+   *  input —la posición la conduce el input, y sin esto el siguiente frame lo
+   *  devolvería al cadáver—. Mismo patrón que `status.spawn` al arrancar. */
   reaparicion?: Vec3;
 }
 
@@ -504,6 +505,11 @@ interface CuerpoDeNarrativeStatus {
  *     encima de la partida— mientras el cliente, con el mismo criterio,
  *     descartaba un enemigo y seguía.
  *
+ *   · `despertar` — el jugador ha caído y el motor decide dónde despierta
+ *     (#613): `working` mientras decide, `error` si no pudo (o si el jugador
+ *     pidió algo que un caído no puede hacer). Lo pinta el velo del
+ *     despertar, no el muro (`protocol/despertar-en-pantalla.ts`).
+ *
  *  Añadir uno sin darle título propio NO COMPILA: `rotuloDeStatus` cierra
  *  su `switch` con `const nunca: never`, y `DETALLE_POR_DEFECTO` es un
  *  `Record` sobre esta misma unión. */
@@ -517,7 +523,8 @@ export type KindDeStatusDeSesion =
     | "plugin"
     | "action"
     | "protocolo"
-    | "combatientes";
+    | "combatientes"
+    | "despertar";
 
 /** Qué FASES admite cada kind. Un `ready` es «el sitio está listo» (`tile`:
  *  desde #405 toda escena servida es un tile, así que es el único ready del

@@ -43,6 +43,7 @@ before(async () => {
     // El motor al que apuntaría el bridge: GET /health lo publica.
     aiServerUrl: "http://127.0.0.1:0",
     gatewayUrl: "ws://127.0.0.1:0",
+    validarDespertar: () => ({ ok: false as const, motivo: "este test no tiene sim" }),
     port: 0, // efímero
     narrative,
     npcDirector: new NpcDirector(narrative, createSimCollisionProvider(narrative)),
@@ -538,6 +539,7 @@ describe("state HTTP API · lo que pasa después del handler (#453)", () => {
     const propio = createStateHttpServer({
       aiServerUrl: "http://127.0.0.1:0",
       gatewayUrl: "ws://127.0.0.1:0",
+      validarDespertar: () => ({ ok: false as const, motivo: "este test no tiene sim" }),
       port: 0,
       narrative,
       npcDirector: new NpcDirector(narrative, createSimCollisionProvider(narrative)),

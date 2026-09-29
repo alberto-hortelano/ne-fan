@@ -93,34 +93,48 @@ describe("el frame del bridge no se pierde", () => {
   });
 });
 
-describe("reaparecer no manda la posición del cadáver", () => {
-  it("tras `respawn` no sale input hasta ENTREGAR el frame con el punto; después, sí", () => {
+describe("caído, el cliente no manda la posición del cadáver", () => {
+  it("desde el frame que dice «caído» no sale input; el que trae el punto se entrega sin input, y después sí", () => {
     const { cliente, enviados, llega } = bridgeDePrueba();
     cliente.tick(0.016, inputs);
     assert.deepEqual(enviados, ["input"], "premisa: vivo, cada tick manda input");
 
+    llega({ events: [{ type: "died", combatantId: "player" }], playerHp: 0 });
+    cliente.tick(0.016, inputs); // entrega el frame del caído (todavía manda: aún no lo había visto)
+    cliente.tick(0.016, inputs);
+    cliente.tick(0.016, inputs);
+    assert.deepEqual(enviados, ["input", "input"], "caído y visto: el tick se calla");
+
     cliente.respawn();
-    cliente.tick(0.016, inputs);
-    cliente.tick(0.016, inputs);
-    assert.deepEqual(enviados, ["input", "respawn"], "esperando el punto, el tick se calla");
+    assert.deepEqual(enviados, ["input", "input", "respawn"], "R se manda: en partida es «reintentar»");
 
     const punto = { x: 0, y: 0, z: 6.5 };
-    llega({ events: [{ type: "player_respawned", hp: 100 }], reaparicion: punto });
+    llega({ events: [{ type: "player_respawned", hp: 100 }], playerHp: 100, reaparicion: punto });
     // Recibido pero NO entregado: el loop aún tiene la posición del cadáver.
     const entregado = cliente.tick(0.016, inputs);
-    assert.deepEqual(enviados, ["input", "respawn"], "el tick que ENTREGA el punto tampoco manda input");
+    assert.deepEqual(enviados, ["input", "input", "respawn"], "el tick que ENTREGA el punto tampoco manda input");
     assert.deepEqual(entregado.reaparicion, punto);
 
     cliente.tick(0.016, { ...inputs, playerPosition: punto });
-    assert.deepEqual(enviados, ["input", "respawn", "input"], "entregado el punto, vuelve a mandar");
+    assert.deepEqual(enviados, ["input", "input", "respawn", "input"], "entregado el punto, vuelve a mandar");
   });
 
-  it("volver al título deja de esperar: una partida nueva no nace muda", () => {
-    const { cliente, enviados } = bridgeDePrueba();
-    cliente.respawn();
+  it("volver al título deja de estar caído: una partida nueva no nace muda", () => {
+    const { cliente, enviados, llega } = bridgeDePrueba();
+    llega({ playerHp: 0 });
+    cliente.tick(0.016, inputs);
+    cliente.tick(0.016, inputs);
+    assert.deepEqual(enviados, ["input"], "premisa: caído, se calla");
     cliente.olvidarElUltimoFrame();
     cliente.tick(0.016, inputs);
-    assert.deepEqual(enviados, ["respawn", "input"]);
+    assert.deepEqual(enviados, ["input", "input"]);
+  });
+
+  it("reanudar caído (empezarPartida(0)) no manda input: el despertar lo pide el bridge al entrar", () => {
+    const { cliente, enviados } = bridgeDePrueba();
+    cliente.empezarPartida(0);
+    cliente.tick(0.016, inputs);
+    assert.deepEqual(enviados, []);
   });
 });
 

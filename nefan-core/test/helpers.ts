@@ -102,6 +102,7 @@ export function makeSocket(): { socket: ClientSocket; sent: ServerMessage[] } {
 export interface FakeAi {
   generateScene?: NarrativeAiClient["generateScene"];
   reportPlayerChoice?: NarrativeAiClient["reportPlayerChoice"];
+  reportPlayerDeath?: NarrativeAiClient["reportPlayerDeath"];
   developWorld?: NarrativeAiClient["developWorld"];
 }
 
@@ -144,7 +145,7 @@ export function makeCtx(
   );
   const storage = new MemorySessionStorage();
   const narrative = new NarrativeState(storage);
-  const aiCalls: Record<string, unknown[]> = { notify: [], scene: [], choice: [], develop: [] };
+  const aiCalls: Record<string, unknown[]> = { notify: [], scene: [], choice: [], death: [], develop: [] };
 
   const aiClient: NarrativeAiClient = {
     async notifySessionStart(sessionId, gameId, isResume) {
@@ -160,6 +161,16 @@ export function makeCtx(
       aiCalls.choice.push(payload);
       if (opts.ai?.reportPlayerChoice) return opts.ai.reportPlayerChoice(payload);
       return { ok: true, consequences: [] };
+    },
+    // Por defecto, el motor falso despierta al jugador en el punto seguro que
+    // le da el contexto — lo que haría el motor falso del banco en `normal`.
+    async reportPlayerDeath(payload) {
+      aiCalls.death.push(payload);
+      if (opts.ai?.reportPlayerDeath) return opts.ai.reportPlayerDeath(payload);
+      const seguro = (payload.context as { muerte?: { punto_seguro?: { x: number; z: number } | null } }).muerte
+        ?.punto_seguro;
+      if (!seguro) return { ok: false as const, error: "motor falso de test: sin punto_seguro en el contexto" };
+      return { ok: true as const, resolucion: { wake: { type: "point" as const, ...seguro }, consequences: [] } };
     },
     async developWorld(draftText: string) {
       aiCalls.develop.push(draftText);

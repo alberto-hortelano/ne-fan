@@ -214,6 +214,56 @@ export const NarrativeReactionSchema = z
 export type Consequence = z.infer<typeof ConsequenceSchema>;
 export type NarrativeReaction = z.infer<typeof NarrativeReactionSchema>;
 
+// ── player_death (el motor decide dónde despierta el jugador, #613) ─────────
+
+/** Motivo que vuelve al motor cuando pone un hostil en el despertar. */
+export const MOTIVO_HOSTIL_EN_EL_DESPERTAR =
+  "no despiertes al jugador con un hostil al lado: un `spawn_entity` con `role: \"hostile\"` " +
+  "no cabe en un despertar. Si la historia pide amenaza, que llegue después, en otro turno";
+
+/** Dónde despierta: un LUGAR del mapa o un PUNTO en metros de mundo. El juego
+ *  lo valida (tile realizado, sitio libre, fuera del radio de todo hostil vivo)
+ *  y, si no vale, te devuelve el motivo con la lista de lugares válidos. */
+export const WakeSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("place"),
+    place_id: z
+      .string()
+      .min(1)
+      .describe("Id de un lugar de context.muerte.lugares: despierta en su sitio libre más cercano"),
+  }),
+  z.object({
+    type: z.literal("point"),
+    x: z.number().describe("Metros de mundo, eje X"),
+    z: z.number().describe("Metros de mundo, eje Z"),
+  }),
+]);
+
+/** La respuesta a un `player_death`: dónde despierta y qué pasa al despertar
+ *  (las mismas consequences que un `narrative_event`, sin hostiles). */
+export const DeathResolutionSchema = z
+  .object({
+    wake: WakeSchema.describe("Dónde despierta el jugador"),
+    consequences: z
+      .array(ConsequenceSchema)
+      .max(MAX_CONSEQUENCES)
+      .describe(`Qué pasa al despertar (máx ${MAX_CONSEQUENCES}). [] si nada`),
+  })
+  .superRefine((r, ctx) => {
+    r.consequences.forEach((c, i) => {
+      if (c.type === "spawn_entity" && c.role === "hostile") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["consequences", i, "role"],
+          message: MOTIVO_HOSTIL_EN_EL_DESPERTAR,
+        });
+      }
+    });
+  });
+
+export type Wake = z.infer<typeof WakeSchema>;
+export type DeathResolution = z.infer<typeof DeathResolutionSchema>;
+
 /** Registro de todos los contratos del modelo, indexado por el `kind` del
  *  pre-flight. El codegen y el test de deriva iteran sobre esto. `name` es el
  *  identificador del tipo raíz en el bloque de prompt; `promptFile` el .md
@@ -307,6 +357,13 @@ export const CONTRACTS: ContractSpec[] = [
     schema: NarrativeReactionSchema,
     promptFile: "narrative_event.md",
     toolFile: "narrative_react.json",
+  },
+  {
+    kind: "player_death",
+    name: "DeathResolution",
+    schema: DeathResolutionSchema,
+    promptFile: "player_death.md",
+    toolFile: "narrative_wake.json",
   },
   {
     kind: "weapon_orient",

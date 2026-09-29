@@ -1,0 +1,11 @@
+{
+  "description": "despertar en un lugar del mapa, sin nada más",
+  "expect": "accept",
+  "payload": {
+    "wake": {
+      "type": "place",
+      "place_id": "posada"
+    },
+    "consequences": []
+  }
+}

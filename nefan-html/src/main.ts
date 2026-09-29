@@ -16,6 +16,7 @@ import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
 import { Frontera } from "@nefan-core/src/scene/frontera.js";
 import { crearFronteraEnPantalla } from "./ui/frontera-en-pantalla.js";
+import { accionDelCaido, crearVeloDelDespertar } from "./ui/velo-del-despertar.js";
 import { crearFronteraDelJugador } from "./world/frontera-del-jugador.js";
 import { aplicarLoQueMandaElBridge } from "./world/lo-que-manda-el-bridge.js";
 import { MundoDelCliente } from "./world/mundo-del-cliente.js";
@@ -251,6 +252,7 @@ const promptBar = new ActionBar(document.getElementById("interact-prompt") as HT
 /** Todo lo que el jugador ve del borde del mundo: el muro de niebla con su
  *  rótulo, la pregunta de sí/no y su silencio durante el diálogo (#515). */
 const fronteraEnPantalla = crearFronteraEnPantalla((edge) => fpsRenderer.setFrontierVeil(edge));
+const veloDelDespertar = crearVeloDelDespertar();
 /** El chip del cable: qué se lee cuando hay servidor de partida y qué cuando
  *  no (`ui/chip-de-conexion.ts`). El texto es suyo, no de aquí. */
 const chip = crearChipDeConexion();
@@ -638,9 +640,8 @@ function gameLoop(now: number): void {
   const saludo = hablar.frame(now, npcInRange, input.consumeInteract());
   promptBar.set([
     ...(saludo ? [{ ...saludo, invoke: () => input.queueInteract() }] : []),
-    ...(!eco.jugadorVivo
-      ? [{ id: "respawn", label: "reaparecer", key: "R", invoke: () => input.queueRespawn() }]
-      : []),
+    ...accionDelCaido(veloDelDespertar.frame(gameClient.jugadorEnCombate().health, session.id !== ""), () =>
+      input.queueRespawn()),
   ]);
 
   if (dialogoAbierto()) portrait.tick(now);
@@ -877,6 +878,18 @@ narrativeClient.onStatusDeLaPartida((status) => {
   // loader deja de ser una espera muda de minutos y narra qué está pasando.
   if (status.phase === "progress") {
     if (status.message) muro.progreso(status.message);
+    return;
+  }
+
+  // Has caído (#613): el velo del despertar lo pinta, y un rechazo de lo que
+  // un caído no puede hacer (viajar, hablar) quita el «Viajando...» de encima.
+  if (status.kind === "despertar") {
+    veloDelDespertar.alStatus(status);
+    if (status.phase === "error") {
+      travelLedger.fallo(status.message ?? "sin mensaje");
+      if (muro.enPantalla() === "espera") muro.ocultar();
+      pintarFalloDelMotor(status, null);
+    }
     return;
   }
 

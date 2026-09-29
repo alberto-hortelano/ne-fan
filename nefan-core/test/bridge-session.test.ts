@@ -1237,10 +1237,13 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
 
     sim.getCombatant("player")!.health = 0;
     sent.length = 0;
+    // En partida R es «reintentar el despertar»: el motor (el falso de test,
+    // que despierta en el punto seguro) decide, y el frame llega después.
     await porElBorde({ type: "respawn" }, socket, ctx);
+    await waitFor(() => sent.some((m) => m.type === "state_update"));
     const estados = sent.filter((m): m is StateUpdateMessage => m.type === "state_update");
-    assert.equal(estados.length, 1, "el respawn contesta con un state_update");
-    assert.equal(estados[0].events[0]?.type, "player_respawned", "premisa: es el frame del respawn");
+    assert.equal(estados.length, 1, "el despertar contesta con un state_update");
+    assert.equal(estados[0].events[0]?.type, "player_respawned", "premisa: es el frame del despertar");
     const bandido = estados[0].enemies.find((e) => e.id === "bandido_1");
     assert.ok(bandido, "el cadáver sigue en la lista: el cliente lo pinta caído");
     assert.equal(bandido.alive, false, "el muerto llega muerto al cliente tras pulsar R");
@@ -1447,6 +1450,8 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
       fixtura,
       ctx,
     );
+    // R solo contesta con estado a un caído (H7 de BN).
+    ctx.sim.getCombatant("player")!.health = 0;
     await porElBorde({ type: "respawn" }, fixtura, ctx);
     await porElBorde({ type: "add_combatants", enemies: [] }, fixtura, ctx);
     const estados = deEstado();
@@ -1559,7 +1564,12 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
 
     const { socket: ajeno, sent: sentAjeno } = makeSocket();
     await porElBorde({ type: "respawn" }, ajeno, ctx);
-    assert.equal(sentAjeno.length, 0, "al socket ajeno no se le contesta nada");
+    // Se le CONTESTA (QA H5 de BN): un aviso, nunca un estado del sim.
+    assert.deepEqual(
+      sentAjeno.map((m) => [m.type, (m as { kind?: string }).kind]),
+      [["narrative_status", "despertar"]],
+      "al socket ajeno se le dice que no, y no se le manda estado",
+    );
     assert.deepEqual(sim.getCombatant("player")!.position, { x: 12, y: 1, z: -6 });
 
     await ctx.narrative.save();

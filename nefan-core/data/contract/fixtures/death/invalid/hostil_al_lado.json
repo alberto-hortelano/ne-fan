@@ -1,0 +1,19 @@
+{
+  "description": "un hostil en el despertar: no se despierta al jugador con un hostil al lado",
+  "expect": "reject",
+  "payload": {
+    "wake": {
+      "type": "point",
+      "x": 1,
+      "z": 2
+    },
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "npc",
+        "name": "Bandido",
+        "role": "hostile"
+      }
+    ]
+  }
+}

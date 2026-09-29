@@ -260,18 +260,29 @@ describe("bridge: player_healed cura al jugador (#613)", () => {
     assert.deepEqual(await curarCon(25, 90), { sim: 100, store: 100, disco: 100 });
   });
 
-  it("a un muerto no le hace nada: solo R deshace la muerte", async () => {
-    const log = capturarLogDelBridge();
-    try {
-      const r = await curarCon(25, 0);
-      assert.equal(r.sim, 0, "sigue muerto en el sim");
-      assert.equal(r.disco, 0, "y en el disco");
-      assert.ok(
-        log.lineas.some((l) => /player_healed\(25\).*muerto/.test(l)),
-        "y se DICE en el log del bridge, no se traga",
-      );
-    } finally {
-      log.soltar();
-    }
-  });
-});
+  /** QA H3 de BN: un caído no habla. La conversación no llega al motor, el
+   *  jugador sigue a 0 y el bridge contesta al socket con `kind:"despertar"`
+   *  —«Estás caído»—. (Que `player_healed` no levante a un muerto lo sujeta
+   *  el unitario de `curarAlJugador`: por aquí la cura ni se pide.) */
+  it("un caído no habla: el diálogo se rechaza, no llega al motor y lo dice", async () => {
+    const bundle = makeCtx({
+      ai: { reportPlayerChoice: async () => ({ ok: true, consequences: [{ type: "player_healed", amount: 25 }] }) },
+    });
+    const { ctx, sim, aiCalls } = bundle;
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    sim.getCombatant("player")!.health = 0;
+    const antes = sent.length;
+    await porElBorde(
+      { type: "dialogue_choice", eventId: "e", choiceIndex: 0, speaker: "Curandera", chosenText: "Dame la poción" },
+      socket,
+      ctx,
+    );
+    assert.equal(aiCalls.choice.length, 0, "el motor no se entera");
+    assert.equal(sim.getCombatant("player")!.health, 0);
+    const aviso = sent.slice(antes).find((m) => m.type === "narrative_status") as NarrativeStatusMessage | undefined;
+    assert.equal((aviso as { kind?: string } | undefined)?.kind, "despertar");
+    assert.match(aviso?.message ?? "", /Estás caído/);
+  });});

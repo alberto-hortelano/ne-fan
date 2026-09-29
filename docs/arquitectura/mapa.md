@@ -19,8 +19,10 @@ nefan-core/               TypeScript — logica de juego (bridge + cliente web)
     simulation/            GameSimulation tick loop + NpcBehaviorSystem; y las
                            reglas del jugador que el cliente solo ejecuta (#241):
                            paso-del-jugador (andar y su velocidad), mirada,
-                           obstaculos-del-jugador, reaparicion (dónde vuelve al
-                           morir) y hablar-con-un-npc (el saludo y su espera)
+                           obstaculos-del-jugador, reaparicion (el punto a ras
+                           de suelo), despertar (qué sitio vale para despertar
+                           al morir: lo elige el motor, #613) y hablar-con-un-npc
+                           (el saludo y su espera)
     protocol/              Mensajes frontend ↔ logica; borrador-de-mundo: cuándo
                            un borrador vale una génesis (bridge y título, #241)
     plugins/               Plugins declarativos: tipos zod, hash, DSL, loader, dispatcher

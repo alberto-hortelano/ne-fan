@@ -62,6 +62,7 @@ export { parseGround } from "./scene/blueprint/ground.js";
 export { validateContract, type ContractCheck } from "./contract/model-io/validate.js";
 export {
   NarrativeReactionSchema,
+  DeathResolutionSchema,
   ConsequenceSchema,
   MAX_CONSEQUENCES,
   WeaponOrientSchema,

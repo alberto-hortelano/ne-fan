@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 import {
+  validateDeathResolution,
   validateFormatDScene,
   validateNarrativeReaction,
   validateVolumes,
@@ -77,6 +78,9 @@ const VALIDATORS: Record<string, (fx: Fixture) => { ok: boolean; svg?: string }>
   // los dos contestan a las mismas seis escenas. Sin esto, la divergencia no
   // tiene señal — que es exactamente cómo llegó a existir.
   scene: (fx) => validateFormatDScene(fx.payload),
+  // La respuesta a un `player_death` (#613): dónde despierta y qué pasa. El
+  // espejo Python (`validate_death_resolution`) corre el MISMO set.
+  death: (fx) => validateDeathResolution(fx.payload),
 };
 
 /** Los validadores que además DEVUELVEN el dato saneado, para el candado de

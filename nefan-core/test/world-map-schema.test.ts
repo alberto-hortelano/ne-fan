@@ -81,6 +81,7 @@ before(async () => {
   server = createStateHttpServer({
     aiServerUrl: "http://127.0.0.1:0",
     gatewayUrl: "ws://127.0.0.1:0",
+    validarDespertar: () => ({ ok: false as const, motivo: "este test no tiene sim" }),
     port: 0,
     narrative,
     // Las rutas de mapa no lo tocan; un NpcDirector real metería este test en
