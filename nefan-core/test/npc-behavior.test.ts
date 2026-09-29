@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   createAmbientNpcBehavior,
-  FLEE_EXTRA_DIST,
+  distanciaDeHuida,
+  radioDePaseo,
   type NpcBehaviorEvent,
   type NpcBehaviorSystem,
   type NpcTickContext,
@@ -201,11 +202,10 @@ describe("AmbientNpcBehavior", () => {
     // el tope puesto en 4 m, así que no protegía el comportamiento (#262).
     //
     // Se mide el INSTANTE de llegada, no la distancia a una hora fija: alcanzada
-    // la meta el NPC para, reanuda a los 4 s y el micro-wander lo trae de vuelta
-    // hacia la pelea (#298), así que una foto tardía lo pilla ya de regreso y
-    // lee menos de lo que llegó a alejarse.
-    const { run_speed, perception_radius } = NPC_ROLE_PRESETS.peasant;
-    const meta = perception_radius + FLEE_EXTRA_DIST;
+    // la meta el NPC para, reanuda a los 4 s y pasea alrededor de donde paró,
+    // así que una foto tardía puede pillarle más cerca de lo que llegó a estar.
+    const { run_speed } = NPC_ROLE_PRESETS.peasant;
+    const meta = distanciaDeHuida(NPC_ROLE_PRESETS.peasant, radioDePaseo(null, NPC_ROLE_PRESETS.peasant));
     // Cota derivada y generosa: el tiempo de recorrer la meta ENTERA a la
     // velocidad de correr, más dos segundos. Arranca a 3 m, así que le sobra.
     const topeS = meta / run_speed + 2;
@@ -243,9 +243,9 @@ describe("AmbientNpcBehavior", () => {
       combatEvents: [{ type: "attack_started", combatantId: "bandit" }],
       combatantPositions: new Map([["bandit", hotspot]]),
     });
-    const meta = NPC_ROLE_PRESETS.peasant.perception_radius + FLEE_EXTRA_DIST;
+    const meta = distanciaDeHuida(NPC_ROLE_PRESETS.peasant, radioDePaseo(null, NPC_ROLE_PRESETS.peasant));
 
-    // 60 s simulados: casi trece veces lo que necesita en campo abierto (4,7 s).
+    // 60 s simulados: casi nueve veces lo que necesita en campo abierto (~7 s).
     let llegadaS: number | null = null;
     for (let i = 1; i <= 3750 && llegadaS === null; i++) {
       sys.tick(0.016, fightCtx);
@@ -856,5 +856,314 @@ describe("AmbientNpcBehavior · al que le cae una caja encima (#583, H-2)", () =
     const p = sys.states()[0].pos;
     assert.equal(p.x, -0.5, "sin salida declarada, el NPC no se mueve por su cuenta");
     assert.equal(p.z, 0);
+  });
+});
+
+/** AL QUE ESTÁ DENTRO Y NO ANDA (#618, pieza B). La salida vivía en
+ *  `stepTowards`, así que solo sacaba al que ya caminaba hacia algo: el quieto,
+ *  el de `hold`, el que encara al jugador y el que ya llegó se quedaban dentro
+ *  para siempre, y el que paseaba también en cuanto la caja era más ancha que
+ *  su paseo (los ocho waypoints caían dentro y volvía a `idle` sin pisar
+ *  `stepTowards`: 0,00 m en 120 s, medido por QA de #583). La regla es del
+ *  cuerpo, y estos casos son uno por MODO que no anda. */
+describe("AmbientNpcBehavior · al que está dentro y no anda (#618)", () => {
+  /** Granero de 10 m centrado en el origen: con el cuerpo, fuera a 5,5 m. */
+  const GRANERO: CajaDeRuntime = { id: "granero", pos: { x: 0, z: 0 }, sizeXZ: { x: 10, z: 10 } };
+  const FUERA = 5 + 0.5;
+  const fuera = (p: { x: number; z: number }) => Math.abs(p.x) >= FUERA || Math.abs(p.z) >= FUERA;
+
+  /** Las cajas se leen de una lista VIVA: el motor puede ponerla con el NPC
+   *  ya quieto encima, que es el caso del que ya llegó. */
+  function mundoCon(cajas: CajaDeRuntime[], extra: Partial<NpcWorldAdapter> = {}): NpcWorldAdapter {
+    return openWorld({
+      queImpideElPaso: (fx, fz, tx, tz, r) => conCajasDeRuntime(...cajas).queImpideElPaso!(fx, fz, tx, tz, r),
+      porDondeSalirDeAqui: (x, z, r) => conCajasDeRuntime(...cajas).porDondeSalirDeAqui!(x, z, r),
+      blocksCircle: (x, z, r) => conCajasDeRuntime(...cajas).blocksCircle!(x, z, r),
+      ...extra,
+    });
+  }
+
+  /** Segundos hasta quedar fuera, o `null` si no sale en `tope`. */
+  function saleEn(sys: NpcBehaviorSystem, tope: number, ctx = ctxWith()): number | null {
+    for (let i = 1; i * 0.016 <= tope; i++) {
+      sys.tick(0.016, ctx);
+      if (fuera(sys.states()[0].pos)) return i * 0.016;
+    }
+    return null;
+  }
+
+  function callado<T>(fn: () => T): T {
+    const original = console.warn;
+    console.warn = () => {};
+    try { return fn(); } finally { console.warn = original; }
+  }
+
+  it("quieto SIN directiva: sale, y después pasea alrededor de donde salió", () => {
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(17), world: mundoCon([GRANERO]) });
+    sys.addNpc(makeRecord("campesino", [0, 0, 0], { role: "peasant" }));
+    const t = callado(() => saleEn(sys, 10));
+    assert.ok(t !== null, "el campesino tiene que salir del granero que tiene encima");
+    const salida = { ...sys.states()[0].pos };
+    // Sin mover su `home` al salir, los ocho waypoints seguirían cayendo dentro
+    // y se quedaría clavado en la cara del granero.
+    let alejamiento = 0;
+    let siempreFuera = true;
+    callado(() => {
+      for (let i = 0; i < 60 / 0.016; i++) {
+        sys.tick(0.016, ctxWith());
+        const p = sys.states()[0].pos;
+        alejamiento = Math.max(alejamiento, distXZ(p, salida));
+        if (!fuera(p)) siempreFuera = false;
+      }
+    });
+    assert.ok(alejamiento > 1, `y luego pasea: se alejó ${alejamiento.toFixed(2)} m de donde salió en 60 s`);
+    assert.ok(siempreFuera, "sin volver a meterse en el granero");
+  });
+
+  it("con `hold`: sale, y fuera se queda quieto", () => {
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(17), world: mundoCon([GRANERO]) });
+    sys.addNpc(makeRecord("vigia", [1, 0, 0], { role: "villager", directive: { type: "hold" } }));
+    assert.ok(callado(() => saleEn(sys, 10)) !== null, "`hold` es «no pasees», no «quédate emparedado»");
+    callado(() => runTicks(sys, 300, 0.016, ctxWith()));
+    const st = sys.states()[0];
+    assert.ok(fuera(st.pos), `sigue fuera: (${st.pos.x.toFixed(2)}, ${st.pos.z.toFixed(2)})`);
+    assert.equal(st.moving, false, "y fuera obedece su `hold`");
+  });
+
+  it("el que YA LLEGÓ a su meta y le cae una caja encima: sale", () => {
+    const cajas: CajaDeRuntime[] = [];
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(17),
+      world: mundoCon(cajas, { resolvePlaceTarget: (id) => (id === "plaza" ? { x: 0, z: 0 } : null) }),
+    });
+    sys.addNpc(makeRecord("aldeano", [3, 0, 0], {
+      role: "villager",
+      directive: { type: "goto_place", target_place_id: "plaza" },
+    }));
+    const llegadas = runTicks(sys, 300, 0.016, ctxWith()).filter((e) => e.type === "npc_reached_place");
+    assert.equal(llegadas.length, 1, "CONTROL: llega a la plaza antes de que caiga la caja");
+    assert.ok(!fuera(sys.states()[0].pos), "CONTROL: y la plaza queda bajo el granero");
+    cajas.push(GRANERO);
+    assert.ok(callado(() => saleEn(sys, 10)) !== null, "llegado y con el granero encima, sale");
+  });
+
+  it("en `react` (encarando al jugador): sale", () => {
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(17), world: mundoCon([GRANERO]) });
+    sys.addNpc(makeRecord("aldeano", [1, 0, 0], { role: "villager" }));
+    // El jugador le sigue a 1 m: sigue en `react` mientras sale.
+    const sigue = (): NpcTickContext => {
+      const p = sys.states()[0].pos;
+      return ctxWith({ playerPos: { x: p.x, y: 0, z: p.z + 1 } });
+    };
+    let t: number | null = null;
+    callado(() => {
+      for (let i = 1; i * 0.016 <= 10 && t === null; i++) {
+        sys.tick(0.016, sigue());
+        assert.notEqual(sys.states()[0].mode, "wander", "el jugador está encima: no pasea");
+        if (fuera(sys.states()[0].pos)) t = i * 0.016;
+      }
+    });
+    assert.ok(t !== null, "encarar al jugador no le deja dentro del granero");
+  });
+});
+
+/** SI OTRO LO MOVIÓ, SU CASA ES DONDE LO DEJARON (#618). `npc_arrive` lo
+ *  teletransporta al lugar al que viajaba y una escena que redeclara su id lo
+ *  muda; los dos escriben un `position` NUEVO en el record, que es lo que se
+ *  reproduce aquí sin el director (no es de este módulo de mutación). Antes el
+ *  `home` seguía siendo el del sitio de partida: medido, 58 m de vuelta. */
+describe("AmbientNpcBehavior · tras un salto que no dio él", () => {
+  it("pasea alrededor de donde lo dejaron, no vuelve andando al sitio de partida", () => {
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(3), world: openWorld() });
+    const rec = makeRecord("boris", [0, 0, 0], { role: "peasant" });
+    sys.addNpc(rec);
+    runTicks(sys, 300, 0.05, ctxWith());
+    rec.position = [40, 0, 40];
+    sys.addNpc(rec); // el re-sync de `npcSync`: conserva el runtime
+    let lejos = 0;
+    for (let i = 0; i < 1200; i++) {
+      sys.tick(0.05, ctxWith());
+      lejos = Math.max(lejos, distXZ(sys.states()[0].pos, { x: 40, z: 40 }));
+    }
+    const radio = NPC_ROLE_PRESETS.peasant.wander_radius;
+    assert.ok(lejos <= radio + 0.5, `en 60 s se alejó ${lejos.toFixed(2)} m de donde llegó (paseo ${radio} m)`);
+  });
+});
+
+/** LA HUIDA NO VUELVE A LA PELEA (#298, decidido por el usuario: «se queda
+ *  donde paró»). Con el `home` viejo, el micro-wander le llevaba de vuelta junto
+ *  a la pelea, la percibía y huía otra vez, cada ~10 s. Con la pelea SIGUIENDO
+ *  en el mismo sitio, huye UNA vez y ya no vuelve a entrar en su percepción. */
+describe("AmbientNpcBehavior · la huida no vuelve a la pelea (#298)", () => {
+  const PELEA: Vec3 = { x: 0, y: 0, z: 0 };
+  const peleaQueSigue = ctxWith({
+    combatEvents: [{ type: "attack_started", combatantId: "bandit" }],
+    combatantPositions: new Map([["bandit", PELEA]]),
+  });
+
+  it("diez semillas × 300 s: ninguna vuelve a huir (villager y peasant)", () => {
+    // Una sola semilla puede tener suerte: con la distancia de antes (sin el
+    // radio de paseo) la 23 no re-huía y nueve de estas diez sí.
+    for (const role of ["villager", "peasant"] as const) {
+      const huidas: number[] = [];
+      for (let seed = 1; seed <= 10; seed++) {
+        const sys = createAmbientNpcBehavior({ rng: new SeededRng(seed), world: openWorld() });
+        sys.addNpc(makeRecord("vecino", [3, 0, 0], { role }));
+        let n = 0;
+        for (let i = 0; i < 300 / 0.016; i++) {
+          n += sys.tick(0.016, peleaQueSigue).filter((e) => e.type === "npc_fled_combat").length;
+        }
+        huidas.push(n);
+      }
+      assert.deepEqual(huidas, Array(10).fill(1), `${role}: huidas por semilla ${huidas.join(",")}`);
+    }
+  });
+
+  for (const role of ["villager", "peasant", "merchant"] as const) {
+    it(`${role}: huye UNA vez, se queda donde paró y no vuelve a entrar en su percepción`, () => {
+      const params = NPC_ROLE_PRESETS[role];
+      const sys = createAmbientNpcBehavior({ rng: new SeededRng(23), world: openWorld() });
+      sys.addNpc(makeRecord("vecino", [3, 0, 0], { role }));
+      const eventos: NpcBehaviorEvent[] = [];
+      let reanudo = false;
+      let minTrasReanudar = Infinity;
+      let paro: { x: number; z: number } | null = null;
+      let maxDesdeParo = 0;
+      for (let i = 0; i < 120 / 0.016; i++) {
+        const ev = sys.tick(0.016, peleaQueSigue);
+        eventos.push(...ev);
+        const p = sys.states()[0].pos;
+        if (!reanudo && ev.some((e) => e.type === "npc_resumed")) {
+          reanudo = true;
+          paro = { x: p.x, z: p.z };
+        }
+        if (reanudo && paro) {
+          minTrasReanudar = Math.min(minTrasReanudar, distXZ(p, PELEA));
+          maxDesdeParo = Math.max(maxDesdeParo, distXZ(p, paro));
+        }
+      }
+      const huidas = eventos.filter((e) => e.type === "npc_fled_combat").length;
+      assert.equal(huidas, 1, `huye una vez y no vuelve a la pelea: ${huidas} huidas en 120 s`);
+      assert.ok(reanudo, "fuera de la percepción, retoma la rutina");
+      assert.ok(paro && distXZ(paro, PELEA) >= distanciaDeHuida(params, radioDePaseo(null, params)) - 0.1,
+        `paró a ${paro ? distXZ(paro, PELEA).toFixed(2) : "?"} m, su meta de huida`);
+      // Y la GEOMETRÍA, sin pasar por `distanciaDeHuida`: el disco de paseo
+      // alrededor de donde paró tiene que quedar entero fuera de la percepción.
+      // Derivado de la función, este aserto se cumplía también con la distancia
+      // de antes (sabotaje 6 de la tanda BL), que re-huía en 9 de 10 semillas.
+      assert.ok(paro && distXZ(paro, PELEA) - radioDePaseo(null, params) >= params.perception_radius,
+        `su paseo no alcanza la percepción: paró a ${paro ? distXZ(paro, PELEA).toFixed(2) : "?"} m, ` +
+          `paseo ${radioDePaseo(null, params)} m, percepción ${params.perception_radius} m`);
+      assert.ok(minTrasReanudar >= params.perception_radius,
+        `ya no entra en su percepción (${params.perception_radius} m): mínimo ${minTrasReanudar.toFixed(2)} m`);
+      // Su casa es donde paró: pasea alrededor de ese punto, no del de antes.
+      assert.ok(maxDesdeParo <= radioDePaseo(null, params) + 0.5 && maxDesdeParo > 0.5,
+        `pasea alrededor de donde paró: ${maxDesdeParo.toFixed(2)} m`);
+    });
+  }
+});
+
+/** EL QUE IBA A UN SITIO Y HUYE (#298, QA de BL H2). Decisión del usuario:
+ *  «que el estado le llegue al motor de narrativa y él decide». Suspende la
+ *  meta que le llevaba de vuelta a la pelea (15 huidas en 180 s antes), se
+ *  queda donde paró, y la meta queda en `data.suspended_goal` para el motor. */
+describe("AmbientNpcBehavior · el que iba a un sitio y huye (#298, H2)", () => {
+  const PELEA: Vec3 = { x: 0, y: 0, z: 0 };
+  const peleaQueSigue = ctxWith({
+    combatEvents: [{ type: "attack_started", combatantId: "bandit" }],
+    combatantPositions: new Map([["bandit", PELEA]]),
+  });
+  /** La plaza a 8 m de la pelea: dentro de la percepción de cualquiera. */
+  const JUNTO = openWorld({
+    resolvePlaceTarget: (id) => (id === "plaza" ? { x: -8, z: 0 } : null),
+    getEntityPosition: (id) => (id === "amigo" ? { x: -6, y: 0, z: 0 } : null),
+  });
+
+  function huye(data: Record<string, unknown>, segundos = 180) {
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(29), world: JUNTO });
+    const rec = makeRecord("vecino", [3, 0, 0], { role: "villager", ...data });
+    sys.addNpc(rec);
+    const eventos = runTicks(sys, segundos / 0.016, 0.016, peleaQueSigue);
+    return { rec, eventos, huidas: eventos.filter((e) => e.type === "npc_fled_combat") };
+  }
+
+  it("goto_place hacia la pelea: huye UNA vez, suspende la directiva y lo dice", () => {
+    const directiva = { type: "goto_place", target_place_id: "plaza" };
+    const { rec, huidas } = huye({ directive: directiva });
+    assert.equal(huidas.length, 1, `no vuelve a la pelea: ${huidas.length} huidas en 180 s`);
+    assert.equal(rec.data.directive, null, "la directiva ya no manda");
+    assert.deepEqual(rec.data.suspended_goal, {
+      field: "directive", value: directiva, reason: "fled_combat", fight_at: [0, 0],
+    });
+    assert.deepEqual(huidas[0].suspended, rec.data.suspended_goal, "el evento lleva lo mismo que el record");
+    assert.deepEqual(huidas[0].fightAt, { x: 0, z: 0 });
+    const p = rec.position;
+    assert.ok(Math.hypot(p[0], p[2]) >= NPC_ROLE_PRESETS.villager.perception_radius, "y se queda lejos");
+  });
+
+  it("un npc_move_to_place que andaba: suspende el tránsito", () => {
+    const transito = { to: "plaza", from: "", departed_at: "2026-01-01T00:00:00.000Z" };
+    const { rec, huidas } = huye({ in_transit: transito });
+    assert.equal(huidas.length, 1);
+    assert.equal(rec.data.in_transit, null);
+    assert.deepEqual((rec.data.suspended_goal as { field: string; value: unknown }).value, transito);
+    assert.equal((rec.data.suspended_goal as { field: string }).field, "in_transit");
+  });
+
+  it("visit_npc junto a la pelea: también", () => {
+    const { rec, huidas } = huye({ directive: { type: "visit_npc", target_npc_id: "amigo" } });
+    assert.equal(huidas.length, 1);
+    assert.equal(rec.data.directive, null);
+  });
+
+  it("lo que NO le lleva de vuelta no se toca: hold, y un goto_place fuera de alcance", () => {
+    const { rec: r1 } = huye({ directive: { type: "hold" } }, 20);
+    assert.deepEqual(r1.data.directive, { type: "hold" });
+    assert.equal(r1.data.suspended_goal, undefined);
+    const { rec: r2 } = huye({ directive: { type: "goto_place", target_place_id: "lejana" } }, 20);
+    assert.deepEqual(r2.data.directive, { type: "goto_place", target_place_id: "lejana" },
+      "narrative-paced: el cuerpo no lo andaba, así que no le devuelve a nada");
+  });
+});
+
+/** LA HUIDA LLEGA A SU META aunque el paseo sea grande (QA de BL, H3). Se
+ *  cerraba a los 4 s de salir de la percepción: con `wander.radius` 15 paraba a
+ *  24 m de una meta de 31 y re-huía en 4 de 8 semillas. */
+describe("AmbientNpcBehavior · la huida llega a su meta con cualquier radio (H3)", () => {
+  const PELEA: Vec3 = { x: 0, y: 0, z: 0 };
+  const peleaQueSigue = ctxWith({
+    combatEvents: [{ type: "attack_started", combatantId: "bandit" }],
+    combatantPositions: new Map([["bandit", PELEA]]),
+  });
+
+  it("wander.radius 15, ocho semillas × 600 s: para en su meta y no vuelve a huir", () => {
+    const directive = { type: "wander", radius: 15 };
+    const params = NPC_ROLE_PRESETS.villager;
+    const meta = distanciaDeHuida(params, radioDePaseo(directive, params));
+    for (let seed = 1; seed <= 8; seed++) {
+      const sys = createAmbientNpcBehavior({ rng: new SeededRng(seed), world: openWorld() });
+      sys.addNpc(makeRecord("vecino", [3, 0, 0], { role: "villager", directive }));
+      let huidas = 0;
+      let paro: number | null = null;
+      for (let i = 0; i < 600 / 0.016; i++) {
+        const ev = sys.tick(0.016, peleaQueSigue);
+        huidas += ev.filter((e) => e.type === "npc_fled_combat").length;
+        if (paro === null && ev.some((e) => e.type === "npc_resumed")) paro = distXZ(sys.states()[0].pos, PELEA);
+      }
+      assert.ok(paro !== null && paro >= meta - 0.1, `semilla ${seed}: paró a ${paro?.toFixed(2)} m, meta ${meta} m`);
+      assert.equal(huidas, 1, `semilla ${seed}: ${huidas} huidas`);
+    }
+  });
+
+  it("y el que NO puede correr no huye para siempre: retoma la rutina", () => {
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(5),
+      world: openWorld({ queImpideElPaso: muroDelTile(() => true), blocksCircle: () => true }),
+    });
+    sys.addNpc(makeRecord("vecino", [10, 0, 0], { role: "villager" }));
+    // Un golpe de pelea y se acaba: 60 s después tiene que haber reanudado.
+    const eventos = [...sys.tick(0.016, peleaQueSigue), ...runTicks(sys, 60 / 0.016, 0.016, ctxWith())];
+    assert.equal(eventos.filter((e) => e.type === "npc_fled_combat").length, 1);
+    assert.equal(eventos.filter((e) => e.type === "npc_resumed").length, 1, "cercado, la huida también acaba");
   });
 });

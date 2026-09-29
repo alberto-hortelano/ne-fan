@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { makeNarrativeState } from "./helpers.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
+import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { matchRoute, fillPath, normalizePath, type EndpointTable } from "../src/contracts/http.js";
 import { WorldStateApi } from "../src/contracts/world-state.js";
 import { dispatchStateRequest } from "../bridge/state-http/dispatch.js";
@@ -47,7 +48,7 @@ function makeCtx(): { ctx: StateHttpContext; progreso: string[]; cambiosDeMapa: 
   const cambiosDeMapa = { n: 0 };
   const ctx: StateHttpContext = {
     narrative,
-    npcDirector: new NpcDirector(narrative),
+    npcDirector: new NpcDirector(narrative, createSimCollisionProvider(narrative)),
     gamesDir: GAMES_DIR,
     sessionStorage: storage,
     aiServerUrl: MOTOR_DE_PRUEBA,

@@ -222,6 +222,7 @@ export function makeCtx(
     },
   };
 
+  const simCollision = createSimCollisionProvider(narrative);
   const ctx: BridgeContext = {
     sim,
     combatConfig,
@@ -230,8 +231,8 @@ export function makeCtx(
     sessionStorage: storage,
     aiClient,
     mapTriggers: new MapTriggerEvaluator(narrative),
-    npcDirector: new NpcDirector(narrative),
-    simCollision: createSimCollisionProvider(narrative),
+    npcDirector: new NpcDirector(narrative, simCollision),
+    simCollision,
     gamesDir: opts.gamesDir ?? FIXTURE_GAMES,
     stylesDir: opts.stylesDir ?? FIXTURE_STYLES,
     // Apagado por defecto: la escritura pasiva contaminaría los fixtures (y

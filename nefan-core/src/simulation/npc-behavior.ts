@@ -18,7 +18,7 @@
  */
 
 import type { Vec3, CombatEvent } from "../types.js";
-import type { EntityRecord } from "../narrative/types.js";
+import type { EntityRecord, SuspendedGoal } from "../narrative/types.js";
 import { SeededRng } from "../rng.js";
 // El radio del NPC vive junto a la colisión que lo consulta, no aquí: es el
 // cuerpo MAYOR del juego y quien decide cuánto hueco dejar tiene que poder
@@ -68,7 +68,13 @@ export interface NpcBehaviorEvent {
   npcId: string;
   placeId?: string;
   targetId?: string;
+  /** `npc_fled_combat`: dónde era la pelea de la que huye. */
+  fightAt?: { x: number; z: number };
+  /** `npc_fled_combat`: la meta que llevaba y ABANDONA al huir, si llevaba
+   *  una (ver `SuspendedGoal`). */
+  suspended?: SuspendedGoal;
 }
+
 
 export interface NpcTickContext {
   playerPos: Vec3;
@@ -116,13 +122,41 @@ const GOAL_REACHED = 1.5;
 const MAX_GOTO_DIST = 128;
 /** Segundos sin eventos de combate cerca para volver a la rutina. */
 const COMBAT_CLEAR_SECONDS = 4;
-/** Margen extra sobre perception_radius al que el que huye se detiene.
- *  EXPORTADA a propósito: el objetivo de la huida es `perception_radius +
- *  FLEE_EXTRA_DIST`, y un test que escriba ese número a mano deja de proteger
- *  nada en cuanto alguien cambia el margen —#262 se pasó semanas leyéndose como
- *  «la huida está rota» con un aserto de `> 3 m` que habría pasado igual con el
- *  tope puesto en 4. Quien mida la huida deriva su meta de aquí. */
-export const FLEE_EXTRA_DIST = 4;
+/** Margen extra sobre perception_radius al que el que huye se detiene. Es uno
+ *  de los tres sumandos de `distanciaDeHuida`, que es la meta de verdad. */
+const FLEE_EXTRA_DIST = 4;
+
+/** CUÁNTO SE ALEJA DE SU `home` el micro-wander: el radio del rol, el doble
+ *  si patrulla, o el `radius` que el motor escribió en la directiva `wander`.
+ *  Una sola cuenta para el elector de waypoints y para la huida, que la
+ *  necesita para saber hasta dónde correr. */
+export function radioDePaseo(
+  directive: { type: string; [key: string]: unknown } | null,
+  params: NpcRoleParams,
+): number {
+  if (directive?.type === "patrol") return params.wander_radius * 2;
+  if (directive?.type === "wander" && typeof directive.radius === "number" &&
+    Number.isFinite(directive.radius) && directive.radius > 0) {
+    return directive.radius;
+  }
+  return params.wander_radius;
+}
+
+/** HASTA DÓNDE HUYE: fuera de su percepción, un margen, y además lo que mide
+ *  su paseo. El tercer sumando es #298: al acabar la huida su `home` pasa a
+ *  ser donde se paró, y si el disco de paseo alrededor de ese punto cortaba el
+ *  círculo de percepción de la pelea, el micro-wander le devolvía a verla y
+ *  volvía a huir cada ~10 s. Con la meta a `percepción + margen + paseo`, el
+ *  paseo entero queda fuera por geometría — porque la huida no se cierra hasta
+ *  llegar aquí (`huidaEnCurso`), salvo que no pueda correr.
+ *
+ *  EXPORTADA a propósito: un test que escriba la meta a mano deja de proteger
+ *  nada en cuanto alguien cambia un sumando —#262 se pasó semanas leyéndose
+ *  como «la huida está rota» con un aserto de `> 3 m` que habría pasado igual
+ *  con el tope puesto en 4. Quien mida la huida deriva su meta de aquí. */
+export function distanciaDeHuida(params: NpcRoleParams, radioPaseo: number): number {
+  return params.perception_radius + FLEE_EXTRA_DIST + radioPaseo;
+}
 /** Distancia a la que el guardia se planta frente al hostil. */
 const INTERVENE_STOP_DIST = 2;
 /** Ciclo de amenaza del guardia: periodo y ventana con anim "quick". */
@@ -177,6 +211,13 @@ interface NpcRuntime {
   lastDeflection: number | null;
   /** Ancla del watchdog de atasco: posición + tiempo acumulado sin avance. */
   stuckAnchor: { x: number; z: number; t: number } | null;
+  /** El tick anterior estaba saliendo de un sólido: el primero que ya no
+   *  está dentro revisa si su `home` se quedó dentro (`salirSiEstaDentro`). */
+  saliendo: boolean;
+  /** Dónde lo dejó este sistema al acabar su último tick. Si al empezar el
+   *  siguiente el record está en OTRO sitio, lo movió alguien de fuera
+   *  (`adoptarSaltoAjeno`). */
+  dondeLoDeje: { x: number; z: number };
 }
 
 function rotate(dir: { x: number; z: number }, angle: number): { x: number; z: number } {
@@ -255,6 +296,8 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       reachedGoal: null,
       lastDeflection: null,
       stuckAnchor: null,
+      saliendo: false,
+      dondeLoDeje: { x: record.position[0], z: record.position[2] },
     });
   }
 
@@ -295,6 +338,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     const hotspots = this.collectFightHotspots(ctx);
 
     for (const rt of this.npcs.values()) {
+      this.adoptarSaltoAjeno(rt);
       this.updateDanger(rt, hotspots, delta, events);
       rt.decideTimer -= delta;
       if (rt.decideTimer <= 0) {
@@ -302,8 +346,28 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
         this.decide(rt, ctx, events);
       }
       this.move(rt, ctx, delta, events);
+      rt.dondeLoDeje = { x: rt.record.position[0], z: rt.record.position[2] };
     }
     return events;
+  }
+
+  /** SI OTRO LO MOVIÓ, SU CASA ES DONDE LO DEJARON. Este sistema no es el
+   *  único que escribe `record.position`: `npc_arrive` lo teletransporta al
+   *  lugar al que viajaba (`NpcDirector.arriveNpc`) y una escena que redeclara
+   *  su id lo muda a ella (`npc-records.ts`). El re-sync de `addNpc` conserva
+   *  el runtime, así que el `home` seguía siendo el del sitio de partida y el
+   *  micro-wander le devolvía andando allí: medido, 58 m de vuelta en 60 s
+   *  (#618). Tras el salto, su rutina es la del sitio al que llegó; el waypoint
+   *  y el watchdog, que eran del sitio viejo, se tiran. */
+  private adoptarSaltoAjeno(rt: NpcRuntime): void {
+    const x = rt.record.position[0];
+    const z = rt.record.position[2];
+    if (distXZ(x, z, rt.dondeLoDeje.x, rt.dondeLoDeje.z) < 1e-6) return;
+    rt.home = { x, z };
+    rt.waypoint = null;
+    rt.stuckAnchor = null;
+    rt.lastDeflection = null;
+    rt.dondeLoDeje = { x, z };
   }
 
   /** Posiciones de los combatientes que emitieron eventos de pelea este tick. */
@@ -344,10 +408,16 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       // Transición inmediata (no esperar al decide tick): los eventos de
       // combate son transitorios.
       if (rt.params.flees_from_combat && rt.mode !== "flee") {
+        const suspended = this.suspenderMeta(rt, nearest);
         rt.mode = "flee";
         rt.waypoint = null;
         rt.anim = undefined;
-        events.push({ type: "npc_fled_combat", npcId: rt.record.id });
+        events.push({
+          type: "npc_fled_combat",
+          npcId: rt.record.id,
+          fightAt: { x: nearest.x, z: nearest.z },
+          ...(suspended ? { suspended } : {}),
+        });
       } else if (rt.params.intervenes_in_combat && rt.mode !== "intervene") {
         rt.mode = "intervene";
         rt.waypoint = null;
@@ -359,10 +429,14 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
 
     if (rt.danger) {
       rt.dangerTimer += delta;
-      if (rt.dangerTimer >= COMBAT_CLEAR_SECONDS) {
+      if (rt.dangerTimer >= COMBAT_CLEAR_SECONDS && !this.huidaEnCurso(rt)) {
         rt.danger = null;
         rt.anim = undefined;
         if (rt.mode === "flee" || rt.mode === "intervene") {
+          // El que huyó se queda DONDE PARÓ (#298, decisión del usuario): con
+          // el `home` viejo el micro-wander le devolvía junto a la pelea y
+          // volvía a huir. El guardia no: vuelve a su puesto.
+          if (rt.mode === "flee") rt.home = { x: px, z: pz };
           rt.mode = "idle";
           rt.pauseTimer = 0.5 + this.rng.next() * 1.5;
           rt.waypoint = null;
@@ -370,6 +444,58 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
         }
       }
     }
+  }
+
+  /** ¿SIGUE CORRIENDO HACIA SU META DE HUIDA? Entonces la huida no se cierra
+   *  aunque lleve `COMBAT_CLEAR_SECONDS` sin ver la pelea. Se cerraba a los 4 s
+   *  de salir de la percepción, o sea a `percepción + 4 s × run_speed`: con un
+   *  radio de paseo grande (`wander.radius` 15) eso quedaba antes de
+   *  `distanciaDeHuida`, su paseo volvía a alcanzar la pelea y re-huía (QA de
+   *  BL, H3). Con esto la cota de `distanciaDeHuida` se cumple para CUALQUIER
+   *  radio… mientras pueda correr: el que no avanza (cercado) no huye para
+   *  siempre, porque la espera se acota al tiempo de correr la meta entera
+   *  desde la pelea, que en campo abierto siempre basta. */
+  private huidaEnCurso(rt: NpcRuntime): boolean {
+    if (rt.mode !== "flee" || !rt.danger) return false;
+    const meta = distanciaDeHuida(rt.params, radioDePaseo(readDirective(rt), rt.params));
+    const d = distXZ(rt.record.position[0], rt.record.position[2], rt.danger.x, rt.danger.z);
+    if (d >= meta) return false;
+    return rt.dangerTimer < COMBAT_CLEAR_SECONDS + meta / rt.params.run_speed;
+  }
+
+  /** Retira del record la meta que el NPC estaba EJECUTANDO con el cuerpo y
+   *  la deja en `data.suspended_goal` (ver `SuspendedGoal`). Solo la que le
+   *  llevaría de vuelta: un `in_transit` o un `goto_place` fuera de alcance
+   *  son narrative-paced (el cuerpo no los anda) y un objetivo ya alcanzado no
+   *  le mueve. `hold`, `wander` y `patrol` se quedan: son rutina alrededor de
+   *  su `home`, y el `home` ya se queda donde para. */
+  private suspenderMeta(rt: NpcRuntime, pelea: { x: number; z: number }): SuspendedGoal | null {
+    const data = rt.record.data;
+    const fight_at: [number, number] = [pelea.x, pelea.z];
+    const transitTo = readTransitTo(rt);
+    if (transitTo) {
+      if (!this.alAlcance(rt, transitTo)) return null;
+      const s: SuspendedGoal = { field: "in_transit", value: data.in_transit, reason: "fled_combat", fight_at };
+      data.in_transit = null;
+      data.suspended_goal = s;
+      return s;
+    }
+    const d = readDirective(rt);
+    const va = d?.type === "goto_place" && typeof d.target_place_id === "string" &&
+        rt.reachedGoal !== `place:${d.target_place_id}` && this.alAlcance(rt, d.target_place_id)
+      || d?.type === "visit_npc" && typeof d.target_npc_id === "string" &&
+        rt.reachedGoal !== `npc:${d.target_npc_id}`;
+    if (!va) return null;
+    const s: SuspendedGoal = { field: "directive", value: data.directive, reason: "fled_combat", fight_at };
+    data.directive = null;
+    data.suspended_goal = s;
+    return s;
+  }
+
+  /** La misma regla que `deriveGoto`: el lugar resuelve y está a ≤ `MAX_GOTO_DIST`. */
+  private alAlcance(rt: NpcRuntime, placeId: string): boolean {
+    const t = this.world.resolvePlaceTarget(placeId);
+    return !!t && distXZ(rt.record.position[0], rt.record.position[2], t.x, t.z) <= MAX_GOTO_DIST;
   }
 
   /** Decisión de baja frecuencia: re-deriva el modo desde la directiva y la
@@ -529,6 +655,8 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     rt.running = false;
     if (rt.mode !== "intervene") rt.anim = undefined;
 
+    if (this.salirSiEstaDentro(rt, delta)) return;
+
     switch (rt.mode) {
       case "idle":
         if (rt.pauseTimer !== Infinity) {
@@ -588,7 +716,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
         const px = rt.record.position[0];
         const pz = rt.record.position[2];
         const dist = distXZ(px, pz, rt.danger.x, rt.danger.z);
-        if (dist >= rt.params.perception_radius + FLEE_EXTRA_DIST) {
+        if (dist >= distanciaDeHuida(rt.params, radioDePaseo(readDirective(rt), rt.params))) {
           // A salvo: parar y mirar hacia la pelea desde lejos.
           rt.forward = this.faceTowards(rt, rt.danger.x, rt.danger.z, delta);
           return;
@@ -661,53 +789,95 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       }
     }
 
-    // PRIMERO SALIR, LUEGO IR: si está metido en algo, el rumbo lo manda ese
-    // algo y no la meta. El steering solo sondea el abanico de ±135° alrededor
-    // de la dirección que se le dé, así que con la meta al otro lado ninguno de
-    // los siete rumbos reducía la penetración y el NPC se quedaba dentro
-    // andando para siempre (#583, QA H-2: 290 s de 300 dentro de un carro). Con
-    // el rumbo puesto hacia la cara más cercana, cada paso le acerca a la salida
-    // y nada lo frena, porque ninguno le mete más adentro.
-    //
-    // DOS DUEÑOS DESDE #616, y el segundo es conducta NUEVA que no pidió ningún
-    // issue: hasta esa tanda el terreno no sabía contestar «por dónde salgo»,
-    // así que un NPC metido en la geometría de un tile —el muro del pueblo, no
-    // un carro que le cayó encima— se quedaba dentro. Ahora sale solo. Es
-    // mejora, y NO es #618: aquel es el NPC que no está dentro de nada y no
-    // sabe rodear.
-    const salida = this.world.porDondeSalirDeAqui(px, pz, NPC_RADIUS_M);
-    if (salida) {
-      const dentroDe = salida.de === "caja" ? `"${salida.id}" (se la pusieron encima)` : "la geometría del tile";
-      this.warnOnce(
-        `${rt.record.id}:sale:${salida.de === "caja" ? salida.id : "tile"}`,
-        `"${rt.record.id}" quedó DENTRO de ${dentroDe} ` +
-          `y sale andando por su cara más cercana antes de seguir a lo suyo`,
-      );
-    }
-    const dir = salida?.dir ?? { x: (tx - px) / dist, z: (tz - pz) / dist };
-    const step = Math.min(speed * delta, dist);
+    const dir = { x: (tx - px) / dist, z: (tz - pz) / dist };
     // TODO(A*): steering por deflexión se atasca en cul-de-sacs; la máscara
     // walkable + BFS de scene-validate.ts es el molde para pathfinding real.
-    // Orden: directa primero (que el rodeo no se eternice en espiral), luego
-    // la última deflexión aceptada (pegajosa: sin ella el rodeo alterna de
-    // signo entre ticks y el NPC vibra sin avanzar), luego el resto.
-    const last = rt.lastDeflection;
-    const angles = last !== null && last !== 0
-      ? [0, last, ...DEFLECTION_ANGLES.filter((a) => a !== 0 && a !== last)]
-      : DEFLECTION_ANGLES;
-    const rumbo = this.rumboDePaso(rt, angles, dir, px, pz, step);
-    if (rumbo) {
-      rt.record.position[0] = rumbo.nx;
-      rt.record.position[2] = rumbo.nz;
-      rt.lastDeflection = rumbo.angle;
-      rt.forward = this.slewForward(rt, rumbo.d.x, rumbo.d.z, delta);
-      rt.moving = true;
-      return distXZ(rumbo.nx, rumbo.nz, tx, tz) <= reachedDist;
-    }
+    const paso = this.darPaso(rt, dir, Math.min(speed * delta, dist), delta);
+    if (paso) return distXZ(paso.nx, paso.nz, tx, tz) <= reachedDist;
     // Bloqueado en todas las direcciones: soltar el waypoint y pausar la
     // rutina. flee/intervene conservan su modo (updateDanger los gestiona).
     this.giveUpMove(rt);
     return false;
+  }
+
+  /** UN PASO de `step` metros por el rumbo `dir` o, si no pasa, por la mejor
+   *  deflexión. Mueve al NPC y devuelve dónde quedó, o `null` si no pasa por
+   *  ninguno. Lo comparten el que va a su meta (`stepTowards`) y el que sale de
+   *  un sólido (`salirSiEstaDentro`), para que los dos respeten la misma regla
+   *  —terreno primero, escape declarado— sin copiarla.
+   *
+   *  Orden: directa primero (que el rodeo no se eternice en espiral), luego la
+   *  última deflexión aceptada (pegajosa: sin ella el rodeo alterna de signo
+   *  entre ticks y el NPC vibra sin avanzar), luego el resto. */
+  private darPaso(
+    rt: NpcRuntime,
+    dir: { x: number; z: number },
+    step: number,
+    delta: number,
+  ): { nx: number; nz: number } | null {
+    const last = rt.lastDeflection;
+    const angles = last !== null && last !== 0
+      ? [0, last, ...DEFLECTION_ANGLES.filter((a) => a !== 0 && a !== last)]
+      : DEFLECTION_ANGLES;
+    const rumbo = this.rumboDePaso(rt, angles, dir, rt.record.position[0], rt.record.position[2], step);
+    if (!rumbo) return null;
+    rt.record.position[0] = rumbo.nx;
+    rt.record.position[2] = rumbo.nz;
+    rt.lastDeflection = rumbo.angle;
+    rt.forward = this.slewForward(rt, rumbo.d.x, rumbo.d.z, delta);
+    rt.moving = true;
+    return rumbo;
+  }
+
+  /** PRIMERO SALIR, LUEGO LO QUE SEA. Si el NPC está metido en algo sólido
+   *  —una caja de runtime que le cayó encima, o desde #616 la geometría del
+   *  TILE—, este tick no hace lo que diga su modo: da un paso por la cara más
+   *  cercana. Devuelve `true` si lo dio (o lo intentó), y entonces el modo no
+   *  corre.
+   *
+   *  VIVE EN LA CABEZA DE `move()` Y NO EN UN MODO, y ese es todo el arreglo
+   *  (#618, pieza B). Hasta aquí estaba dentro de `stepTowards`, así que solo
+   *  salía el que ya andaba: el quieto en `idle`, el que tiene `hold`, el que
+   *  encara al jugador en `react` y el que ya llegó a su meta se quedaban
+   *  dentro para siempre. Y el que paseaba tampoco, en cuanto la caja era más
+   *  ancha que su paseo: los ocho waypoints que sortea caían dentro de ella y
+   *  volvía a `idle` sin llegar a pisar `stepTowards` (0,00 m en 120 s). La
+   *  regla es del CUERPO, no del modo, y un modo que alguien añada mañana nace
+   *  con ella. Es también el «salir antes de planificar» que un A* necesita:
+   *  ninguna búsqueda arranca desde una celda sólida.
+   *
+   *  Y AL SALIR, SU `home`: si se quedó dentro del sólido, pasa a ser donde
+   *  salió. Sin eso sale y no vuelve a moverse nunca, porque su paseo sortea
+   *  alrededor de un `home` enterrado. Solo en ese caso: donde el `home` está
+   *  libre, el que salió vuelve a su rutina de siempre.
+   *
+   *  Velocidad: la de correr en `flee`/`intervene`, la de andar en el resto,
+   *  que es la que le daba cada modo cuando la salida vivía en `stepTowards`. */
+  private salirSiEstaDentro(rt: NpcRuntime, delta: number): boolean {
+    const px = rt.record.position[0];
+    const pz = rt.record.position[2];
+    const salida = this.world.porDondeSalirDeAqui(px, pz, NPC_RADIUS_M);
+    if (!salida) {
+      if (rt.saliendo) {
+        rt.saliendo = false;
+        if (this.world.blocksCircle(rt.home.x, rt.home.z, NPC_RADIUS_M)) rt.home = { x: px, z: pz };
+      }
+      return false;
+    }
+    const dentroDe = salida.de === "caja" ? `"${salida.id}" (se la pusieron encima)` : "la geometría del tile";
+    this.warnOnce(
+      `${rt.record.id}:sale:${salida.de === "caja" ? salida.id : "tile"}`,
+      `"${rt.record.id}" quedó DENTRO de ${dentroDe} ` +
+        `y sale andando por su cara más cercana antes de seguir a lo suyo`,
+    );
+    rt.saliendo = true;
+    // El watchdog no compara contra una ventana de antes de salir.
+    rt.stuckAnchor = null;
+    const corre = rt.mode === "flee" || rt.mode === "intervene";
+    const speed = corre ? rt.params.run_speed : rt.params.walk_speed;
+    this.darPaso(rt, salida.dir, speed * delta, delta);
+    rt.running = corre && rt.moving;
+    return true;
   }
 
   /** POR DÓNDE PASA, o `null` si no pasa por ningún rumbo.
@@ -732,8 +902,8 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
    *  solo»: aquí se leía que la penetración no creciente (#601) bastaba, y era
    *  cierto de la CONSULTA y falso del SISTEMA —el que no empuja no sale, y
    *  este abanico solo empuja hacia la meta: 290 s de 300 dentro de un carro
-   *  (#583, QA H-2)—. A ese le saca `porDondeSalirDeAqui` en `stepTowards`,
-   *  dándole el rumbo de la cara más cercana antes de llegar hasta aquí.
+   *  (#583, QA H-2)—. A ese le saca `salirSiEstaDentro`, en la cabeza de
+   *  `move()`, que le da el rumbo de la cara más cercana sea cual sea su modo.
    *
    *  Se atraviesa DICIÉNDOLO. Un NPC cruzando una caja es el síntoma exacto de
    *  #583, así que si no queda dicho por qué pasó, el arreglo se lee como el
@@ -799,13 +969,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
   }
 
   private pickWanderWaypoint(rt: NpcRuntime): { x: number; z: number } | null {
-    const directive = readDirective(rt);
-    let radius = rt.params.wander_radius;
-    if (directive?.type === "patrol") radius *= 2;
-    else if (directive?.type === "wander" && typeof directive.radius === "number" &&
-      Number.isFinite(directive.radius) && directive.radius > 0) {
-      radius = directive.radius;
-    }
+    const radius = radioDePaseo(readDirective(rt), rt.params);
     for (let i = 0; i < 8; i++) {
       const angle = this.rng.next() * Math.PI * 2;
       const r = Math.min(1, radius) + this.rng.next() * Math.max(0, radius - 1);

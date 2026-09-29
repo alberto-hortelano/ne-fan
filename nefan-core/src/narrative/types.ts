@@ -249,6 +249,29 @@ export interface AssetEntry {
   extra?: Record<string, unknown>;
 }
 
+/** LA META QUE EL NPC ABANDONA AL HUIR (#298, QA de BL H2). Decisión del
+ *  usuario, literal: «Que decida el motor de narrativa. En general que el
+ *  estado le llegue al motor de narrativa y él decide». El que iba a un sitio
+ *  (`goto_place`, `visit_npc` o un `npc_move_to_place` que el sim ejecutaba
+ *  andando) y huye NO vuelve solo: su meta se retira del record —si no, la
+ *  re-derivaba al calmarse y volvía a la pelea (15 huidas en 180 s)— y queda
+ *  aquí, en `record.data.suspended_goal`, con el porqué. Al motor le llega como
+ *  ESTADO: la entidad lo lleva en el contexto de cada turno mientras exista
+ *  (`serializeForLlm`, H2b de la QA de BL — la línea de `ambient_events` que
+ *  escribe el bridge es solo el aviso, y se cae de la ventana de 10). Lo
+ *  escribe `npc-behavior.ts`; vive aquí porque es forma del record y del
+ *  contexto, no del sim. Si quiere que siga, la vuelve a
+ *  emitir con `npc_set_directive` / `npc_move_to_place`, que la limpian. */
+export interface SuspendedGoal {
+  /** El campo del record del que se retiró. */
+  field: "directive" | "in_transit";
+  /** Su valor tal cual estaba, para poder re-emitirlo. */
+  value: unknown;
+  reason: "fled_combat";
+  /** Dónde era la pelea, en metros. */
+  fight_at: [number, number];
+}
+
 export interface LlmContext {
   session_id: string;
   game_id: string;
@@ -266,6 +289,10 @@ export interface LlmContext {
     scene_id: string;
     position: [number, number, number];
     spawn_reason: string;
+    /** La meta que este NPC abandonó al huir y que espera tu decisión
+     *  (`SuspendedGoal`). Presente MIENTRAS exista: re-emitirla con
+     *  npc_set_directive / npc_move_to_place la retira. */
+    suspended_goal?: SuspendedGoal;
   }>;
   /** Total real de entidades cuando `entities` viene TRUNCADO (cap
    *  LLM_ENTITIES_MAX: escena activa completa + spawns más recientes).

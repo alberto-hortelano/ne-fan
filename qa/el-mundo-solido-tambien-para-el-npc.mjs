@@ -22,7 +22,22 @@
  *    5. al que le cae una caja encima no se le encierra (a nivel de consulta:
  *       alejarse del centro nunca bloquea);
  *    6. y al que le cae encima DE VERDAD, con el sim moviéndolo, se le SACA:
- *       sale andando por la cara más cercana aunque su meta esté al otro lado.
+ *       sale andando por la cara más cercana aunque su meta esté al otro lado;
+ *    7. también al que NO va a ningún sitio (campesino sin directiva, granero
+ *       de 10 m encima): sale, y luego pasea alrededor de donde salió;
+ *    8. y al que tiene `hold`: sale, y fuera se queda quieto;
+ *    9. y al que YA LLEGÓ a su meta cuando el motor le pone la caja encima.
+ *
+ *  Del 7 al 9 fueron el tercer `⚠ HALLAZGO` de este guion (QA de #583: «al que
+ *  no va a ningún sitio la salida no le alcanza», 0,00 m en 120 s) hasta la
+ *  tanda BL (#618, pieza B): la salida vivía dentro de `stepTowards` y solo
+ *  sacaba al que ya andaba. Ahora vive en la cabeza de `move()`, para todos los
+ *  modos.
+ *
+ *  Probado en negativo contra el ÁRBOL (tanda BL, recompilando `dist`): sin la
+ *  llamada a `salirSiEstaDentro` caen el 6 al 9; con la salida devuelta a
+ *  `stepTowards` (el árbol de antes) caen el 7 al 9 y el 6 sigue verde; sin
+ *  mover el `home` al salir cae el «luego pasea» del 7.
  *
  *  El 6 nació como registro de esta misma revisión (`⚠ HALLAZGO`: 290 s de 300
  *  dentro del carro) y es ahora un aserto: la consulta no frena al que sale,
@@ -31,8 +46,8 @@
  *  solo».
  *
  *  LO QUE MIDE Y REGISTRA SIN PONERLO ROJO (`⚠ HALLAZGO`): que el steering por
- *  deflexión NO rodea un obstáculo centrado en su camino —se planta delante
- *  para siempre—. No se pone rojo porque no es de esta PR ni de esta frontera:
+ *  deflexión NO rodea un obstáculo centrado en su camino —pisa en el sitio
+ *  delante de él, con la animación de andar puesta—. No se pone rojo porque no es de esta PR ni de esta frontera:
  *  es el `TODO(A*)` de `npc-behavior.ts` y le pasa IGUAL a la geometría del
  *  tile, que es sólida desde #232 (este guion lo mide con las dos fuentes en la
  *  misma posición, y dan lo mismo). Se registra porque es lo que ve quien juega
@@ -241,6 +256,82 @@ sysD.addNpc({
     `${av.filter((a) => a.includes("DENTRO")).length} aviso(s) de salida declarados`);
 }
 
+// ────────────────────────────────────────────────────────────────────
+/** Un NPC con `data` dada, dentro de un granero de 10 m que el motor puso en
+ *  el origen, movido por el sim de la sesión. Devuelve cuándo salió y la
+ *  traza de después. `antes` corre ANTES de poner el granero (el que ya llegó). */
+function dentroDelGranero({ desde, data, meta = { x: 14, z: 0 }, antes = 0, segundos = 120 }) {
+  const s = tile();
+  const { sys } = simDeLaSesion(s, meta);
+  sys.addNpc({
+    id: "aldeano", type: "npc", scene_id: "tile_0_0", spawned_at: "2026-01-01T00:00:00.000Z",
+    spawn_reason: "scene_init", spawn_event_id: "", position: [desde.x, 0, desde.z],
+    data, asset_refs: [],
+  });
+  const ctx = { playerPos: { x: 1000, y: 0, z: 1000 }, combatEvents: [], combatantPositions: new Map() };
+  const FUERA = 5 + RADIO_NPC;
+  const fuera = (p) => Math.abs(p.x) >= FUERA || Math.abs(p.z) >= FUERA;
+  const warn = console.warn; const av = [];
+  console.warn = (...a) => { av.push(a.map(String).join(" ")); };
+  let saleEn = null, salida = null, alejamiento = 0, reentra = false, llegadas = 0, dentroAlPonerla;
+  try {
+    for (let i = 0; i < antes / TICK; i++) {
+      llegadas += sys.tick(TICK, ctx).filter((e) => e.type === "npc_reached_place").length;
+    }
+    elMotorPone(s, "granero", 0, 0, 20, "building");          // 10 m de lado
+    dentroAlPonerla = !fuera(sys.states()[0].pos);
+    for (let i = 1; i <= segundos / TICK; i++) {
+      sys.tick(TICK, ctx);
+      const p = sys.states()[0].pos;
+      if (saleEn === null) {
+        if (fuera(p)) { saleEn = i * TICK; salida = { x: p.x, z: p.z }; }
+        continue;
+      }
+      alejamiento = Math.max(alejamiento, Math.hypot(p.x - salida.x, p.z - salida.z));
+      if (!fuera(p)) reentra = true;
+    }
+  } finally { console.warn = warn; }
+  const st = sys.states()[0];
+  return { saleEn, alejamiento, reentra, llegadas, dentroAlPonerla, moving: st.moving, avisos: av };
+}
+
+console.log("\n7 · AL QUE NO VA A NINGÚN SITIO TAMBIÉN SE LE SACA (#618: era el tercer ⚠ HALLAZGO)");
+{
+  // Campesino: wander_radius 5 m, y media huella + radio = 5,5 m. Es el umbral
+  // que medía el hallazgo: sus ocho waypoints caen dentro y nunca andaba.
+  const r = dentroDelGranero({ desde: { x: 0, z: 0 }, data: { role: "peasant" } });
+  ok(r.dentroAlPonerla, "CONTROL: el granero le cae encima");
+  ok(r.saleEn !== null && r.saleEn < 10, "el campesino SIN directiva sale del granero",
+    r.saleEn === null ? "no salió en 120 s" : `salió en ${r.saleEn.toFixed(1)} s`);
+  ok(r.alejamiento > 1, "…y luego PASEA alrededor de donde salió, no se queda pegado a la cara",
+    `se alejó ${r.alejamiento.toFixed(2)} m de su salida`);
+  ok(!r.reentra, "…sin volver a meterse en el granero");
+  ok(r.avisos.filter((a) => a.includes("ATRAVIESA")).length === 0, "sin atravesar nada");
+}
+
+console.log("\n8 · Y AL QUE TIENE `hold`");
+{
+  const r = dentroDelGranero({ desde: { x: 1, z: 0 }, data: { role: "villager", directive: { type: "hold" } }, segundos: 30 });
+  ok(r.dentroAlPonerla, "CONTROL: el granero le cae encima");
+  ok(r.saleEn !== null && r.saleEn < 10, "`hold` sale: es «no pasees», no «quédate emparedado»",
+    r.saleEn === null ? "no salió en 30 s" : `salió en ${r.saleEn.toFixed(1)} s`);
+  ok(!r.reentra && r.moving === false, "…y fuera obedece su `hold`: quieto",
+    `moving=${r.moving}, alejamiento ${r.alejamiento.toFixed(2)} m`);
+}
+
+console.log("\n9 · Y AL QUE YA LLEGÓ A SU META CUANDO EL MOTOR LE PONE LA CAJA ENCIMA");
+{
+  const r = dentroDelGranero({
+    desde: { x: -8, z: 0 }, meta: { x: 0, z: 0 }, antes: 15,
+    data: { role: "villager", directive: { type: "goto_place", target_place_id: "plaza" } },
+    segundos: 30,
+  });
+  ok(r.llegadas === 1, "CONTROL: llegó a la plaza antes de que cayera el granero", `${r.llegadas} llegada(s)`);
+  ok(r.dentroAlPonerla, "CONTROL: y la plaza queda bajo el granero");
+  ok(r.saleEn !== null && r.saleEn < 10, "llegado y con el granero encima, sale",
+    r.saleEn === null ? "no salió en 30 s" : `salió en ${r.saleEn.toFixed(1)} s`);
+}
+
 console.log("\n⚠ LO QUE ESTO NO ARREGLA — medido, registrado y NO puesto en rojo");
 console.log("   (es el `TODO(A*)` de `npc-behavior.ts`, no el escape: le quedaban rumbos legales)");
 
@@ -270,37 +361,5 @@ hallazgo(`el MISMO obstáculo de 6 m, mismo centro (${CENTRO}, ${CENTRO}) y 300 
   `${deRuntime.xMax.toFixed(2)}. Ninguna de las dos se rodea, y por eso esto es el steering (TODO(A*)) ` +
   `y no la frontera que abre #583`);
 
-// El que NO va a ningún sitio: `porDondeSalirDeAqui` vive dentro de
-// `stepTowards`, o sea que solo saca a quien ya estaba andando. Al que pasea
-// (micro-wander) le saca igual… mientras su elector de waypoints le deje elegir
-// uno: `randomWaypoint` sortea 8 puntos dentro de `wander_radius` y descarta
-// los que `blocksCircle` dé por ocupados, y desde #583 una caja de runtime los
-// ocupa. Con una caja más ancha que ese radio, los ocho caen dentro y el
-// campesino se queda quieto en vez de pasear.
-{
-  const sQuieto = tile();
-  elMotorPone(sQuieto, "granero", 0, 0, 20, "building");   // 10 m de lado
-  const { sys } = simDeLaSesion(sQuieto, { x: 14, z: 0 });
-  sys.addNpc({
-    id: "aldeano", type: "npc", scene_id: "tile_0_0", spawned_at: "2026-01-01T00:00:00.000Z",
-    spawn_reason: "scene_init", spawn_event_id: "", position: [0, 0, 0],
-    data: { role: "peasant" }, asset_refs: [],   // sin directiva: solo pasea
-  });
-  const ctx = { playerPos: { x: 1000, y: 0, z: 1000 }, combatEvents: [], combatantPositions: new Map() };
-  const warn = console.warn; console.warn = () => {};
-  let dMax = 0;
-  try {
-    for (let i = 0; i < 120 / TICK; i++) {
-      sys.tick(TICK, ctx);
-      const st = sys.states()[0];
-      dMax = Math.max(dMax, Math.hypot(st.pos.x, st.pos.z));
-    }
-  } finally { console.warn = warn; }
-  hallazgo(`al que NO va a ningún sitio la salida no le alcanza si la caja es más ancha que su paseo: ` +
-    `campesino (wander_radius 5 m) con un granero de 10 m encima → alejamiento máximo ${dMax.toFixed(2)} m ` +
-    `en 120 s (antes de #583 paseaba 4,5 m, también sin salir del granero). El umbral medido es ` +
-    `«media huella + radio > wander_radius»: con 8 m sale y con 10 no`);
-}
-
-console.log(`\n${rojos === 0 ? "✔ los seis bloques en verde" : `✖ ${rojos} aserto(s) en rojo`}`);
+console.log(`\n${rojos === 0 ? "✔ los nueve bloques en verde" : `✖ ${rojos} aserto(s) en rojo`}`);
 process.exit(rojos === 0 ? 0 : 1);

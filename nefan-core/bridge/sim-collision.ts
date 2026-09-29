@@ -23,8 +23,9 @@
  *  dentro del collider, eximía CELDAS en vez de penetración y no sacaba a
  *  nadie de un macizo.
  *
- *  Lazy + caché por sceneId para (1) y (2): nada revisa un plan ya emitido,
- *  así que la caché no se invalida. Un grid inconsistente degrada ese tile a
+ *  Lazy + caché por REGISTRO de escena para (1) y (2): nada revisa un plan ya
+ *  emitido, y cada registro nuevo trae su entrada, así que no hay que
+ *  invalidar nada (ver `cache` abajo: por `sceneId` cacheaba la ausencia). Un grid inconsistente degrada ese tile a
  *  "sin esa fuente" con warning (mismo patrón que el cliente), nunca tumba el
  *  tick. Las cajas de (3) NO entran en esa caché y no tienen otra: aparecen a
  *  mitad de partida, que es justo cuando una caché por escena miente, así que
@@ -86,6 +87,7 @@
  *  derivado, con sus vanos); lo que entró es la de lo que el motor spawnea. */
 
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
+import type { SceneRecord } from "../src/narrative/types.js";
 import { createTerrainCollider, type TerrainCollider } from "../src/scene/terrain-collision.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
 import {
@@ -169,11 +171,19 @@ function buildPlanCollider(
 }
 
 export function createSimCollisionProvider(narrative: NarrativeState): SimCollisionProvider {
-  const cache = new Map<string, TerrainCollider[]>();
+  /** LA CACHÉ VA POR REGISTRO DE ESCENA, no por `sceneId`. Iba por id, y
+   *  guardaba `[]` para un tile todavía NO GENERADO la primera vez que alguien
+   *  preguntaba por él —desde #618 lo hace `npc_arrive`, que mira el suelo del
+   *  lugar de destino antes de soltar al NPC— y nunca invalidaba: cuando el
+   *  tile se realizaba, el sim lo seguía viendo vacío y NPCs y jugador
+   *  atravesaban sus edificios (QA de BL, H1). Por id se cruzaba además entre
+   *  sesiones del mismo bridge. Cada `recordSceneLoaded` crea un registro
+   *  NUEVO, así que con el registro como clave: la ausencia no se cachea
+   *  (no hay registro), un tile que se genera o se re-registra trae el suyo, y
+   *  otra sesión trae los suyos. Nada que invalidar a mano. */
+  const cache = new WeakMap<SceneRecord, TerrainCollider[]>();
 
-  function buildColliders(sceneId: string): TerrainCollider[] {
-    const rec = narrative.scenes_loaded[sceneId];
-    if (!rec) return [];
+  function buildColliders(sceneId: string, rec: SceneRecord): TerrainCollider[] {
     const colliders: TerrainCollider[] = [];
 
     // 1. terrain_grid del esquema. De la misma normalización sale el plan
@@ -201,10 +211,12 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
   }
 
   function collidersFor(sceneId: string): TerrainCollider[] {
-    let entry = cache.get(sceneId);
+    const rec = narrative.scenes_loaded[sceneId];
+    if (!rec) return [];
+    let entry = cache.get(rec);
     if (!entry) {
-      entry = buildColliders(sceneId);
-      cache.set(sceneId, entry);
+      entry = buildColliders(sceneId, rec);
+      cache.set(rec, entry);
     }
     return entry;
   }
