@@ -22,10 +22,18 @@
  *       contenga y vaya después; en una celda de la taberna fuera de la
  *       posada, la TABERNA. Antes ganaba el último rect del bucle.
  *
+ *   C · F1 · los triggers siguen a la CADENA de huellas (QA de la fase 2):
+ *       con un trigger de entrada y otro de salida en cada lugar (por el State
+ *       API, como `map_add_trigger`), entrar en la posada dispara SOLO su
+ *       entrada —no la salida de la taberna, que la contiene—, volver a la
+ *       taberna solo la salida de la posada, pisar campo abierto la salida de
+ *       la taberna, y volver a ella UNA entrada. Se lee en la crónica
+ *       (`GET /story`), que es donde escribe un `story_update`.
+ *
  *  PROBADO EN NEGATIVO (tanda BM, fase 2; la salida en su
  *  `implementacion.md`): con `bridge/handlers/tile.ts` de main y el motor
- *  falso nuevo, A sale rojo (`anclados: []`, el lugar sin rect) y B también
- *  (en la celda de la posada, `taberna_bench_place`).
+ *  falso nuevo, A sale rojo (`anclados: []`, el lugar sin rect), B también
+ *  (en la celda de la posada, `taberna_bench_place`) y C también.
  *
  *  Lo que NO mide: que el motor construya cada sitio dentro de su huella ni
  *  que no los re-ancle. Eso es conducta de un modelo real y se mide en el
@@ -34,7 +42,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { URLS } from "../lib/stack.mjs";
-import { celdaAMundo, comenzar, esperarEnElMapa, nuevaPartida, recargarAlTitulo, regenerarMundo } from "../lib/sesion.mjs";
+import { celdaAMundo, comenzar, esperarEnElMapa, esperarEnElStateApi, nuevaPartida, recargarAlTitulo, regenerarMundo } from "../lib/sesion.mjs";
 
 export const aisla = ["mundo", "fake-ai", "saves"];
 
@@ -68,6 +76,24 @@ function romperLaEntrada(snap) {
 
 /** Pisa una celda del tile (0,0) y espera a que el bridge active `placeId`;
  *  si expira, devuelve el que haya activo para que el rojo lo diga. */
+/** Las marcas «⟦…⟧» que los triggers de C escriben en la crónica, en orden. */
+const marcas = (story) => [...String(story?.story_so_far ?? "").matchAll(/⟦([^⟧]+)⟧/g)].map((m) => m[1]);
+
+/** Pisa una celda y devuelve las marcas NUEVAS que dejó ese paso: espera a
+ *  que salga al menos una (todo el cruce se dispara en el mismo mensaje, así
+ *  que lo que sobre llega a la vez) y, si expira, lo que haya. */
+async function pisarYContar(ctx, col, row) {
+  const antes = marcas(await esperarEnElStateApi("/story", (s) => s)).length;
+  const escena = await ctx.page.evaluate(() => ({ terrain_grid: window.__nefan.scene.terrain_grid }));
+  const [x, z] = celdaAMundo(escena, col, row);
+  await ctx.page.evaluate((p) => window.__nefan.setPlayerPos(p.x, p.z), { x, z });
+  const nuevas = await esperarEnElStateApi("/story", (s) => {
+    const n = marcas(s).slice(antes);
+    return n.length > 0 ? n : null;
+  }, 8_000);
+  return nuevas ?? [];
+}
+
 async function pisarYLeer(ctx, col, row, placeId) {
   const escena = await ctx.page.evaluate(() => ({ terrain_grid: window.__nefan.scene.terrain_grid }));
   const [x, z] = celdaAMundo(escena, col, row);
@@ -168,4 +194,45 @@ export default async function (ctx) {
     `active_place_id = ${enLaTaberna}`,
   );
   await ctx.shot("b-la-huella-mas-pequena");
+
+  // ── C · F1: entrar y salir por la cadena de huellas ─────────────────────
+  for (const id of [TABERNA, POSADA]) {
+    for (const [tipo, marca] of [["player_entered", "E"], ["player_left", "L"]]) {
+      const r = await fetch(`${URLS.state_api}/map/trigger`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          place_id: id,
+          trigger: { id: `${marca}_${id}`, when: { type: tipo }, consequences: [{ type: "story_update", delta: `⟦${marca}:${id}⟧` }] },
+        }),
+      });
+      if (!r.ok) ctx.sinMedir(`POST /map/trigger ${id} ${tipo}: HTTP ${r.status}`);
+    }
+  }
+  // Ahora el jugador está en la taberna, fuera de la posada (lo último de B).
+  const aLaPosada = await pisarYContar(ctx, pc + 1, pr + 1);
+  ctx.expect(
+    "C · entrar en la posada dispara SOLO su entrada: no es salir de la taberna que la contiene",
+    JSON.stringify(aLaPosada) === JSON.stringify([`E:${POSADA}`]),
+    JSON.stringify(aLaPosada),
+  );
+  const aLaTaberna = await pisarYContar(ctx, tc + tw - 2, tr + th - 2);
+  ctx.expect(
+    "C · volver a la taberna dispara SOLO la salida de la posada",
+    JSON.stringify(aLaTaberna) === JSON.stringify([`L:${POSADA}`]),
+    JSON.stringify(aLaTaberna),
+  );
+  // Campo abierto del mismo tile: una celda fuera de la huella de la taberna.
+  const alCampo = await pisarYContar(ctx, tc + tw + 10, tr + th + 10);
+  ctx.expect(
+    "C · salir de la huella a campo abierto dispara la salida de la taberna",
+    JSON.stringify(alCampo) === JSON.stringify([`L:${TABERNA}`]),
+    JSON.stringify(alCampo),
+  );
+  const deVuelta = await pisarYContar(ctx, tc + tw - 2, tr + th - 2);
+  ctx.expect(
+    "C · volver a la taberna dispara UNA entrada",
+    JSON.stringify(deVuelta) === JSON.stringify([`E:${TABERNA}`]),
+    JSON.stringify(deVuelta),
+  );
 }

@@ -562,9 +562,16 @@ export async function curarMundo(ctx, gameId = "alta_fantasia") {
  *  dentro del guion — que es lo que prohíbe `qa-guiones-sin-espera-por-reloj`:
  *  la espera por condición vive aquí, una vez, como `esperarEnElSave`. */
 export async function esperarEnElMapa(predicado, maxMs = 20_000) {
+  return esperarEnElStateApi("/map", predicado, maxMs);
+}
+
+/** La misma espera sobre cualquier lectura GET del State API (`ruta`, p. ej.
+ *  `/story`): el 280 cuenta en la crónica los triggers de entrar y salir de
+ *  una huella. */
+export async function esperarEnElStateApi(ruta, predicado, maxMs = 20_000) {
   const t0 = Date.now();
   while (Date.now() - t0 < maxMs) {
-    const res = await fetch(`${URLS.state_api}/map`);
+    const res = await fetch(`${URLS.state_api}${ruta}`);
     if (res.ok) {
       const v = predicado(await res.json());
       if (v) return v;

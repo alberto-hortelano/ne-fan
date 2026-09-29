@@ -56,11 +56,14 @@ numbers, col,row ≥ 0, w,h ≥ 1, col+w ≤ 128 and row+h ≤ 128 — the serve
 rejects anything else and says which bound failed. What it is: the place's
 FOOTPRINT in the tile — the built-up area of a settlement, a building and
 its yard, a landmark and the ground around it — not a landing spot. What it
-does: the place becomes active (its triggers fire) while the player stands
-inside it; where rects overlap, the SMALLEST one is the active place (a
-tavern inside its village). A player travelling to the place from the exits
-panel appears inside that rect, at a free spot near its centre: the landing
-point is derived from the footprint, never declared. When you are
+does: the player is IN every place whose footprint contains them, so
+footprints nest (a tavern inside its village): entering a footprint fires
+that place's player_entered/first_visit triggers, stepping out of it fires
+its player_left, and entering the tavern does not take the player out of
+the village; where rects overlap, the SMALLEST one is the active place. A
+player travelling to the place from the exits panel appears inside that
+rect, at a free spot near its centre: the landing point is derived from the
+footprint, never declared. When you are
 generating the tile of generate_tile.place and give it a rect, call
 map_upsert_place BEFORE narrative_respond: the player is placed the moment
 the tile is sent, and a rect declared afterwards is only read on later
@@ -81,7 +84,10 @@ description, rect?}. They already exist on the map with that footprint
 triggers fire there, and their `description` is what the story already
 told. Build each one inside its rect, as described. The map is the source
 of their position: do not move them with map_upsert_place and do not create
-them again.
+them again. The list is capped: when generate_tile.anchored_places_omitted
+is present, that many more places are anchored here and were left out —
+read the full map with map_get (it lists every anchor) before building over
+their ground.
 
 MAP PLAN — the tile's semantic blueprint. You declare WHAT exists in flat
 world cells as PURE DATA — never draw anything yourself. The engine builds a

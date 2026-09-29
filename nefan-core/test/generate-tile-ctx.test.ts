@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { buildGenerateTileCtx } from "../bridge/handlers/tile.js";
+import { ANCHORED_PLACES_MAX, buildGenerateTileCtx } from "../bridge/handlers/tile.js";
 import { makeCtx } from "./helpers.js";
 
 function mundo() {
@@ -59,10 +59,53 @@ describe("buildGenerateTileCtx — los places anclados en el tile viajan con su 
     assert.deepEqual(gt.nearby_places, [{ id: "vado", name: "Vado Almar", kind: "landmark", tile: [1, 0] }]);
   });
 
-  it("sin placeId: el primero anclado es el place y los otros no se pierden", () => {
+  it("sin placeId: el place es el del tile por la regla de la activación (sin rect gana) y los otros no se pierden", () => {
+    // La plaza no tiene rect: ocupa el tile entero y es la que se activa
+    // fuera de toda huella, así que ES el tile aunque vaya la última del mapa
+    // (#465, F2: antes ganaba el primero, el pueblo con rect).
     const gt = buildGenerateTileCtx(mundo(), 0, 0);
-    assert.equal(gt.place?.id, "postas");
-    assert.deepEqual(gt.anchored_places, SITIOS);
+    assert.equal(gt.place?.id, "plaza");
+    assert.equal("rect" in gt.place!, false);
+    assert.deepEqual(
+      gt.anchored_places.map((p) => p.id),
+      ["postas", "posta_del_farol"],
+    );
+  });
+
+  it("sin placeId y todos con rect: la huella MAYOR, aunque el sitio vaya antes que su pueblo", () => {
+    const ctx = mundo();
+    const wm = ctx.narrative.worldMap;
+    // La plaza sin rect se va; la herrería (rect pequeño) entra PRIMERA en otro tile con su aldea.
+    wm.upsertPlace({
+      id: "herreria_x", kind: "site", parent_id: "world", name: "Herrería",
+      anchor: { tx: 3, ty: 3, rect: [30, 30, 12, 10] },
+    });
+    wm.upsertPlace({
+      id: "aldea_x", kind: "settlement", parent_id: "world", name: "Aldea",
+      anchor: { tx: 3, ty: 3, rect: [10, 10, 100, 100] },
+    });
+    const gt = buildGenerateTileCtx(ctx, 3, 3);
+    assert.equal(gt.place?.id, "aldea_x");
+    assert.deepEqual(gt.anchored_places.map((p) => p.id), ["herreria_x"]);
+  });
+
+  it(`anchored_places tiene tope (${ANCHORED_PLACES_MAX}) y dice cuántos omitió`, () => {
+    const ctx = mundo();
+    const wm = ctx.narrative.worldMap;
+    for (let i = 0; i < ANCHORED_PLACES_MAX + 5; i++) {
+      wm.upsertPlace({
+        id: `casa_${i}`, kind: "site", parent_id: "world", name: `Casa ${i}`,
+        anchor: { tx: 4, ty: 4, rect: [i, i, 1, 1] },
+      });
+    }
+    wm.upsertPlace({ id: "barrio", kind: "settlement", parent_id: "world", name: "Barrio", anchor: { tx: 4, ty: 4 } });
+    const gt = buildGenerateTileCtx(ctx, 4, 4);
+    assert.equal(gt.place?.id, "barrio");
+    assert.equal(gt.anchored_places.length, ANCHORED_PLACES_MAX);
+    assert.equal(gt.anchored_places[0]!.id, "casa_0");
+    assert.equal(gt.anchored_places_omitted, 5);
+    // Sin omitidos, la clave no viaja.
+    assert.equal("anchored_places_omitted" in buildGenerateTileCtx(mundo(), 0, 0), false);
   });
 
   it("el place de placeId nunca se repite en anchored_places, aunque esté anclado aquí", () => {
@@ -89,6 +132,7 @@ describe("buildGenerateTileCtx — los places anclados en el tile viajan con su 
     const gt = buildGenerateTileCtx(mundo(), 0, 0, "west", "postas");
     const claves = new Set([
       ...Object.keys(gt),
+      "anchored_places_omitted",
       ...Object.keys(gt.place!),
       ...Object.keys(gt.anchored_places[0]!),
     ]);

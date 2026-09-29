@@ -141,3 +141,69 @@ H1 SÍ es mecánico. Se puede candar con el motor falso haciendo que la entrada 
   - **465.3 → las dos preguntas del issue contestadas en verde** (costuras 5/5 y cero siembra), **pero aparece H1**: los sitios anclados en la entrada conservan rects de una geometría que ya no existe. El arreglo es pasar al motor los lugares anclados en su propio tile.
 
 **Veredicto global: apto con reservas.** El playtest contesta las preguntas que tenía. #239 se cierra; #465 no, por H1 y H2, que son defectos que el jugador vería.
+
+## Verificación de la fase 2
+
+Rama `feature/tanda-bm`, HEAD `56e30bb6`. El coordinador citó `db9450ac`: es un commit colgante con el mismo mensaje, y `git diff db9450ac 56e30bb6` sale vacío. Mismo árbol, así que lo que aquí se verifica es el mismo cambio.
+
+Todo con el motor FALSO y 0 créditos. El material está en `labs/narrative/runs/tanda-bm-20260929/fase2/`: logs, `PIDS.txt` y los scripts `huellas.mjs`, `huellas2.mjs`, `resume.mjs` y `muchos.mjs`.
+
+**Stack propio** en un bloque libre: fake-ai en :19465, bridge en :10577 con State API en :10578, emulador en :10599, y narrative-mcp del worktree con `NARRATIVE_WS_PORT=13737`. Para el bridge hay que dar `NEFAN_BRIDGE_PORT` y `NEFAN_STATE_HTTP_PORT`: `NEFAN_PORT_OFFSET` solo no lo mueve, y el primer arranque chocó con el :9877 de otro agente, sin tocarlo. Al terminar se pararon por grupo los tres grupos propios. `git status` del worktree queda limpio.
+
+### Criterios
+
+| Criterio | Veredicto | Evidencia |
+|---|---|---|
+| **H1** · la entrada regenerada conoce sus sitios (flujo real: título → «Generar mundo» → nueva partida → Comenzar) | ✅ | `node qa/run.mjs 280 214 74 144` (bloque del runner): **5 en verde · 0 en rojo de 5**. En 280 A, `"lugar":{"id":"taberna_bench_place","rect":[52,48,24,16]},"anclados":[{"id":"posada_del_fichero",…"rect":[56,50,8,6]}]` |
+| **H1 con el mundo REAL del playtest** | ✅ | El `snapshot-anillo-sano.json` de la fase 1 (16 lugares, 6 escenas), con la entrada rota como entonces y el bridge del worktree. El `start_session` toma `se regenera SOLO la entrada, dentro de su mapa (16 lugares) y con 5 vecinos`, y a `/dev/counters` le llega `lugar: postas_del_sedal` más los **4 sitios de H1** en `anclados`, cada uno con su rect y su descripción: `posta_del_farol [40,34,22,16]` («…La lleva Marela Tresgavillas»), `lamparería_de_sael [72,40,14,16]`, `torre_caudal_postas [94,38,16,16]` y `plaza_de_postas [40,52,38,20]`. Es exactamente lo que le faltó al motor B |
+| **H3** · entre rects anidados gana el más pequeño | ✅ | `huellas.mjs`: `input` del emulador con la posición, sobre el tile (0,-1) con `barrio [10,10,60,60]` y `taberna_t [20,20,10,10]` dentro. En celda (50,50) el activo es `barrio`; en (25,25), `taberna_t`; al volver a (50,50), `barrio` otra vez. También el guion 280 B |
+| **H3** · empate de área | ✅ | `gemelo_a [80,80,10,10]` y `gemelo_b [85,85,10,10]` (el orden de inserción es a, b). En el solape (87,87) sigue activo `gemelo_a` y no salta nada; en (93,93), solo en b, el activo es `gemelo_b` |
+| **H3** · los triggers saltan en la huella | ⚠️ **al entrar, sí; al salir, no siempre** | Ver F1 |
+| **H4** · los rechazos quedan en el log | ✅ | narrative-mcp del worktree por stdio, con un ai_server falso por WS. Un `narrative_respond` de una escena con `role:"herrero"` deja en stderr `[narrative-mcp] rechazo forma_escena kind=scene req=req-qa-1: … declara role "herrero", que no es un rol de conducta…`; la misma escena con `merchant`, `Scene sent`, sin línea de rechazo. También salen `rechazo sin_peticion kind=scene req=-`, `rechazo anchor kind=map_upsert_place … col + w = 140 > 128` y `rechazo attrs_json`. Logs: `fase2/logs/narrative-mcp-h4*.log` |
+| Resume | ✅ | `resume.mjs`: `resume_session` da `ok:true, isResume:true`, con 22 lugares (los que añadí sobreviven) y, en la celda de la taberna, `activo taberna_t` |
+| Tile con muchos lugares | ✅ funciona · ⚠️ ver F5 | `muchos.mjs`: 40 sitios anclados en (-1,1) con descripciones de 400 caracteres. El `request_tile` va de `generating` a `ready`, y a la petición llegan `lugar casa_0` y 39 `anclados` |
+| Los candados pueden ponerse rojos | ✅ | Mis sabotajes, distintos de los del ingeniero, en `lugar-en-la-celda.ts`, restaurando cada vez con el md5 comprobado: con el empate a `<=` sale rojo «a igual área, el primero»; con el borde `>` en vez de `>=`, rojo «los bordes…»; si se ignora el tile, rojo «otro tile… null»; si el sin-rect se queda con el último, rojo «si ningún rect casa…». El cableado de `activateByPosition` con `col` y `row` cambiados da rojo en `bridge activación por posición (tiles + anchors)` con la suite completa (1 fallo en 3665). Los 15 tests nuevos van en verde sin sabotaje |
+
+### Hallazgos de la fase 2
+
+**F1 — importante (H3, anterior a la tanda pero ahora prometido por el prompt): el trigger de salida no respeta la huella.**
+
+El prompt nuevo dice que el lugar «becomes active (its triggers fire) while the player stands inside it» y anima a anidar («a tavern inside its village»). Medido (`huellas.mjs`, `huellas2.mjs`), no pasa en dos casos:
+- **Salir de la huella a campo abierto, en un tile sin lugar que no tenga rect.** Se reproduce en la Torre del Hilo, tile (2,0), que es el caso típico con el rect-huella que ahora se pide:
+  - dentro (60,48): `activo=torre_del_hilo`, dispara `PLAYER_ENTERED:torre`;
+  - fuera (10,110): `activo=torre_del_hilo`, no dispara nada;
+  - otra vez dentro: vuelve a disparar `PLAYER_ENTERED:torre`.
+
+  `player_left` nunca salta, y el lugar sigue activo fuera de su huella. La causa es la rama `else if (!placeId) { ctx.posTracking.placeId = null; }` de `activateByPosition`, que no limpia el lugar activo ni dispara la salida.
+- **Anidados.** Al entrar en la taberna salta `PLAYER_LEFT:barrio` aunque el jugador sigue dentro del barrio, y al volver, `PLAYER_ENTERED:barrio` otra vez. Un trigger «al salir del pueblo» se dispara al entrar en su posada.
+
+Lo que espera el jugador: que «al salir de la torre» ocurra al salir de la torre, y que entrar en la posada no cuente como salir del pueblo.
+
+Arreglo propuesto (para el arquitecto): al quedarse sin lugar, poner `null` como lugar activo y disparar `player_left`. En anidados, las salidas y entradas que se disparan son las de los lugares cuyas huellas contienen la celda vieja y no la nueva, y viceversa, no las del «activo». Si no se arregla en esta tanda, al menos que la prosa no prometa algo que el bridge no hace, y abrir un issue.
+
+**F2 — menor (ya estaba en «visto y no hecho» del plan, pero ahora con consecuencia medida).** Un tile sin `placeId` (un `request_tile`) con un sitio con rect insertado antes que su pueblo sin rect le entrega el SITIO al motor como `place` («This tile IS the place»), y el pueblo acaba en `anchored_places`: `{"lugar":{"id":"herreria_x","rect":[30,30,12,10]},"anclados":[{"id":"aldea_x"}]}`. El tile se etiqueta además con `place_id = herreria_x`, mientras que la activación por posición fuera del rect elige `aldea_x`: el mapa y la escena discrepan sobre de qué lugar es el tile. Cuando no hay `placeId`, el `place` debería ser el lugar sin rect (el que ocupa el tile) o el de mayor huella.
+
+**F3 — menor, anterior a la tanda.** `scene_validate` da por buena una escena con `role:"herrero"` (`"ok": true`), y el mismo JSON en `narrative_respond` se rechaza. La descripción de la tool dice «Runs the same server-side checks as the respond pre-flight», y es falso para el gate estructural. En el playtest el motor usó `scene_validate` como paso previo en 3 de 7 tiles. No afecta al conteo de H4, porque el rechazo acaba en `respond` y se registra, pero el dry-run miente.
+
+**F4 — menor (el alcance de H4, dicho con un caso).** No dejan línea en el log:
+- el rechazo de validación de argumentos del SDK (`MCP error -32602 … map_upsert_place`, por ejemplo con `parent_id` ausente);
+- el rechazo que devuelve el bridge a un `map_upsert_place` sintácticamente bueno (`parent_id "no_existe_padre" not found`).
+
+Coincide con lo que declara el `_lo_que_esto_NO_sujeta`, así que no es una regresión. Lo anoto para que nadie cuente rechazos de mapa por el log y crea que son todos.
+
+**F5 — menor.** `anchored_places` no tiene tope: 39 lugares con 400 caracteres de descripción son unos 15 k caracteres más en cada petición de ese tile. Hoy no hay ningún mundo así. Si llega a pasar, un tope o descripciones recortadas.
+
+### Workarounds de la fase 2
+
+- **La posición entra por frames `input` del emulador (teletransporte), no caminando.** Para lo que se mide da igual: la activación es por celda y no depende de cómo se llegó.
+- **El mundo real del playtest se reinyecta desde el snapshot de la fase 1.** Pasa el zod del bridge y toma el camino de producción.
+- **H4 se prueba con un ai_server falso por WS.** El pre-flight de narrative-mcp es el real, compilado del worktree.
+
+### No probado en la fase 2
+
+- H2 y la parte de prosa de H1 y H3: que un modelo real ponga el rect antes de `respond`, lo use como huella y construya los `anchored_places` dentro de su rect. Va en el playtest corto tras el merge.
+- La mutación de `world-map`, que sigue pedida.
+
+### Veredicto de la fase 2
+
+**Apto con reservas.** H1, H3 (la activación del lugar) y H4 hacen lo que se pidió, desde el flujo real y también con el mundo del playtest, y los candados se ponen rojos. La reserva es F1: el prompt ahora promete triggers «en la huella» y el bridge no dispara la salida ni al pisar campo abierto ni con huellas anidadas. O se arregla antes del merge, o se retoca la prosa y se abre un issue. F2 a F5 son menores.

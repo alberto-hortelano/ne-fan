@@ -8,7 +8,7 @@ import { TILE_CELLS } from '@nefan/core/contracts/world-map-schema';
 import { validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene, validateAnchor } from './validators.js';
 import { ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
-import { rechazo } from './rechazo.js';
+import { rechazo, vigilarErroresDeTool } from './rechazo.js';
 import { bridgeGet, bridgePost, postProgress, setActiveSession, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 import type { VisionRequestMsg } from './protocol.js';
 
@@ -316,6 +316,109 @@ into context:
     },
   );
 
+  /** Pre-flight de FORMA de una escena: refs de personaje y de cara contra el
+   *  catálogo de la petición, volumes, ground y el gate estructural del zod
+   *  (`validateFormatDScene`, donde vive el `role` cerrado). Lo corren
+   *  `narrative_respond` y `scene_validate`, así que el dry-run no puede dar
+   *  por buena una escena que el respond rechaza (QA de BM, F3). Las refs
+   *  solo se miran con `conCatalogo`: el catálogo es el de la petición de
+   *  escena PENDIENTE, y sin ella no hay contra qué mirarlas. */
+  function preflightDeEscena(
+    scene: Record<string, unknown>,
+    donde: { kind?: string; req?: string | null },
+    conCatalogo: boolean,
+  ): ReturnType<typeof rechazo> | null {
+    // Refs de personaje elegidas por NPC: la elección debe existir en
+    // el catálogo del pack (world.style_refs.characters de la
+    // petición). Fuera de catálogo se rebota con los ids válidos —
+    // nunca degradar en silencio una elección del motor.
+    if (conCatalogo && currentCharacterRefIds !== null && Array.isArray(scene.entities)) {
+      for (const ent of scene.entities as Array<Record<string, unknown>>) {
+        if (ent?.kind !== 'npc') continue;
+        const ref = ent.style_ref;
+        if (typeof ref === 'string' && ref && !currentCharacterRefIds.includes(ref)) {
+          return rechazo(
+            'style_ref',
+            `Invalid style_ref "${ref}" on npc "${String(ent.id ?? '?')}" — it must be one ` +
+              `of the ids in world.style_refs.characters (${currentCharacterRefIds.join(', ')}). ` +
+              `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
+            donde,
+          );
+        }
+      }
+    }
+    // surface_ref de volúmenes (refs de CARA del atlas fps): cada id
+    // debe existir en world.style_refs.fps_faces; declarar refs sin
+    // catálogo también rebota — nunca degradar en silencio la
+    // elección del motor (el server además degrada con warning por
+    // robustez ante clientes viejos).
+    if (conCatalogo && Array.isArray(scene.volumes)) {
+      const declared: Array<{ vol: string; ref: string }> = [];
+      for (const rawVol of scene.volumes as Array<Record<string, unknown>>) {
+        if (!rawVol || typeof rawVol !== 'object') continue;
+        const volId = String(rawVol.id ?? '?');
+        const sr = rawVol.surface_ref;
+        if (typeof sr === 'string' && sr) declared.push({ vol: volId, ref: sr });
+        else if (sr && typeof sr === 'object') {
+          for (const v of Object.values(sr as Record<string, unknown>)) {
+            if (typeof v === 'string' && v) declared.push({ vol: volId, ref: v });
+          }
+        }
+        const parts = rawVol.parts;
+        if (Array.isArray(parts)) {
+          for (const part of parts as Array<Record<string, unknown>>) {
+            if (part && typeof part.ref === 'string' && part.ref) {
+              declared.push({ vol: volId, ref: part.ref });
+            }
+          }
+        }
+      }
+      if (declared.length > 0 && currentFpsFaceRefIds === null) {
+        return rechazo(
+          'surface_ref_sin_catalogo',
+          `Invalid surface_ref on volume "${declared[0].vol}" — this style pack declares ` +
+            `no fps face references (world.style_refs.fps_faces is absent): remove every ` +
+            `surface_ref and call narrative_respond again (do NOT drop the rest of the scene).`,
+          donde,
+        );
+      }
+      const bad = currentFpsFaceRefIds === null
+        ? undefined
+        : declared.find((d) => !currentFpsFaceRefIds!.includes(d.ref));
+      if (bad) {
+        return rechazo(
+          'surface_ref',
+          `Invalid surface_ref "${bad.ref}" on volume "${bad.vol}" — it must be one of ` +
+            `the ids in world.style_refs.fps_faces (${currentFpsFaceRefIds!.join(', ')}). ` +
+            `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
+          donde,
+        );
+      }
+    }
+    if (scene.volumes !== undefined) {
+      const check = validateVolumes(scene.volumes);
+      if (!check.ok) {
+        return rechazo('volumes', `Invalid volumes — fix them and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}`, donde);
+      }
+    }
+    if (scene.ground !== undefined) {
+      const check = validateGroundFeatures(scene.ground);
+      if (!check.ok) {
+        return rechazo('ground', `Invalid ground — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}`, donde);
+      }
+    }
+    // Gate ESTRUCTURAL del top-level (entities, tile/biome,
+    // ground/volumes): antes NO se validaba en el camino del modelo
+    // — ai_server lo degradaba en silencio (filas de terrain rellenadas,
+    // entities clampadas). Ahora el error vuelve al modelo. La
+    // jugabilidad la valida /scene/validate más abajo.
+    const structural = validateFormatDScene(scene);
+    if (!structural.ok) {
+      return rechazo('forma_escena', `Invalid scene shape — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${structural.error}`, donde);
+    }
+    return null;
+  }
+
   server.tool(
     'narrative_respond',
     'Send your answer back to the Python AI server. Call exactly once after each ' +
@@ -359,95 +462,8 @@ into context:
         // re-responda (el saneador del ai_server descartaba en silencio y un
         // prop malformado dejaba el tile sin un solo edificio).
         if (kind === 'scene') {
-          const scene = parsed as Record<string, unknown>;
-          // Refs de personaje elegidas por NPC: la elección debe existir en
-          // el catálogo del pack (world.style_refs.characters de la
-          // petición). Fuera de catálogo se rebota con los ids válidos —
-          // nunca degradar en silencio una elección del motor.
-          if (currentCharacterRefIds !== null && Array.isArray(scene.entities)) {
-            for (const ent of scene.entities as Array<Record<string, unknown>>) {
-              if (ent?.kind !== 'npc') continue;
-              const ref = ent.style_ref;
-              if (typeof ref === 'string' && ref && !currentCharacterRefIds.includes(ref)) {
-                return rechazo(
-                  'style_ref',
-                  `Invalid style_ref "${ref}" on npc "${String(ent.id ?? '?')}" — it must be one ` +
-                    `of the ids in world.style_refs.characters (${currentCharacterRefIds.join(', ')}). ` +
-                    `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
-                  { kind, req: currentRequestId },
-                );
-              }
-            }
-          }
-          // surface_ref de volúmenes (refs de CARA del atlas fps): cada id
-          // debe existir en world.style_refs.fps_faces; declarar refs sin
-          // catálogo también rebota — nunca degradar en silencio la
-          // elección del motor (el server además degrada con warning por
-          // robustez ante clientes viejos).
-          if (Array.isArray(scene.volumes)) {
-            const declared: Array<{ vol: string; ref: string }> = [];
-            for (const rawVol of scene.volumes as Array<Record<string, unknown>>) {
-              if (!rawVol || typeof rawVol !== 'object') continue;
-              const volId = String(rawVol.id ?? '?');
-              const sr = rawVol.surface_ref;
-              if (typeof sr === 'string' && sr) declared.push({ vol: volId, ref: sr });
-              else if (sr && typeof sr === 'object') {
-                for (const v of Object.values(sr as Record<string, unknown>)) {
-                  if (typeof v === 'string' && v) declared.push({ vol: volId, ref: v });
-                }
-              }
-              const parts = rawVol.parts;
-              if (Array.isArray(parts)) {
-                for (const part of parts as Array<Record<string, unknown>>) {
-                  if (part && typeof part.ref === 'string' && part.ref) {
-                    declared.push({ vol: volId, ref: part.ref });
-                  }
-                }
-              }
-            }
-            if (declared.length > 0 && currentFpsFaceRefIds === null) {
-              return rechazo(
-                'surface_ref_sin_catalogo',
-                `Invalid surface_ref on volume "${declared[0].vol}" — this style pack declares ` +
-                  `no fps face references (world.style_refs.fps_faces is absent): remove every ` +
-                  `surface_ref and call narrative_respond again (do NOT drop the rest of the scene).`,
-                { kind, req: currentRequestId },
-              );
-            }
-            const bad = currentFpsFaceRefIds === null
-              ? undefined
-              : declared.find((d) => !currentFpsFaceRefIds!.includes(d.ref));
-            if (bad) {
-              return rechazo(
-                'surface_ref',
-                `Invalid surface_ref "${bad.ref}" on volume "${bad.vol}" — it must be one of ` +
-                  `the ids in world.style_refs.fps_faces (${currentFpsFaceRefIds!.join(', ')}). ` +
-                  `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
-                { kind, req: currentRequestId },
-              );
-            }
-          }
-          if (scene.volumes !== undefined) {
-            const check = validateVolumes(scene.volumes);
-            if (!check.ok) {
-              return rechazo('volumes', `Invalid volumes — fix them and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}`, { kind, req: currentRequestId });
-            }
-          }
-          if (scene.ground !== undefined) {
-            const check = validateGroundFeatures(scene.ground);
-            if (!check.ok) {
-              return rechazo('ground', `Invalid ground — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}`, { kind, req: currentRequestId });
-            }
-          }
-          // Gate ESTRUCTURAL del top-level (entities, tile/biome,
-          // ground/volumes): antes NO se validaba en el camino del modelo
-          // — ai_server lo degradaba en silencio (filas de terrain rellenadas,
-          // entities clampadas). Ahora el error vuelve al modelo. La
-          // jugabilidad la valida /scene/validate más abajo.
-          const structural = validateFormatDScene(scene);
-          if (!structural.ok) {
-            return rechazo('forma_escena', `Invalid scene shape — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${structural.error}`, { kind, req: currentRequestId });
-          }
+          const rebote = preflightDeEscena(parsed as Record<string, unknown>, { kind, req: currentRequestId }, true);
+          if (rebote) return rebote;
         }
         if (kind === 'develop_world') {
           // style_id incluido: la plantilla lo exige (elegir de
@@ -600,6 +616,18 @@ into context:
       } catch {
         return { content: [{ type: 'text', text: 'scene_json is not valid JSON' }], isError: true };
       }
+      // La misma FORMA que exige narrative_respond, antes de la jugabilidad:
+      // sin esto el dry-run daba `ok: true` a un `role: "herrero"` que el
+      // respond rebota (QA de BM, F3). Con catálogo solo si hay una petición
+      // de escena pendiente, que es de donde sale.
+      if (scene && typeof scene === 'object' && !Array.isArray(scene)) {
+        const rebote = preflightDeEscena(
+          scene as Record<string, unknown>,
+          { kind: 'scene_validate', req: currentRequestId },
+          currentRequestId !== null && currentKind === 'scene',
+        );
+        if (rebote) return rebote;
+      }
       const result = await bridgePost('/scene/validate', { scene });
       const report = reportBridge(result);
       // `reportBridge` deriva isError del ESTADO HTTP, y /scene/validate
@@ -681,8 +709,10 @@ into context:
         `0.5 m, col,row >= 0, w,h >= 1, col+w <= ${TILE_CELLS}, row+h <= ${TILE_CELLS}. ` +
         'The rect is the place\'s FOOTPRINT (built-up area of a settlement, a ' +
         'building and its yard, a landmark and its ground), not a landing spot: ' +
-        'the bridge activates the place (and fires its triggers) while the ' +
-        'player stands inside it — where rects overlap, the smallest wins — and ' +
+        'the player is in every place whose footprint contains them: entering ' +
+        'it fires its player_entered triggers and stepping out fires ' +
+        'player_left (a tavern inside its village does not take the player ' +
+        'out of the village; the smallest is the active place), and ' +
         'a player travelling to the place appears at a free spot near the rect ' +
         'centre (without rect: the whole tile, centre of the tile). While ' +
         'generating the tile of generate_tile.place, call this BEFORE ' +
@@ -705,9 +735,15 @@ into context:
           return rechazo('attrs_json', 'attrs_json is not valid JSON', { kind: 'map_upsert_place' });
         }
       }
-      return reportBridge(await bridgePost('/map/place', {
+      const resultado = await bridgePost('/map/place', {
         id, kind, parent_id, name, description, approx_position, approx_radius, attrs, anchor,
-      }));
+      });
+      // El rechazo del BRIDGE (un parent_id que no existe, un ciclo) también
+      // es un rechazo de mapa, y deja su línea como los del pre-flight (F4).
+      if (!resultado.ok) {
+        return rechazo('bridge', reportBridge(resultado).content[0].text, { kind: 'map_upsert_place' });
+      }
+      return reportBridge(resultado);
     },
   );
 
@@ -1033,6 +1069,10 @@ into context:
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  // Los errores de tool que NO pasan por `rechazo()` —la validación de
+  // argumentos del SDK, una tool que no existe, los `isError` del resto de
+  // tools— también dejan su línea en stderr (QA de BM, F4).
+  vigilarErroresDeTool(transport);
   console.error('[narrative-mcp] MCP server running on stdio');
 }
 

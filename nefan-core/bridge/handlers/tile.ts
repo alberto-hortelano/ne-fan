@@ -5,7 +5,7 @@
 import {
   attachWorldVocabulary,
   broadcastScene,
-  fireMapTriggers,
+  fireMapCrossing,
   npcSync,
   sessionChangedError,
   type BridgeContext,
@@ -16,8 +16,8 @@ import { loadWorldDoc } from "../../src/games/loader.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
 import { TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoord } from "../../src/scene/tile.js";
 import { oppositeEdge } from "../../src/world-map/edges.js";
-import { lugarEnLaCelda } from "../../src/world-map/lugar-en-la-celda.js";
-import type { Edge } from "../../src/world-map/types.js";
+import { cadenaEnLaCelda, cruceDeCadenas, lugarDelTile } from "../../src/world-map/lugar-en-la-celda.js";
+import type { Edge, Place } from "../../src/world-map/types.js";
 import type { LlmContext } from "../../src/narrative/types.js";
 import { motivoParaElJugador } from "../../src/protocol/status-motivo.js";
 import type { RequestTileMessage } from "../../src/protocol/messages.js";
@@ -30,6 +30,13 @@ const EDGE_ES: Record<Edge, string> = {
   east: "este",
   west: "oeste",
 };
+
+/** Tope de `anchored_places` en una petición: cada uno viaja con su
+ *  descripción, y un tile con cuarenta sitios anclados eran ~15 k caracteres
+ *  más por petición (QA de BM, F5). Pasan los primeros del mapa; los demás se
+ *  cuentan en `anchored_places_omitted` para que el motor sepa que existen y
+ *  los lea con `map_get` si los necesita. */
+export const ANCHORED_PLACES_MAX = 12;
 
 /** Contexto de generación de un tile: vecinos existentes (bioma + cruces del
  *  borde compartido, `at` espejo sin transformación), entrada del jugador y
@@ -69,36 +76,46 @@ export function buildGenerateTileCtx(
   // motor los construya dentro y no sobre una geometría que ya no existe.
   type GenTile = NonNullable<LlmContext["generate_tile"]>;
   const nearby: GenTile["nearby_places"] = [];
-  const anclados: GenTile["anchored_places"] = [];
-  let place: GenTile["place"];
+  const aqui: Place[] = [];
   for (const p of Object.values(ctx.narrative.worldMap.map.places)) {
-    const rect = p.anchor?.rect ? { rect: p.anchor.rect } : {};
-    const comoLugar = {
-      id: p.id,
-      name: p.name,
-      kind: p.kind,
-      description: p.description,
-      attrs: p.attrs,
-      ...rect,
-    };
-    if (p.id === placeId) {
-      place = comoLugar;
-      continue;
-    }
+    if (p.id === placeId) continue;
     const realizedTile = p.realized_scene_id
       ? ctx.narrative.scenes_loaded[p.realized_scene_id]?.tile
       : undefined;
     const coord: TileCoord | undefined = p.anchor ?? realizedTile;
     if (!coord) continue;
-    if (coord.tx === tx && coord.ty === ty) {
-      if (placeId === undefined && place === undefined) place = comoLugar;
-      else anclados.push({ id: p.id, name: p.name, kind: p.kind, description: p.description, ...rect });
-      continue;
-    }
-    if (Math.abs(coord.tx - tx) <= 2 && Math.abs(coord.ty - ty) <= 2) {
+    if (coord.tx === tx && coord.ty === ty) aqui.push(p);
+    else if (Math.abs(coord.tx - tx) <= 2 && Math.abs(coord.ty - ty) <= 2) {
       nearby.push({ id: p.id, name: p.name, kind: p.kind, tile: [coord.tx, coord.ty] });
     }
   }
+
+  // Sin `placeId`, el lugar que ES el tile sale de la MISMA regla que la
+  // activación por posición (`lugarDelTile`): el anclado sin rect, que es el
+  // que se activa fuera de toda huella, o si no la huella mayor. Antes era el
+  // primero del mapa, y un sitio con rect insertado antes que su pueblo se
+  // llevaba el tile entero (#465, F2). Un lugar realizado aquí sin anchor
+  // cuenta como el tile entero, igual que para el `place_id` del tile.
+  const conAnchor = aqui.map((p) => ({ id: p.id, anchor: p.anchor ?? { tx, ty } }));
+  const elDelTile = placeId !== undefined
+    ? ctx.narrative.worldMap.get(placeId)
+    : ctx.narrative.worldMap.get(lugarDelTile(conAnchor, { tx, ty }) ?? "");
+  const conRect = (p: Place) => (p.anchor?.rect ? { rect: p.anchor.rect } : {});
+  const place: GenTile["place"] = elDelTile
+    ? {
+        id: elDelTile.id,
+        name: elDelTile.name,
+        kind: elDelTile.kind,
+        description: elDelTile.description,
+        attrs: elDelTile.attrs,
+        ...conRect(elDelTile),
+      }
+    : undefined;
+  const otros = aqui.filter((p) => p.id !== elDelTile?.id);
+  const anclados: GenTile["anchored_places"] = otros
+    .slice(0, ANCHORED_PLACES_MAX)
+    .map((p) => ({ id: p.id, name: p.name, kind: p.kind, description: p.description, ...conRect(p) }));
+  const omitidos = otros.length - anclados.length;
 
   return {
     tx,
@@ -108,6 +125,7 @@ export function buildGenerateTileCtx(
     entry: approachEdge ? { edge: oppositeEdge(approachEdge) } : undefined,
     ...(place ? { place } : {}),
     anchored_places: anclados,
+    ...(omitidos > 0 ? { anchored_places_omitted: omitidos } : {}),
     nearby_places: nearby,
   };
 }
@@ -372,6 +390,37 @@ export async function handleRequestTile(
   }
 }
 
+/** Los lugares cuyas huellas contienen el punto (x, z), de fuera adentro
+ *  (`cadenaEnLaCelda` sobre la celda del tile bajo el punto). */
+export function cadenaEnElPunto(ctx: BridgeContext, x: number, z: number): string[] {
+  const t = worldToTile(x, z);
+  const rect = tileWorldRect(t.tx, t.ty);
+  const col = Math.floor((x - rect.minX) / TILE_MPC);
+  const row = Math.floor((z - rect.minZ) / TILE_MPC);
+  return cadenaEnLaCelda(Object.values(ctx.narrative.worldMap.map.places), t, col, row);
+}
+
+/** El jugador pasa a estar en `cadena` (los lugares cuyas huellas le
+ *  contienen, de fuera adentro): dispara `player_left` de los que deja y
+ *  `player_entered`/`first_visit` de aquellos en los que entra —solo esos:
+ *  entrar en la posada no es salir del barrio, y quedarse en el barrio no es
+ *  volver a entrar— y activa el más interior.
+ *
+ *  En campo abierto (cadena vacía) se dispara la salida, pero
+ *  `active_place_id` se queda con el último lugar: es de lo que tira el panel
+ *  «Salidas» de un tile sin lugar (`placeDeLaEscena`) y el origen del rayo
+ *  de un viaje, y la raíz no tiene enlaces. */
+export async function pasarALaCadena(ctx: BridgeContext, cadena: readonly string[]): Promise<void> {
+  const { salen, entran } = cruceDeCadenas(ctx.posTracking.cadena ?? [], cadena);
+  ctx.posTracking.cadena = cadena;
+  const activo = cadena.at(-1);
+  if (activo !== undefined && ctx.narrative.worldMap.serialize().active_place_id !== activo) {
+    ctx.narrative.worldMap.setActivePlace(activo);
+  }
+  for (const id of entran) ctx.narrative.worldMap.markVisited(id);
+  if (salen.length > 0 || entran.length > 0) await fireMapCrossing(ctx, salen, entran);
+}
+
 /** Activación por POSICIÓN (mundo continuo): al cambiar de celda, activar el
  *  tile pisado y el place cuyo anchor contiene al jugador, disparando los map
  *  triggers (player_entered/left/first_visit). Llamado desde el hot loop de
@@ -406,21 +455,7 @@ export async function activateByPosition(
     npcSync(ctx);
   }
 
-  // Place anclado que contiene la posición (rect en celdas del tile; sin
-  // rect = todo el tile). Entre rects anidados gana el más pequeño.
-  const col = Math.floor((x - rect.minX) / TILE_MPC);
-  const row = Math.floor((z - rect.minZ) / TILE_MPC);
-  const placeId = lugarEnLaCelda(Object.values(ctx.narrative.worldMap.map.places), t, col, row);
-
-  if (placeId && placeId !== ctx.posTracking.placeId) {
-    const prev = ctx.narrative.worldMap.serialize().active_place_id;
-    ctx.posTracking.placeId = placeId;
-    ctx.narrative.worldMap.setActivePlace(placeId);
-    ctx.narrative.worldMap.markVisited(placeId);
-    await fireMapTriggers(ctx, prev, placeId);
-  } else if (!placeId) {
-    ctx.posTracking.placeId = null;
-  }
+  await pasarALaCadena(ctx, cadenaEnElPunto(ctx, x, z));
 
   // Al FINAL, con el tile y el place ya activos: el save lleva los dos y la
   // posición viva (`save()` la refresca del sim antes de escribir).

@@ -388,6 +388,9 @@ export interface LlmContext {
       description: string;
       rect?: [number, number, number, number];
     }>;
+    /** Cuántos anclados más hay en este tile y no caben en el tope de la
+     *  petición (`ANCHORED_PLACES_MAX`); ausente si no se omitió ninguno. */
+    anchored_places_omitted?: number;
     nearby_places: Array<{ id: string; name: string; kind: string; tile?: [number, number] }>;
     /** true solo en el tile de ENTRADA de una partida nueva: lleva `player`.
      *  Con `bootstrap_world_map` el mapa está por sembrar (y el motor dice el

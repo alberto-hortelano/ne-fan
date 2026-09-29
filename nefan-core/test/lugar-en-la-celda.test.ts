@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { lugarEnLaCelda } from "../src/world-map/lugar-en-la-celda.js";
+import { cadenaEnLaCelda, cruceDeCadenas, lugarDelTile, lugarEnLaCelda } from "../src/world-map/lugar-en-la-celda.js";
 import type { Place } from "../src/world-map/types.js";
 
 type Lugar = Pick<Place, "id" | "anchor">;
@@ -63,6 +63,48 @@ describe("lugarEnLaCelda — rects anidados", () => {
       "utf8",
     );
     assert.match(prompt, /where rects overlap, the SMALLEST one is the active place/);
+    // …y la de la cadena: anidar no es salir del de fuera.
+    assert.match(prompt, /entering the tavern does not take the player out of\s+the village/);
+    assert.match(prompt, /stepping out of it fires\s+its player_left/);
     assert.match(prompt, /FOOTPRINT/);
+  });
+});
+
+describe("cadenaEnLaCelda / lugarDelTile / cruceDeCadenas", () => {
+  it("la cadena va de fuera adentro, con el sin rect como el tile entero", () => {
+    assert.deepEqual(cadenaEnLaCelda([posada, comarca, pueblo], T, 35, 35), ["comarca", "pueblo", "posada"]);
+    assert.deepEqual(cadenaEnLaCelda([posada, comarca, pueblo], T, 50, 50), ["comarca", "pueblo"]);
+    assert.deepEqual(cadenaEnLaCelda([posada, comarca, pueblo], T, 100, 100), ["comarca"]);
+    assert.deepEqual(cadenaEnLaCelda([posada, pueblo], T, 100, 100), []);
+    assert.deepEqual(cadenaEnLaCelda([vecino, posada], T, 35, 35), ["posada"]);
+  });
+
+  it("a igual área el primero del mapa es el más INTERIOR de la cadena", () => {
+    const a: Lugar = { id: "a", anchor: { tx: 0, ty: 0, rect: [0, 0, 10, 20] } };
+    const b: Lugar = { id: "b", anchor: { tx: 0, ty: 0, rect: [0, 0, 20, 10] } };
+    assert.deepEqual(cadenaEnLaCelda([a, b], T, 5, 5), ["b", "a"]);
+  });
+
+  it("lugarDelTile: el sin rect gana a cualquier rect aunque vaya después; si no hay, la huella mayor", () => {
+    assert.equal(lugarDelTile([posada, pueblo, comarca], T), "comarca");
+    assert.equal(lugarDelTile([posada, pueblo], T), "pueblo");
+    assert.equal(lugarDelTile([pueblo, posada], T), "pueblo");
+    assert.equal(lugarDelTile([vecino], T), null);
+    const otra: Lugar = { id: "otra", anchor: { tx: 0, ty: 0 } };
+    assert.equal(lugarDelTile([comarca, otra], T), "comarca", "a igual área, el primero");
+  });
+
+  it("lugarDelTile da el mismo lugar que la activación fuera de toda huella", () => {
+    for (const orden of [[posada, pueblo, comarca], [comarca, posada, pueblo], [pueblo, comarca, posada]]) {
+      assert.equal(lugarDelTile(orden, T), lugarEnLaCelda(orden, T, 127, 127));
+    }
+  });
+
+  it("cruceDeCadenas: salen de dentro afuera, entran de fuera adentro, lo común no dispara", () => {
+    assert.deepEqual(cruceDeCadenas(["pueblo"], ["pueblo", "posada"]), { salen: [], entran: ["posada"] });
+    assert.deepEqual(cruceDeCadenas(["pueblo", "posada"], ["pueblo"]), { salen: ["posada"], entran: [] });
+    assert.deepEqual(cruceDeCadenas(["comarca", "pueblo", "posada"], []), { salen: ["posada", "pueblo", "comarca"], entran: [] });
+    assert.deepEqual(cruceDeCadenas([], ["comarca", "pueblo"]), { salen: [], entran: ["comarca", "pueblo"] });
+    assert.deepEqual(cruceDeCadenas(["a", "b"], ["a", "c"]), { salen: ["b"], entran: ["c"] });
   });
 });
