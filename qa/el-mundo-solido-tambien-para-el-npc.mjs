@@ -14,11 +14,15 @@
  *  PRODUCCIÓN y no uno escrito aquí — ver `simDeLaSesion`). Lee
  *  `nefan-core/dist`, o sea lo compilado, no una reimplementación.
  *
- *  LO QUE AFIRMA (rojo si falla): las cinco reglas que la PR promete.
+ *  LO QUE AFIRMA (rojo si falla):
  *    1. control — sin caja el aldeano cruza y llega (si no, lo demás no mide);
- *    2. la caja de runtime FRENA — penetración máxima 0,000 m;
- *    3. la geometría del TILE no se atraviesa NUNCA, ni estando encajonado;
- *    4. el escape del encajonado EXISTE y SE DECLARA, con NPC y caja;
+ *    2. la caja de runtime FRENA — penetración máxima 0,000 m — y el aldeano
+ *       la RODEA y llega a su meta (#618: antes pisaba en el sitio delante);
+ *    3. la geometría del TILE no se atraviesa NUNCA: con un camino legal lo
+ *       RODEA (sin pisar el agua ni atravesar nada), y encajonado de verdad
+ *       tampoco la cruza;
+ *    4. el cercado SIN camino se PARA y deja su meta al motor
+ *       (`suspended_goal` `no_path`), sin anunciar ningún escape;
  *    5. al que le cae una caja encima no se le encierra (a nivel de consulta:
  *       alejarse del centro nunca bloquea);
  *    6. y al que le cae encima DE VERDAD, con el sim moviéndolo, se le SACA:
@@ -26,7 +30,9 @@
  *    7. también al que NO va a ningún sitio (campesino sin directiva, granero
  *       de 10 m encima): sale, y luego pasea alrededor de donde salió;
  *    8. y al que tiene `hold`: sale, y fuera se queda quieto;
- *    9. y al que YA LLEGÓ a su meta cuando el motor le pone la caja encima.
+ *    9. y al que YA LLEGÓ a su meta cuando el motor le pone la caja encima;
+ *   10. el MISMO obstáculo, lo ponga el tile o el motor, se rodea igual: los
+ *       dos llegan, y en tiempos que no difieren más de un 10 %.
  *
  *  Del 7 al 9 fueron el tercer `⚠ HALLAZGO` de este guion (QA de #583: «al que
  *  no va a ningún sitio la salida no le alcanza», 0,00 m en 120 s) hasta la
@@ -45,13 +51,26 @@
  *  `porDondeSalirDeAqui`. Se queda rojo si alguien vuelve a fiarse de que «sale
  *  solo».
  *
- *  LO QUE MIDE Y REGISTRA SIN PONERLO ROJO (`⚠ HALLAZGO`): que el steering por
- *  deflexión NO rodea un obstáculo centrado en su camino —pisa en el sitio
- *  delante de él, con la animación de andar puesta—. No se pone rojo porque no es de esta PR ni de esta frontera:
- *  es el `TODO(A*)` de `npc-behavior.ts` y le pasa IGUAL a la geometría del
- *  tile, que es sólida desde #232 (este guion lo mide con las dos fuentes en la
- *  misma posición, y dan lo mismo). Se registra porque es lo que ve quien juega
- *  y porque el día que haya pathfinding tiene que cambiar de número.
+ *  El 2 (su segunda mitad), el 3 y el 10 fueron hasta la tanda BO (#618,
+ *  pieza A) dos `⚠ HALLAZGO` que se medían sin ponerse rojos: el steering por
+ *  deflexión NO rodeaba un obstáculo centrado en su camino —57 s de 60
+ *  pisando en el sitio delante del carro, x máx −3,50—, igual con las dos
+ *  fuentes (x máx −3,00 las dos en 300 s). Hoy el NPC busca camino con un A*
+ *  sobre la colisión del sim (`bridge/sim-collision.ts` → `buscarRuta`), así
+ *  que son asertos. El 2 decía antes «y no sale por el otro lado», que
+ *  defendía el síntoma.
+ *
+ *  Probado en negativo contra el ÁRBOL (tanda BO, recompilando `dist`): con
+ *  `buscarRuta` cortado en `bridge/context.ts` (devolviendo siempre un plan
+ *  fallido) este guion sale con 1 — cinco rojos, en el 2, el 3 y el 10.
+ *
+ *  LO QUE NO SUJETA: el escape por caja de `rumboDePaso` para el que va a un
+ *  sitio. Desde la QA de BO, el que no tiene camino no anda (se para y deja la
+ *  meta al motor), así que el 4 ya no lo ejerce; el escape sigue existiendo
+ *  para quien anda sin ruta (huir, intervenir, pasear) y lo sujetan los
+ *  unitarios de `npc-behavior.test.ts`. Tampoco sujeta que el escape ACABE
+ *  fuera: con BL, un paso dentro de la muralla lo devuelve la salida del
+ *  sólido (medido en `main` antes de BO).
  *
  *  Uso: `node qa/el-mundo-solido-tambien-para-el-npc.mjs`
  *  (exige `cd nefan-core && npm run build` antes: lee `dist/`).
@@ -71,7 +90,6 @@ const ok = (cond, msg, detalle = "") => {
   console.log(`  ${cond ? "✔" : "✖"} ${msg}${detalle ? ` — ${detalle}` : ""}`);
   if (!cond) rojos++;
 };
-const hallazgo = (msg) => console.log(`  ⚠ HALLAZGO ${msg}`);
 
 /** Un tile de campo abierto. Con `agua` se pone una columna sólida del
  *  `terrain_grid` en x ≈ +8 (filas 40..88), que es geometría DEL TILE. */
@@ -97,9 +115,10 @@ function tile({ agua = false } = {}) {
  *  incluido. Nada de estado sintético — es `recordEntitySpawned` con los
  *  mismos argumentos que `consequence-handler.ts:142`. */
 function elMotorPone(s, id, x, z, celdas, kind = "object") {
+  const footprint = Array.isArray(celdas) ? celdas : [celdas, celdas];
   s.recordEntitySpawned(
     id, kind, "tile_0_0", { x, y: 0, z },
-    { name: id, footprint: [celdas, celdas] }, SPAWN_DE_RUNTIME, `ev_${id}`,
+    { name: id, footprint }, SPAWN_DE_RUNTIME, `ev_${id}`,
   );
 }
 
@@ -112,6 +131,10 @@ function laPlaza(s, meta) {
     anchor: { tx: 0, ty: 0, rect: [(meta.x + 32) / 0.5, (meta.z + 32) / 0.5, 0, 0] },
   });
 }
+
+/** ¿El CUERPO del NPC pisa la columna de agua de `tile({ agua: true })`? Celdas
+ *  80 (x 8,0..8,5) × filas 40..88 (z −12..12), con el radio. */
+const enAgua = (p) => p.x + RADIO_NPC > 8 && p.x - RADIO_NPC < 8.5 && Math.abs(p.z) < 12 + RADIO_NPC;
 
 /** EL SIM DE LA SESIÓN, montado por PRODUCCIÓN y no por este guion.
  *
@@ -138,23 +161,26 @@ function simDeLaSesion(s, meta) {
  *  se le señale, y los avisos del escape que soltó por el camino. */
 function aldeanoVaA(s, { desde, meta, segundos, caja = null }) {
   const { sys } = simDeLaSesion(s, meta);
-  sys.addNpc({
+  const registro = {
     id: "aldeano", type: "npc", scene_id: "tile_0_0",
     spawned_at: "2026-01-01T00:00:00.000Z",
     spawn_reason: "scene_init", spawn_event_id: "",
     position: [desde.x, 0, desde.z],
     data: { role: "villager", directive: { type: "goto_place", target_place_id: "plaza" } },
     asset_refs: [],
-  });
+  };
+  sys.addNpc(registro);
   const avisos = [];
   const warn = console.warn;
   console.warn = (...a) => { avisos.push(a.map(String).join(" ")); };
-  let xMax = -Infinity, penMax = 0, ticksMoviendose = 0;
+  let xMax = -Infinity, penMax = 0, ticksMoviendose = 0, llegadaEn = null, ticksEnAgua = 0;
   const ctx = { playerPos: { x: 1000, y: 0, z: 1000 }, combatEvents: [], combatantPositions: new Map() };
   try {
     for (let i = 0; i < segundos / TICK; i++) {
-      sys.tick(TICK, ctx);
+      const ev = sys.tick(TICK, ctx);
+      if (llegadaEn === null && ev.some((e) => e.type === "npc_reached_place")) llegadaEn = (i + 1) * TICK;
       const st = sys.states()[0];
+      if (enAgua(st.pos)) ticksEnAgua++;
       xMax = Math.max(xMax, st.pos.x);
       if (st.moving) ticksMoviendose++;
       if (caja) {
@@ -165,7 +191,10 @@ function aldeanoVaA(s, { desde, meta, segundos, caja = null }) {
     }
   } finally { console.warn = warn; }
   const st = sys.states()[0];
-  return { xMax, penMax, avisos, ticksMoviendose, fin: { x: st.pos.x, z: st.pos.z }, mode: st.mode, moving: st.moving };
+  return {
+    xMax, penMax, avisos, ticksMoviendose, llegadaEn, ticksEnAgua, data: registro.data,
+    fin: { x: st.pos.x, z: st.pos.z }, mode: st.mode, moving: st.moving,
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -174,7 +203,7 @@ const control = aldeanoVaA(tile(), { desde: { x: -12, z: 0 }, meta: { x: 12, z: 
 ok(control.xMax > 9, "el aldeano llega a la plaza cuando no hay nada en medio",
   `x máx ${control.xMax.toFixed(2)} m`);
 
-console.log("\n2 · LA CAJA DEL MOTOR FRENA AL NPC (#583: antes la atravesaba entera)");
+console.log("\n2 · LA CAJA DEL MOTOR FRENA AL NPC (#583) Y EL NPC LA RODEA (#618)");
 const sCarro = tile();
 elMotorPone(sCarro, "carro_del_mercader", 0, 0, 12);          // 6 × 6 m
 const carro = aldeanoVaA(sCarro, {
@@ -183,26 +212,59 @@ const carro = aldeanoVaA(sCarro, {
 });
 ok(carro.penMax === 0, "penetración MÁXIMA en el carro = 0,000 m en 60 s",
   `medido ${carro.penMax.toFixed(3)} m`);
-ok(carro.xMax < 0, "y no sale por el otro lado", `x máx ${carro.xMax.toFixed(2)} m`);
+ok(carro.xMax > 9 && carro.llegadaEn !== null, "y la RODEA: llega a la plaza, al otro lado del carro",
+  `x máx ${carro.xMax.toFixed(2)} m, llegada ${carro.llegadaEn === null ? "nunca" : `${carro.llegadaEn.toFixed(1)} s`} ` +
+  `(antes de #618: x máx −3,50, 57 s de 60 pisando en el sitio)`);
 ok(carro.avisos.filter((a) => a.includes("ATRAVIESA")).length === 0,
   "sin escape: le quedaban rumbos legales, así que no se atraviesa nada");
 
-console.log("\n3 · LA GEOMETRÍA DEL TILE NO SE ATRAVIESA NUNCA, ni encajonado");
-const sAgua = tile({ agua: true });
-elMotorPone(sAgua, "muralla_norte", 6, 6, 40, "building");    // 20 m
-elMotorPone(sAgua, "muralla_sur", 6, -6, 40, "building");     // 20 m
-const cercado = aldeanoVaA(sAgua, { desde: { x: 6, z: 0 }, meta: { x: 30, z: 0 }, segundos: 60 });
-ok(cercado.fin.x < 8, "el aldeano cercado NO cruza el agua del terrain_grid",
-  `acabó en (${cercado.fin.x.toFixed(2)}, ${cercado.fin.z.toFixed(2)}); el agua empieza en x ≈ 8,0`);
+console.log("\n3 · LA GEOMETRÍA DEL TILE NO SE ATRAVIESA NUNCA: con camino la rodea, encajonado tampoco la cruza");
+// Un pasillo entre dos murallas de runtime (x −4..16), cortado al este por el
+// agua del tile (x 8..8,5, z −12..12); la meta, al otro lado del agua.
+//  · ABIERTO, de 4 m: el camino LEGAL existe —salir por el oeste del pasillo y
+//    bajar por debajo del agua—. Antes de #618 se resolvía atravesando una
+//    muralla, porque el abanico no sabe rodear.
+//  · CERRADO de verdad: 1 m de ancho —el cuerpo justo, sin sitio para girar
+//    ninguno de los siete rumbos— y una tercera muralla al oeste. No hay
+//    camino, y es el caso para el que existe el escape.
+function pasillo({ cerrado }) {
+  const s = tile({ agua: true });
+  const semi = cerrado ? 0.5 : 2;
+  elMotorPone(s, "muralla_norte", 6, semi + 1, [40, 4], "building");
+  elMotorPone(s, "muralla_sur", 6, -semi - 1, [40, 4], "building");
+  if (cerrado) elMotorPone(s, "muralla_oeste", -5, 0, [2, 10], "building"); // x −5..−4
+  return aldeanoVaA(s, { desde: { x: 6, z: 0 }, meta: { x: 30, z: 0 }, segundos: 120 });
+}
+const rodeo = pasillo({ cerrado: false });
+ok(rodeo.ticksEnAgua === 0, "con camino legal, el cuerpo NO pisa el agua del terrain_grid",
+  `${rodeo.ticksEnAgua} ticks sobre el agua`);
+ok(rodeo.llegadaEn !== null, "…y llega a la meta RODEANDO el pasillo y el agua",
+  rodeo.llegadaEn === null ? `acabó en (${rodeo.fin.x.toFixed(2)}, ${rodeo.fin.z.toFixed(2)})` : `llegó en ${rodeo.llegadaEn.toFixed(1)} s`);
+ok(rodeo.avisos.filter((a) => a.includes("ATRAVIESA")).length === 0,
+  "…sin atravesar ninguna muralla: pudiendo rodear, rodear no es el escape");
+const cercado = pasillo({ cerrado: true });
+ok(cercado.ticksEnAgua === 0, "cercado de verdad (tres murallas + agua): el cuerpo NO pisa el agua",
+  `${cercado.ticksEnAgua} ticks sobre el agua; acabó en (${cercado.fin.x.toFixed(2)}, ${cercado.fin.z.toFixed(2)})`);
 
-console.log("\n4 · EL ESCAPE DEL ENCAJONADO EXISTE Y SE DECLARA");
-const escapes = cercado.avisos.filter((a) => a.includes("ATRAVIESA"));
-ok(escapes.length > 0, "cercado de verdad (muro del tile + dos cajas): atraviesa UNA CAJA",
-  `${escapes.length} aviso(s)`);
-ok(escapes.some((a) => a.includes("aldeano")), "el aviso nombra al NPC");
-ok(escapes.some((a) => a.includes("muralla_")), "el aviso nombra la CAJA por su id",
-  escapes[0] ? escapes[0].slice(0, 120) : "sin aviso");
+console.log("\n4 · EL CERCADO SIN CAMINO: SE PARA Y DEJA LA META AL MOTOR (QA de BO, H3)");
+// Hasta la QA de BO aquí se afirmaba que el escape por caja «existe y se
+// declara», y se declaraba sin ocurrir: el NPC metía un paso en la muralla,
+// la salida de BL lo devolvía y así para siempre, andando en el sitio con la
+// mirada temblando. Decisión del usuario: «que el estado le llegue al motor de
+// narrativa y él decide». El que no tiene camino se para y suspende su meta
+// (`suspended_goal`, `reason: "no_path"`), como el que huye.
+const sinRuta = cercado.avisos.find((a) => a.includes("no encuentra ruta"));
+ok(sinRuta !== undefined, "el cercado no tiene ruta y se dice", sinRuta?.slice(0, 140) ?? "sin aviso");
+const g = cercado.data.suspended_goal;
+ok(g?.reason === "no_path" && g?.field === "directive" && g?.value?.type === "goto_place",
+  "y deja su meta al motor: `suspended_goal` con `reason: \"no_path\"` y la directiva tal cual",
+  JSON.stringify(g));
+ok(cercado.data.directive === null, "…la directiva sale del record: no la re-deriva solo", JSON.stringify(cercado.data.directive));
+ok(cercado.moving === false, "…y se queda QUIETO, sin la animación de andar", `moving=${cercado.moving}`);
+ok(cercado.avisos.filter((a) => a.includes("ATRAVIESA")).length === 0,
+  "…sin anunciar un escape que no va a ocurrir", cercado.avisos.map((a) => a.slice(0, 80)).join(" | "));
 
+// ────────────────────────────────────────────────────────────────────
 console.log("\n5 · AL QUE LE CAE UNA CAJA ENCIMA NO SE LE ENCIERRA (consulta)");
 const sEncima = tile();
 elMotorPone(sEncima, "granero", 0, 0, 20, "building");        // 10 m, con el NPC dentro
@@ -332,12 +394,7 @@ console.log("\n9 · Y AL QUE YA LLEGÓ A SU META CUANDO EL MOTOR LE PONE LA CAJA
     r.saleEn === null ? "no salió en 30 s" : `salió en ${r.saleEn.toFixed(1)} s`);
 }
 
-console.log("\n⚠ LO QUE ESTO NO ARREGLA — medido, registrado y NO puesto en rojo");
-console.log("   (es el `TODO(A*)` de `npc-behavior.ts`, no el escape: le quedaban rumbos legales)");
-
-hallazgo(`el aldeano se planta ante el carro de 6 m y NO lo rodea: en 60 s llegó a x=${carro.xMax.toFixed(2)} ` +
-  `(la cara del carro está en −3,50) y pasó ${(carro.ticksMoviendose * TICK).toFixed(0)} s de 60 con ` +
-  `moving=true, o sea con la animación de ANDAR puesta, sin avanzar`);
+console.log("\n10 · EL MISMO OBSTÁCULO SE RODEA IGUAL LO PONGA QUIEN LO PONGA (#618: eran dos ⚠ HALLAZGO)");
 
 // El mismo obstáculo, mismo tamaño y MISMO CENTRO, puesto por las dos vías.
 // Ojo al anclaje: `cell` es la ESQUINA de la huella, así que un `[12,12]` en
@@ -356,10 +413,15 @@ const delTile = aldeanoVaA(sTile, { desde: { x: -12, z: CENTRO }, meta: { x: 14,
 const sRt = tile();
 elMotorPone(sRt, "carro", CENTRO, CENTRO, 12);
 const deRuntime = aldeanoVaA(sRt, { desde: { x: -12, z: CENTRO }, meta: { x: 14, z: CENTRO }, segundos: 300 });
-hallazgo(`el MISMO obstáculo de 6 m, mismo centro (${CENTRO}, ${CENTRO}) y 300 s de juego, se comporta ` +
-  `IGUAL lo ponga quien lo ponga: del TILE → x máx ${delTile.xMax.toFixed(2)}; de RUNTIME → x máx ` +
-  `${deRuntime.xMax.toFixed(2)}. Ninguna de las dos se rodea, y por eso esto es el steering (TODO(A*)) ` +
-  `y no la frontera que abre #583`);
+ok(delTile.xMax >= 12.5 && delTile.llegadaEn !== null, "el cajón del TILE se rodea y se llega",
+  `x máx ${delTile.xMax.toFixed(2)}, llegada ${delTile.llegadaEn?.toFixed(1) ?? "nunca"} s (antes: x máx −3,00)`);
+ok(deRuntime.xMax >= 12.5 && deRuntime.llegadaEn !== null, "el carro de RUNTIME, igual",
+  `x máx ${deRuntime.xMax.toFixed(2)}, llegada ${deRuntime.llegadaEn?.toFixed(1) ?? "nunca"} s (antes: x máx −3,00)`);
+{
+  const [a, b] = [delTile.llegadaEn ?? Infinity, deRuntime.llegadaEn ?? Infinity];
+  ok(Math.abs(a - b) <= 0.1 * Math.min(a, b), "…en tiempos que no difieren más de un 10 %: una sola idea de sólido",
+    `tile ${a.toFixed(2)} s · runtime ${b.toFixed(2)} s`);
+}
 
-console.log(`\n${rojos === 0 ? "✔ los nueve bloques en verde" : `✖ ${rojos} aserto(s) en rojo`}`);
+console.log(`\n${rojos === 0 ? "✔ los diez bloques en verde" : `✖ ${rojos} aserto(s) en rojo`}`);
 process.exit(rojos === 0 ? 0 : 1);

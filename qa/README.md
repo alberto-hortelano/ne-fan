@@ -890,10 +890,12 @@ E, **#583**): el primer guion del banco que afirma que **un NPC no atraviesa nad
 `grep` de asertos sobre conducta de NPC contra geometría era **cero** — lo que sujetaba el arreglo
 eran los tests de core y una sonda en el scratchpad de quien lo escribió. No abre navegador y no
 gasta: el defecto vive en el SERVIDOR (el sim mueve a los NPCs en el bridge), así que monta el
-cableado real de `bridge/context.ts` sobre `nefan-core/dist` y conduce el sim, no el cliente. Nueve
+cableado real de `bridge/context.ts` sobre `nefan-core/dist` y conduce el sim, no el cliente. Diez
 bloques en verde o rojo: el **control** (sin caja, el aldeano llega), que la caja del motor **frena**
-(penetración máxima 0,000 m donde antes cruzaba con 3,500), que la geometría del **tile no se
-atraviesa nunca** ni estando encajonado, que el **escape existe y se declara** con NPC y caja, que al
+(penetración máxima 0,000 m donde antes cruzaba con 3,500) **y se rodea** hasta la meta, que la
+geometría del **tile no se atraviesa nunca** —con camino legal la rodea sin pisar el agua; encajonado
+de verdad tampoco la cruza—, que el **escape existe y se declara** con NPC y caja solo cuando no hay
+ruta, que al
 que le cae una caja encima **no se le encierra** (consulta) y que **se le SACA** (sistema): sale
 andando en 2,5 s por la cara más cercana. El bloque 6 nació como registro de esa misma revisión —290
 s de 300 dentro del carro, con todo lo demás en verde— y es hoy el candado de que «sale solo» no se
@@ -901,16 +903,23 @@ vuelva a dar por bueno. Los bloques 7-9 (tanda BL, **#618** pieza B) eran el ter
 que NO anda —sin directiva con una caja más ancha que su paseo, en `hold`, o ya llegado a su meta— no
 le sacaba nadie (0,00 m en 120 s), porque la salida vivía dentro de `stepTowards`. Hoy vive en la
 cabeza de `move()` y los tres son aserto, con el «luego pasea» del 7 sujetando que su `home` salga
-con él. **Registra sin ponerlo rojo** lo que esto NO arregla: el steering por
-deflexión no rodea un obstáculo centrado en su camino, y no es cosa de esta frontera — el mismo cajón
-de 6 m en el mismo centro da `x máx −3,00` venga del TILE o de RUNTIME. Es el `TODO(A*)` de `npc-behavior.ts` y **hoy no tiene issue**: la decisión de abrírselo es del usuario (H-1 de la QA de #583).
-**PROBADO EN NEGATIVO**, un sabotaje por vez y recompilando `dist`: el bridge sin fuente de cajas →
+con él. El bloque 10 y la segunda mitad del 2 (tanda BO, **#618** pieza A) eran dos `⚠ HALLAZGO`
+medidos sin rojo: el steering por deflexión no rodeaba un obstáculo centrado en su camino —57 s de 60
+pisando en el sitio delante del carro— y el mismo cajón de 6 m daba `x máx −3,00` viniera del TILE o de
+RUNTIME. Hoy el NPC con `goto`/`visit` busca camino con un A\* sobre la colisión del sim
+(`buscarRuta` en `bridge/sim-collision.ts`: terreno, plan y cajas de runtime), y los dos llegan en
+~22 s con menos de un 10 % de diferencia. El 2 decía antes «y no sale por el otro lado», que defendía
+el síntoma. **Lo que no sujeta**: en el pasillo cerrado del bloque 4 el escape se DECLARA pero no se
+COMPLETA —el NPC mete un paso en la muralla y la salida de BL (`salirSiEstaDentro`) lo devuelve al
+pasillo, igual en `main` antes de BO—; el guion afirma el aviso, no que acabe fuera.
+**PROBADO EN NEGATIVO**, un sabotaje por vez y recompilando `dist`: `buscarRuta` cortado en
+`bridge/context.ts` (plan siempre fallido) → 5 rojos en el 2, el 3 y el 10; el bridge sin fuente de cajas →
 7 rojos; el escape aceptando `de:"tile"` → 2; sin la pasada del escape → 3; `cajaBloquea` encerrando
 al de dentro → 1; y sin la consulta de salida → el bloque 6 vuelve a imprimir «siguió
 dentro 290 s de 300» y caen el 7, el 8 y el 9. Unos 40 s, sin navegador y sin créditos:
 
 ```bash
-node qa/el-mundo-solido-tambien-para-el-npc.mjs   # sale 1 si un NPC atraviesa algo o se queda dentro
+node qa/el-mundo-solido-tambien-para-el-npc.mjs   # sale 1 si un NPC atraviesa algo, se queda dentro o no rodea
 ```
 
 Y el cuarto, `qa/el-viaje-no-mete-a-nadie-dentro.mjs` (PR G2 de la tanda G, **#616**, mitad de

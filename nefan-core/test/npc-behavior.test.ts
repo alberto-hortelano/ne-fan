@@ -10,6 +10,7 @@ import {
   type NpcTickContext,
   type NpcWorldAdapter,
 } from "../src/simulation/npc-behavior.js";
+import { rutaPorElSuelo } from "../src/simulation/ruta-por-el-suelo.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
 import {
   cajaQueBloquea,
@@ -49,12 +50,20 @@ function makeRecord(
   };
 }
 
+/** La ruta del mundo abierto: la línea recta hasta el destino, sin mover la
+ *  meta. Con ella el NPC anda exactamente como antes de que hubiera rutas, y
+ *  por eso los tests de conducta que no hablan de rodear no cambian. */
+const lineaRecta: NpcWorldAdapter["buscarRuta"] = (_desde, hasta) =>
+  ({ ok: true, meta: hasta, puntos: [hasta], expansiones: 0, alBorde: false });
+
 /** Mundo abierto sin obstáculos; personalizable por test. */
 function openWorld(overrides: Partial<NpcWorldAdapter> = {}): NpcWorldAdapter {
   return {
     queImpideElPaso: () => null,
     porDondeSalirDeAqui: () => null,
     blocksCircle: () => false,
+    buscarRuta: lineaRecta,
+    huellaDeLaZona: () => "",
     resolvePlaceTarget: () => null,
     getEntityPosition: () => null,
     ...overrides,
@@ -82,6 +91,12 @@ function conCajasDeRuntime(...cajas: CajaDeRuntime[]): Partial<NpcWorldAdapter> 
     },
     porDondeSalirDeAqui: (x, z, r) => salidaDeLasCajas(x, z, r, cajas),
     blocksCircle: (x, z, r) => cajaQueContiene(x, z, r, cajas) !== null,
+    // La RUTA DE VERDAD sobre las mismas cajas: el A* de producción con el
+    // suelo que ve el paso, para que esta batería ejerza el buscador y no un
+    // doble suyo.
+    buscarRuta: (desde, hasta, r, evitar) =>
+      rutaPorElSuelo(desde, hasta, r, { ocupado: (x, z, rr) => cajaQueContiene(x, z, rr, cajas) !== null }, undefined, evitar),
+    huellaDeLaZona: () => JSON.stringify(cajas),
   };
 }
 
@@ -716,8 +731,9 @@ describe("AmbientNpcBehavior · el encajonado (#583)", () => {
       queImpideElPaso: cajaDeRuntime("carro_del_mercader", (fx, _fz, tx) => tx > fx + 1e-9),
     }));
     // El lateral se mide como el MÁXIMO del camino y no como la foto final: el
-    // rodeo por deflexión alterna ±90° tick a tick (el ciclo límite conocido
-    // del `TODO(A*)`, que a los 3 s rinde el watchdog), así que la foto final
+    // rodeo por deflexión alterna ±90° tick a tick (el ciclo límite del
+    // abanico SIN ruta —este adapter da la recta—, que a los 3 s rinde el
+    // watchdog), así que la foto final
     // lo pilla de vuelta en el sitio con un avance neto de milímetros. Lo que
     // se afirma aquí no es que llegue: es que se MUEVE por rumbos legales en
     // vez de cruzar la caja.
@@ -1165,5 +1181,339 @@ describe("AmbientNpcBehavior · la huida llega a su meta con cualquier radio (H3
     const eventos = [...sys.tick(0.016, peleaQueSigue), ...runTicks(sys, 60 / 0.016, 0.016, ctxWith())];
     assert.equal(eventos.filter((e) => e.type === "npc_fled_combat").length, 1);
     assert.equal(eventos.filter((e) => e.type === "npc_resumed").length, 1, "cercado, la huida también acaba");
+  });
+});
+
+/** EL QUE VA A ALGÚN SITIO BUSCA CAMINO (#618, pieza A). Hasta aquí el NPC
+ *  solo tenía el abanico de siete rumbos: delante de un carro de 6 m centrado
+ *  en su camino pisaba en el sitio 57 s de cada 60 con la animación de andar
+ *  puesta. Con `conCajasDeRuntime` la batería monta el A* DE PRODUCCIÓN
+ *  (`rutaPorElSuelo`) sobre las mismas cajas que frenan el paso. */
+describe("AmbientNpcBehavior · busca camino (#618)", () => {
+  /** Los avisos del sim mientras corre `fn`. */
+  function avisosDe(fn: () => unknown): string[] {
+    const avisos: string[] = [];
+    const original = console.warn;
+    console.warn = (...a: unknown[]) => { avisos.push(a.map(String).join(" ")); };
+    try { fn(); } finally { console.warn = original; }
+    return avisos;
+  }
+  /** Los eventos que devuelve `fn`, con los avisos callados. */
+  function eventosCallados(fn: () => NpcBehaviorEvent[]): NpcBehaviorEvent[] {
+    let ev: NpcBehaviorEvent[] = [];
+    avisosDe(() => { ev = fn(); });
+    return ev;
+  }
+
+  const CARRO: CajaDeRuntime = { id: "carro", pos: { x: 0, z: 0 }, sizeXZ: { x: 6, z: 6 } };
+  const PLAZA = { x: 12, z: 0 };
+
+  /** Cuánto se mete un cuerpo de radio NPC en una caja (0 = fuera). */
+  function penetracion(p: { x: number; z: number }, caja: CajaDeRuntime): number {
+    const mx = caja.sizeXZ.x / 2 + 0.5 - Math.abs(p.x - caja.pos.x);
+    const mz = caja.sizeXZ.z / 2 + 0.5 - Math.abs(p.z - caja.pos.z);
+    return mx > 0 && mz > 0 ? Math.min(mx, mz) : 0;
+  }
+
+  /** Un aldeano que va de (-12, 0) a la plaza; `cajas` es una lista VIVA. */
+  function aLaPlaza(cajas: CajaDeRuntime[], extra: Partial<NpcWorldAdapter> = {}) {
+    const planes: Array<{ tick: number; desde: { x: number; z: number } }> = [];
+    let tick = 0;
+    const real: NpcWorldAdapter["buscarRuta"] = (d, h, r) => conCajasDeRuntime(...cajas).buscarRuta!(d, h, r);
+    const buscar = extra.buscarRuta ?? real;
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(618),
+      world: openWorld({
+        queImpideElPaso: (fx, fz, tx, tz, r) => conCajasDeRuntime(...cajas).queImpideElPaso!(fx, fz, tx, tz, r),
+        porDondeSalirDeAqui: (x, z, r) => conCajasDeRuntime(...cajas).porDondeSalirDeAqui!(x, z, r),
+        blocksCircle: (x, z, r) => conCajasDeRuntime(...cajas).blocksCircle!(x, z, r),
+        resolvePlaceTarget: (id) => (id === "plaza" ? PLAZA : null),
+        ...extra,
+        buscarRuta: (d, h, r) => {
+          planes.push({ tick, desde: { ...d } });
+          return buscar(d, h, r);
+        },
+      }),
+    });
+    sys.addNpc(makeRecord("aldeano", [-12, 0, 0], { role: "villager", directive: { type: "goto_place", target_place_id: "plaza" } }));
+    const avisos: string[] = [];
+    /** Corre `segundos` y devuelve cuándo llegó (o null) y la penetración máxima. */
+    const correr = (segundos: number, cadaTick?: (p: { x: number; z: number }) => void) => {
+      const original = console.warn;
+      console.warn = (...a: unknown[]) => { avisos.push(a.map(String).join(" ")); };
+      let llegada: number | null = null;
+      let penMax = 0;
+      try {
+        for (let i = 0; i < segundos / 0.016; i++) {
+          tick++;
+          const ev = sys.tick(0.016, ctxWith());
+          const p = sys.states()[0].pos;
+          for (const c of cajas) penMax = Math.max(penMax, penetracion(p, c));
+          if (llegada === null && ev.some((e) => e.type === "npc_reached_place")) llegada = i * 0.016;
+          cadaTick?.(p);
+        }
+      } finally { console.warn = original; }
+      return { llegada, penMax, fin: sys.states()[0].pos };
+    };
+    return { sys, planes, avisos, correr };
+  }
+
+  it("rodea el carro de 6 m que tiene delante y llega a la plaza, sin meterse ni atravesar", () => {
+    const { correr, avisos, planes } = aLaPlaza([CARRO]);
+    const r = correr(60);
+    assert.ok(r.llegada !== null && r.llegada < 30, `llegó en ${r.llegada?.toFixed(1)} s`);
+    assert.equal(r.penMax, 0, "ni un milímetro dentro del carro");
+    assert.deepEqual(avisos.filter((a) => a.includes("ATRAVIESA")), [], "rodear no es el escape");
+    assert.ok(distXZ(r.fin, PLAZA) <= 1.5 + 1e-9, `acabó en la plaza: ${JSON.stringify(r.fin)}`);
+    assert.ok(planes.length >= 1 && planes.length <= 3, `${planes.length} planes`);
+  });
+
+  it("EN NEGATIVO: sin ruta (el plan falla) el mismo aldeano NO llega — lo de arriba mide la ruta", () => {
+    const { correr, avisos } = aLaPlaza([CARRO], {
+      buscarRuta: () => ({ ok: false, motivo: "sin-camino", expansiones: 0 }),
+    });
+    const r = correr(60);
+    assert.equal(r.llegada, null, "con el abanico solo, pisa en el sitio delante del carro");
+    assert.ok(avisos.some((a) => a.includes("no encuentra ruta") && a.includes("sin-camino")), "el fallo del plan se dice");
+  });
+
+  it("la meta de la RUTA es el sitio libre junto a un lugar ocupado (#646): llega a la puerta, no empuja el centro", () => {
+    const casa: CajaDeRuntime = { id: "casa", pos: { x: 12, z: 0 }, sizeXZ: { x: 7, z: 5 } };
+    const { correr } = aLaPlaza([casa]);
+    const r = correr(60);
+    assert.ok(r.llegada !== null, "llega aunque el centro del lugar está dentro de la casa");
+    assert.equal(r.penMax, 0);
+  });
+
+  it("una caja que aparece a mitad de tramo: replanifica y llega, sin replanificar a cada paso", () => {
+    const cajas: CajaDeRuntime[] = [];
+    const { correr, planes } = aLaPlaza(cajas);
+    let puesta = false;
+    let planesAlPonerla = 0;
+    let tickAlPonerla = 0;
+    let t = 0;
+    const r = correr(60, (p) => {
+      t++;
+      if (!puesta && p.x > -6) { cajas.push(CARRO); puesta = true; planesAlPonerla = planes.length; tickAlPonerla = t; }
+    });
+    // El tramo cortado se nota en el PRIMER paso desviado, no a los 3 s del
+    // watchdog: el replan llega en cuanto el paso directo topa con el carro,
+    // que está a ~2 m de andar (medido 2,1 s; sin esa regla, 7,1 s).
+    const replan = planes[planesAlPonerla];
+    assert.ok(replan, "replanificó tras aparecer el carro");
+    const segundos = (replan.tick - tickAlPonerla) * 0.016;
+    assert.ok(segundos < 4, `replan ${segundos.toFixed(2)} s después de aparecer el carro`);
+    assert.ok(puesta, "CONTROL: el carro apareció con el aldeano en camino");
+    assert.ok(r.llegada !== null, "llega");
+    assert.equal(r.penMax, 0);
+    assert.ok(planes.length >= 2, `replanificó al ver el carro: ${planes.length} planes`);
+    assert.ok(planes.length <= 6, `sin oscilar entre ruta y abanico: ${planes.length} planes en ${r.llegada?.toFixed(1)} s`);
+  });
+
+  it("PRESUPUESTO: diez NPCs con meta nueva a la vez buscan, como mucho, UNA ruta por tick", () => {
+    const porTick = new Map<number, number>();
+    let tick = 0;
+    const quienes = new Set<string>();
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(3),
+      world: openWorld({
+        resolvePlaceTarget: (id) => ({ x: 20, z: Number(id.slice(1)) * 3 }),
+        buscarRuta: (d, h) => {
+          porTick.set(tick, (porTick.get(tick) ?? 0) + 1);
+          quienes.add(`${d.x.toFixed(3)},${d.z.toFixed(3)}`);
+          return { ok: true, meta: h, puntos: [h], expansiones: 0, alBorde: false };
+        },
+      }),
+    });
+    for (let k = 0; k < 10; k++) {
+      sys.addNpc(makeRecord(`n${k}`, [0, 0, k * 3], { role: "villager", directive: { type: "goto_place", target_place_id: `p${k}` } }));
+    }
+    for (let i = 0; i < 60; i++) { tick = i; sys.tick(0.016, ctxWith()); }
+    assert.ok(Math.max(...porTick.values()) <= 1, `máximo por tick: ${Math.max(...porTick.values())}`);
+    assert.equal(quienes.size, 10, "y en un segundo los diez tienen su ruta");
+  });
+
+  it("WATCHDOG con ruta: el primer atasco replanifica en vez de rendirse; el segundo sin avanzar, se rinde", () => {
+    // Un muro del tile que no deja dar ni un paso: cada paso es un atasco.
+    let planes = 0;
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(9),
+      world: openWorld({
+        queImpideElPaso: muroDelTile(() => true),
+        resolvePlaceTarget: () => PLAZA,
+        buscarRuta: (_d, h) => { planes++; return { ok: true, meta: h, puntos: [h], expansiones: 0, alBorde: false }; },
+      }),
+    });
+    sys.addNpc(makeRecord("aldeano", [-12, 0, 0], { role: "villager", directive: { type: "goto_place", target_place_id: "plaza" } }));
+    const traza: Array<{ planes: number; mode: string }> = [];
+    for (let i = 0; i < 40; i++) {
+      sys.tick(0.016, ctxWith());
+      traza.push({ planes, mode: sys.states()[0].mode });
+    }
+    const primerPlan = traza.findIndex((t) => t.planes === 1);
+    const segundo = traza.findIndex((t) => t.planes === 2);
+    assert.ok(primerPlan >= 0 && segundo === primerPlan + 1, `el rescate replanifica al tick siguiente: ${JSON.stringify(traza.slice(0, 20))}`);
+    assert.ok(traza.slice(primerPlan, segundo).every((t) => t.mode === "goto"),
+      "entre el primer plan y el rescate NO se rinde");
+    assert.equal(traza[segundo].mode, "idle", "el segundo atasco sin avanzar lo rinde");
+    // …y rendirse con ruta es quedarse SIN CAMINO (QA de BO, H3): quieto y con
+    // la meta en manos del motor, no re-derivarla y volver a empujar.
+    const st = sys.states()[0];
+    assert.equal(st.moving, false);
+    assert.equal(planes, 2, "no vuelve a planificar en bucle");
+  });
+
+  /** QA de BO, H3: sin camino, SE PARA y deja la meta al motor. */
+  describe("sin camino", () => {
+    const FALLA: NpcWorldAdapter["buscarRuta"] = () => ({ ok: false, motivo: "sin-camino", expansiones: 7 });
+
+    function unoQueNoLlega(extra: Partial<NpcWorldAdapter> = {}, data: Record<string, unknown> = { role: "villager", directive: { type: "goto_place", target_place_id: "plaza" } }) {
+      let planes = 0;
+      let huella = "a";
+      const buscar = extra.buscarRuta ?? FALLA;
+      const sys = createAmbientNpcBehavior({
+        rng: new SeededRng(4),
+        world: openWorld({
+          resolvePlaceTarget: () => PLAZA,
+          huellaDeLaZona: () => huella,
+          ...extra,
+          buscarRuta: (d, h, r, e) => { planes++; return buscar(d, h, r, e); },
+        }),
+      });
+      const rec = makeRecord("aldeano", [-12, 0, 0], data);
+      sys.addNpc(rec);
+      return { sys, rec, planes: () => planes, cambiaElMundo: () => { huella += "!"; } };
+    }
+
+    it("tras el reintento se PARA: meta a `suspended_goal` no_path, quieto, sin temblar y sin replanificar en bucle", () => {
+      const { sys, rec, planes } = unoQueNoLlega();
+      const eventos: NpcBehaviorEvent[] = [];
+      let andando = 0;
+      let forward = null as null | Vec3;
+      let giros = 0;
+      const avisos = avisosDe(() => {
+        for (let i = 0; i < 60 / 0.016; i++) {
+          eventos.push(...sys.tick(0.016, ctxWith()));
+          const st = sys.states()[0];
+          if (st.moving) andando++;
+          if (forward && (forward.x !== st.forward.x || forward.z !== st.forward.z)) giros++;
+          forward = st.forward;
+        }
+      });
+      assert.equal(planes(), 2, "un plan y UN reintento, y ya");
+      assert.equal(andando, 0, "sin ruta no anda: el abanico hacia el destino crudo era el síntoma");
+      assert.equal(giros, 0, "la mirada no tiembla");
+      const sg = rec.data.suspended_goal as { reason: string; field: string; value: unknown; why: string; stuck_at: number[] };
+      assert.equal(sg.reason, "no_path");
+      assert.equal(sg.field, "directive");
+      assert.deepEqual(sg.value, { type: "goto_place", target_place_id: "plaza" });
+      assert.equal(sg.why, "sin-camino");
+      assert.deepEqual(sg.stuck_at, [-12, 0]);
+      assert.equal(rec.data.directive, null);
+      assert.equal(eventos.filter((e) => e.type === "npc_no_path").length, 1);
+      assert.ok(avisos.some((a) => a.includes("deja su meta al motor")));
+      assert.ok(!avisos.some((a) => a.includes("ATRAVIESA")), "no promete ningún escape");
+    });
+
+    it("H8: si el jugador lo saluda y se va, VUELVE a quedarse quieto; no se pone a pasear", () => {
+      const { sys, rec } = unoQueNoLlega();
+      avisosDe(() => runTicks(sys, 5 / 0.016, 0.016, ctxWith()));
+      assert.equal((rec.data.suspended_goal as { reason: string }).reason, "no_path", "CONTROL: ya se rindió");
+      const aqui = [...rec.position];
+      const cerca = ctxWith({ playerPos: { x: rec.position[0] + 1.5, y: 0, z: rec.position[2] } });
+      let reacciono = false;
+      for (let i = 0; i < 5 / 0.016; i++) {
+        sys.tick(0.016, cerca);
+        if (sys.states()[0].mode === "react") reacciono = true;
+      }
+      assert.ok(reacciono, "CONTROL: encara al jugador");
+      let andando = 0;
+      for (let i = 0; i < 60 / 0.016; i++) {
+        sys.tick(0.016, ctxWith());
+        if (sys.states()[0].moving) andando++;
+      }
+      assert.equal(andando, 0, `ido el jugador, no pasea (${(andando * 0.016).toFixed(1)} s andando)`);
+      assert.deepEqual(rec.position, aqui, "sigue donde se rindió");
+      assert.deepEqual((rec.data.suspended_goal as { stuck_at: number[] }).stuck_at, [aqui[0], aqui[2]]);
+    });
+
+    it("H8: si lo mueven de todos modos, el `stuck_at` que ve el motor dice dónde está AHORA", () => {
+      const { sys, rec } = unoQueNoLlega();
+      avisosDe(() => runTicks(sys, 5 / 0.016, 0.016, ctxWith()));
+      rec.position = [3, 0, 4];
+      runTicks(sys, 1, 0.016, ctxWith());
+      assert.deepEqual((rec.data.suspended_goal as { stuck_at: number[] }).stuck_at, [3, 4]);
+    });
+
+    it("el `in_transit` también se suspende por su campo", () => {
+      const { sys, rec } = unoQueNoLlega({}, { role: "villager", in_transit: { to: "plaza", from: "" } });
+      avisosDe(() => runTicks(sys, 5 / 0.016, 0.016, ctxWith()));
+      const sg = rec.data.suspended_goal as { field: string; reason: string };
+      assert.equal(sg.field, "in_transit");
+      assert.equal(sg.reason, "no_path");
+      assert.equal(rec.data.in_transit, null);
+    });
+
+    it("solo reintenta si cambia el mundo de su zona, y lo dice", () => {
+      const { sys, rec, planes, cambiaElMundo } = unoQueNoLlega();
+      avisosDe(() => runTicks(sys, 5 / 0.016, 0.016, ctxWith()));
+      assert.equal(planes(), 2);
+      cambiaElMundo();
+      const eventos = eventosCallados(() => runTicks(sys, 5 / 0.016, 0.016, ctxWith()));
+      assert.ok(eventos.some((e) => e.type === "npc_path_reopened"), "retoma la meta");
+      assert.equal(planes(), 4, "y la vuelve a planificar (plan + reintento)");
+      assert.equal((rec.data.suspended_goal as { reason: string }).reason, "no_path", "sigue sin camino: la vuelve a dejar");
+    });
+
+    it("si el motor le da otra meta (o la misma), la planifica DESDE DONDE ESTÁ (H4)", () => {
+      let llamadas: Array<{ x: number; z: number }> = [];
+      const { sys, rec } = unoQueNoLlega({
+        buscarRuta: (d, h) => { llamadas.push({ ...d }); return { ok: true, meta: h, puntos: [h], expansiones: 1, alBorde: false }; },
+      });
+      runTicks(sys, 2 / 0.016, 0.016, ctxWith());
+      assert.equal(llamadas.length, 1);
+      // El motor cambia de idea y luego le devuelve la MISMA directiva.
+      const directiva = rec.data.directive;
+      rec.data.directive = { type: "hold" };
+      runTicks(sys, 1, 0.3, ctxWith());
+      rec.data.directive = directiva;
+      llamadas = [];
+      const aqui = { x: rec.position[0], z: rec.position[2] };
+      runTicks(sys, 1, 0.3, ctxWith());
+      runTicks(sys, 2, 0.016, ctxWith());
+      assert.equal(llamadas.length, 1, "la misma directiva devuelta se vuelve a planificar");
+      assert.deepEqual(llamadas[0], aqui, "desde donde está ahora");
+    });
+
+    it("al BORDE del mundo sin generar se para y lo deja al motor (`zona-sin-generar`), sin «llegar»", () => {
+      const { sys, rec } = unoQueNoLlega({
+        buscarRuta: (_d, h) => ({ ok: true, meta: { x: h.x - 5, z: h.z }, puntos: [{ x: h.x - 5, z: h.z }], expansiones: 1, alBorde: true }),
+      });
+      const eventos = eventosCallados(() => runTicks(sys, 40 / 0.016, 0.016, ctxWith()));
+      assert.equal(eventos.filter((e) => e.type === "npc_reached_place").length, 0, "el borde no es el lugar");
+      assert.equal((rec.data.suspended_goal as { why: string }).why, "zona-sin-generar");
+      assert.ok(Math.abs(rec.position[0] - (PLAZA.x - 5)) < 0.5, `se queda en el borde: ${rec.position}`);
+    });
+  });
+
+  it("VECINOS al mismo lugar: cada uno por su meta, sin apilarse (QA de BO, H1)", () => {
+    const casa: CajaDeRuntime = { id: "casa", pos: { x: 12, z: 0 }, sizeXZ: { x: 7, z: 5 } };
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(7),
+      world: openWorld({ ...conCajasDeRuntime(casa), resolvePlaceTarget: () => PLAZA }),
+    });
+    for (const [id, z] of [["a", -1], ["b", 0], ["c", 1]] as const) {
+      sys.addNpc(makeRecord(id, [-12, 0, z], { role: "villager", directive: { type: "goto_place", target_place_id: "plaza" } }));
+    }
+    const llegadas = eventosCallados(() => runTicks(sys, 60 / 0.016, 0.016, ctxWith()))
+      .filter((e) => e.type === "npc_reached_place").length;
+    assert.equal(llegadas, 3);
+    const pos = sys.states().map((st) => st.pos);
+    for (let i = 0; i < pos.length; i++) {
+      for (let j = i + 1; j < pos.length; j++) {
+        assert.ok(distXZ(pos[i], pos[j]) >= 1, `${i} y ${j} a ${distXZ(pos[i], pos[j]).toFixed(2)} m: ${JSON.stringify(pos)}`);
+      }
+    }
+    assert.ok(pos.every((p) => p.x < 12 - 3.5), "los tres en la cara que tenían delante");
   });
 });

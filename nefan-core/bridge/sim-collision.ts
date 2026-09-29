@@ -102,6 +102,7 @@ import {
   cajaQueContiene,
   cajasDeRuntime,
   salidaDeLasCajas,
+  type CajaDeRuntime,
   type Impedimento,
   type PorDondeSalir,
 } from "../src/simulation/cajas-de-runtime.js";
@@ -111,6 +112,7 @@ import {
   type SueloSolido,
 } from "../src/simulation/salida-del-solido.js";
 import { tileKey, tileWorldRect, worldToTile, type WorldRect } from "../src/scene/tile.js";
+import { rutaPorElSuelo, type Punto, type Ruta } from "../src/simulation/ruta-por-el-suelo.js";
 
 export interface SimCollisionProvider {
   /** QUÉ impide este paso, no solo si algo lo impide: el escape del
@@ -146,6 +148,19 @@ export interface SimCollisionProvider {
    *  su nombre está hoy en `campos-retirados-no-vuelven`. */
   algoImpideElPaso(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean;
   blocksCircle(x: number, z: number, radius: number): boolean;
+  /** POR DÓNDE IR de `desde` a un sitio libre junto a `hasta` (#618): A* sobre
+   *  el MISMO suelo que `ocupado` —terreno, plan y cajas de runtime—, así que
+   *  la ruta ve exactamente lo que después frena el paso. Las cajas se derivan
+   *  UNA vez por plan: el A* pregunta por cientos de celdas y re-derivarlas en
+   *  cada una es lo que hacía costar 172 ms un plan con 200 cajas (medido en el
+   *  plan de la tanda BO) en vez de ~9. */
+  buscarRuta(desde: Punto, hasta: Punto, radius: number, evitar?: ReadonlyArray<Punto>): Ruta;
+  /** QUÉ HAY en la zona del punto (los 3×3 tiles de alrededor): qué registro
+   *  de escena tiene cada tile y qué cajas de runtime caen en ellos. Es una
+   *  HUELLA, no un veredicto: si cambia, el mundo de esa zona cambió (se
+   *  generó un tile, el motor puso o quitó algo) y un NPC que se quedó sin
+   *  camino ahí vuelve a intentarlo (#618, QA de BO H3). */
+  huellaDeLaZona(x: number, z: number): string;
 }
 
 /** Collider del PLAN ya compuesto (agua∖decks del ground + huellas de los
@@ -221,17 +236,20 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
     return entry;
   }
 
-  /** Tiles del plano tocados por el AABB del círculo (≤4). */
-  function touchedKeys(x: number, z: number, radius: number): string[] {
-    const keys = new Set<string>();
-    for (const [px, pz] of [
-      [x - radius, z - radius], [x + radius, z - radius],
-      [x - radius, z + radius], [x + radius, z + radius],
-    ]) {
-      const t = worldToTile(px, pz);
-      keys.add(tileKey(t.tx, t.ty));
+  /** ¿Algún collider de los tiles que toca el AABB del círculo (≤4) cumple
+   *  `pred`? Recorre el rango de tiles de las dos esquinas en vez de reunir
+   *  las cuatro en un `Set`: es la consulta que el A* repite por cada celda
+   *  nueva (#618), y el `Set` con sus strings era un tercio de lo que costaba
+   *  un plan (perfil de la tanda BO). */
+  function algunCollider(x: number, z: number, radius: number, pred: (tc: TerrainCollider) => boolean): boolean {
+    const t0 = worldToTile(x - radius, z - radius);
+    const t1 = worldToTile(x + radius, z + radius);
+    for (let ty = t0.ty; ty <= t1.ty; ty++) {
+      for (let tx = t0.tx; tx <= t1.tx; tx++) {
+        for (const tc of collidersFor(tileKey(tx, ty))) if (pred(tc)) return true;
+      }
     }
-    return [...keys];
+    return false;
   }
 
   /** La geometría DURA vista como un SUELO: terreno y plan de los tiles que
@@ -240,14 +258,34 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
    *  tile: un cuerpo a caballo de dos tiles tiene UNA penetración, no dos. */
   const sueloDelTile: SueloSolido = {
     ocupado(x, z, radio) {
-      for (const key of touchedKeys(x, z, radio)) {
-        for (const tc of collidersFor(key)) {
-          if (tc.solapaSolido(x, z, radio)) return true;
-        }
-      }
-      return false;
+      return algunCollider(x, z, radio, (tc) => tc.solapaSolido(x, z, radio));
     },
   };
+
+  /** El suelo ENTERO: la cuenta de `ocupado` escrita una vez. La usan la
+   *  consulta suelta, que deriva las cajas solo si el tile no contestó ya, y el
+   *  plan de ruta, que las deriva UNA vez para todas sus celdas. */
+  function sueloCon(cajas: () => readonly CajaDeRuntime[]): SueloSolido {
+    return {
+      ocupado: (x, z, radio) =>
+        sueloDelTile.ocupado(x, z, radio) || cajaQueContiene(x, z, radio, cajas()) !== null,
+    };
+  }
+  const cajasVivas = () => cajasDeRuntime(narrative.entities);
+
+  /** ¿El cuerpo toca algún tile SIN GENERAR (sin registro en la sesión)? */
+  function sinGenerar(x: number, z: number, radio: number): boolean {
+    const t0 = worldToTile(x - radio, z - radio);
+    const t1 = worldToTile(x + radio, z + radio);
+    for (let ty = t0.ty; ty <= t1.ty; ty++) {
+      for (let tx = t0.tx; tx <= t1.tx; tx++) if (!narrative.scenes_loaded[tileKey(tx, ty)]) return true;
+    }
+    return false;
+  }
+
+  /** Un número por registro de escena, para la huella de la zona. */
+  const numeroDe = new WeakMap<SceneRecord, number>();
+  let siguienteNumero = 1;
 
   const provider: SimCollisionProvider = {
     // El TILE primero y la caja después, y el orden es la regla: quien lee
@@ -277,16 +315,42 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
       return salidaDeLasCajas(x, z, radius, cajasDeRuntime(narrative.entities));
     },
     blocksCircle(x, z, radius): boolean {
-      for (const key of touchedKeys(x, z, radius)) {
-        for (const tc of collidersFor(key)) {
-          if (tc.blocksCircle(x, z, radius)) return true;
-        }
-      }
+      if (algunCollider(x, z, radius, (tc) => tc.blocksCircle(x, z, radius))) return true;
       return cajaQueContiene(x, z, radius, cajasDeRuntime(narrative.entities)) !== null;
     },
     ocupado(x, z, radius): boolean {
-      if (sueloDelTile.ocupado(x, z, radius)) return true;
-      return cajaQueContiene(x, z, radius, cajasDeRuntime(narrative.entities)) !== null;
+      return sueloCon(cajasVivas).ocupado(x, z, radius);
+    },
+    // Para PLANIFICAR, lo no generado es SÓLIDO (QA de BO, H2): el paso lo
+    // deja pisar —su tile es donde vive el NPC—, pero una ruta que lo cruza es
+    // un atajo por el vacío.
+    buscarRuta(desde, hasta, radius, evitar = []): Ruta {
+      const foto = cajasVivas();
+      const suelo = sueloCon(() => foto);
+      return rutaPorElSuelo(desde, hasta, radius, {
+        ocupado: (x, z, r) => sinGenerar(x, z, r) || suelo.ocupado(x, z, r),
+        sinGenerar,
+      }, undefined, evitar);
+    },
+    huellaDeLaZona(x, z): string {
+      const t = worldToTile(x, z);
+      const partes: string[] = [];
+      for (let ty = t.ty - 1; ty <= t.ty + 1; ty++) {
+        for (let tx = t.tx - 1; tx <= t.tx + 1; tx++) {
+          const rec = narrative.scenes_loaded[tileKey(tx, ty)];
+          if (!rec) continue;
+          let n = numeroDe.get(rec);
+          if (n === undefined) numeroDe.set(rec, (n = siguienteNumero++));
+          partes.push(`${tx},${ty}#${n}`);
+        }
+      }
+      const r0 = tileWorldRect(t.tx - 1, t.ty - 1);
+      const r1 = tileWorldRect(t.tx + 1, t.ty + 1);
+      for (const c of cajasVivas()) {
+        if (c.pos.x < r0.minX || c.pos.x > r1.maxX || c.pos.z < r0.minZ || c.pos.z > r1.maxZ) continue;
+        partes.push(`${c.id}@${c.pos.x},${c.pos.z}:${c.sizeXZ.x}x${c.sizeXZ.z}`);
+      }
+      return partes.join("|");
     },
   };
   return provider;

@@ -82,15 +82,19 @@ AMBIENT NPC LIFE (the game engine runs it — you set intent, never per-step
 movement): every NPC wanders near its spawn, turns to face an approaching
 player, and reacts to nearby fights by role (`role` at spawn: peasant/
 villager/merchant flee, guard runs in and threatens; context may include
-recent `ambient_events` — background colour, no reaction required). ONE
-exception is yours to decide: an NPC that flees while walking somewhere
-(goto_place / visit_npc / a walked npc_move_to_place) ABANDONS that goal and
-stays where it stopped. While that decision is pending, the NPC's entry in
-the context `entities` carries `suspended_goal` {field, value, reason,
-fight_at} (an ambient line also announces it). It will not go back on its
-own: re-issue it with npc_set_directive / npc_move_to_place if it should
-(that clears `suspended_goal`); npc_set_directive with a null directive
-drops it for good.
+recent `ambient_events` — background colour, no reaction required). TWO
+exceptions are yours to decide. An NPC walking somewhere (goto_place /
+visit_npc / a walked npc_move_to_place) ABANDONS that goal and stays where it
+stopped when (a) it flees a fight — `reason: "fled_combat"`, with `fight_at` —
+or (b) it finds NO PATH there (walled in, the place enclosed, or the route
+leads into the ungenerated world) — `reason: "no_path"`, with `stuck_at` and
+`why`. While that decision is pending, the NPC's entry in the context
+`entities` carries `suspended_goal` {field, value, reason, …} (an ambient line
+also announces it). It will not go back on its own (a no_path NPC only
+retries by itself if the world around it changes): re-issue the goal with
+npc_set_directive / npc_move_to_place if it should (that clears
+`suspended_goal`), give it another one, or npc_set_directive with a null
+directive to drop it for good.
 npc_set_directive changes the STANDING behaviour; executable directive types:
 - "wander" {radius?} — stroll around its current spot (default);
 - "patrol" — wander with double radius;

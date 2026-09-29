@@ -262,15 +262,33 @@ export interface AssetEntry {
  *  escribe `npc-behavior.ts`; vive aquí porque es forma del record y del
  *  contexto, no del sim. Si quiere que siga, la vuelve a
  *  emitir con `npc_set_directive` / `npc_move_to_place`, que la limpian. */
-export interface SuspendedGoal {
+export type SuspendedGoal = {
   /** El campo del record del que se retiró. */
   field: "directive" | "in_transit";
   /** Su valor tal cual estaba, para poder re-emitirlo. */
   value: unknown;
-  reason: "fled_combat";
-  /** Dónde era la pelea, en metros. */
-  fight_at: [number, number];
-}
+} & (
+  | {
+    reason: "fled_combat";
+    /** Dónde era la pelea, en metros. */
+    fight_at: [number, number];
+  }
+  | {
+    /** SIN CAMINO (#618, QA de BO H3; misma decisión del usuario): el NPC no
+     *  encontró ruta hasta su meta —tras reintentarlo— o la ruta no le llevó
+     *  a ninguna parte. Se PARA donde está en vez de andar en el sitio contra
+     *  la pared, y la meta espera aquí la decisión del motor. El sim solo la
+     *  reintenta por su cuenta si cambia el mundo de esa zona (se genera un
+     *  tile, el motor pone o quita algo). */
+    reason: "no_path";
+    /** Dónde se quedó, en metros. */
+    stuck_at: [number, number];
+    /** Por qué: `sin-camino`, `tope`, `inicio-encerrado`, `meta-sin-sitio`,
+     *  `lejos`, `atasco` (la ruta no le hizo avanzar) o `zona-sin-generar`
+     *  (llegó al borde del mundo generado). */
+    why: string;
+  }
+);
 
 export interface LlmContext {
   session_id: string;

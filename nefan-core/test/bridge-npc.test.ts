@@ -173,6 +173,61 @@ describe("bridge vida ambiental de NPCs", () => {
     assert.equal(narrative.getEntity("campesino_1")!.data.suspended_goal, undefined);
   });
 
+  /** QA de BO, H3 — la misma decisión del usuario aplicada al que NO TIENE
+   *  CAMINO: se para, su meta pasa a `suspended_goal` con `reason: "no_path"`
+   *  y viaja al motor como estado; no la reintenta en bucle, solo si cambia el
+   *  mundo de su zona. Un patio cerrado por cuatro murallas que pone el motor. */
+  it("el que no tiene camino se PARA, deja la meta al motor y solo la reintenta si cambia el mundo", async () => {
+    const { ctx, narrative, socket } = await startAmbientSession();
+    const sceneId = narrative.world.active_scene_id;
+    // El patio: centro (20, 20), murallas de 1 m de grueso a 4 m.
+    narrative.worldMap.upsertPlace({
+      id: "patio", kind: "site", parent_id: "world", name: "El Patio",
+      anchor: { tx: 0, ty: 0, rect: [(20 + 32) / 0.5, (20 + 32) / 0.5, 0, 0] },
+    });
+    const muro = (id: string, x: number, z: number, w: number, h: number) =>
+      narrative.recordEntitySpawned(id, "building", sceneId, [x, 0, z], { name: id, footprint: [w, h] }, "narrative_request");
+    muro("muro_n", 20, 24, 18, 2); muro("muro_s", 20, 16, 18, 2);
+    muro("muro_e", 24, 20, 2, 18); muro("muro_o", 16, 20, 2, 18);
+    const directiva = { type: "goto_place", target_place_id: "patio" };
+    narrative.recordEntitySpawned("aldeano_1", "npc", sceneId, [4, 0, 20],
+      { name: "Aldeano", role: "villager", directive: directiva }, "scene_init");
+    npcSync(ctx);
+    let planes = 0;
+    const buscar = ctx.simCollision.buscarRuta.bind(ctx.simCollision);
+    ctx.simCollision.buscarRuta = (...a) => { planes++; return buscar(...a); };
+    await tickInput(ctx, socket, 3 / 0.05);
+
+    const npc = narrative.getEntity("aldeano_1")!;
+    assert.equal(npc.data.directive, null, "la directiva sale del record");
+    const sg = npc.data.suspended_goal as { field: string; value: unknown; reason: string; stuck_at: number[]; why: string };
+    assert.equal(sg?.reason, "no_path", JSON.stringify(sg));
+    assert.deepEqual(sg.value, directiva);
+    assert.equal(sg.stuck_at.length, 2);
+    const llm = narrative.serializeForLlm();
+    assert.equal(llm.entities.find((e) => e.id === "aldeano_1")?.suspended_goal?.reason, "no_path",
+      "viaja en el contexto del motor como ESTADO");
+    const linea = llm.ambient_events?.find((e) => e.includes("Aldeano") && e.includes("no encuentra camino"));
+    assert.ok(linea?.includes("ABANDONÓ") && linea.includes("El Patio"), `la línea dice qué dejó: ${linea}`);
+
+    // Quieto y sin reintentar en bucle: 30 s más, ni un plan.
+    const planesAlRendirse = planes;
+    const donde = [...npc.position];
+    await tickInput(ctx, socket, 30 / 0.05);
+    assert.equal(planes, planesAlRendirse, "sin cambios en el mundo, no vuelve a planificar");
+    assert.deepEqual(narrative.getEntity("aldeano_1")!.position, donde, "y no se mueve");
+    assert.equal(ctx.sim.npcBehaviorSystem!.states().find((n) => n.id === "aldeano_1")?.moving, false);
+
+    // El mundo de su zona cambia (el motor pone algo): lo reintenta, una vez.
+    narrative.recordEntitySpawned("barril", "object", sceneId, [0, 0, 10], { name: "barril" }, "narrative_request");
+    await tickInput(ctx, socket, 3 / 0.05);
+    assert.ok(planes > planesAlRendirse, "con el mundo cambiado, vuelve a intentarlo");
+    assert.ok(narrative.serializeForLlm().ambient_events?.some((e) => e.includes("Aldeano") && e.includes("vuelve a por")),
+      "y lo dice");
+    assert.equal((narrative.getEntity("aldeano_1")!.data.suspended_goal as { reason?: string })?.reason, "no_path",
+      "el patio sigue cerrado: vuelve a dejarla");
+  });
+
   /** H2b de la QA de BL: la meta abandonada es ESTADO, no una línea de log.
    *  El escenario de la QA: un bandido y seis NPC (el campesino con su
    *  `goto_place`, dos aldeanos, un mercader y dos guardias). A los 30 s las
