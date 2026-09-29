@@ -207,3 +207,77 @@ Coincide con lo que declara el `_lo_que_esto_NO_sujeta`, así que no es una regr
 ### Veredicto de la fase 2
 
 **Apto con reservas.** H1, H3 (la activación del lugar) y H4 hacen lo que se pidió, desde el flujo real y también con el mundo del playtest, y los candados se ponen rojos. La reserva es F1: el prompt ahora promete triggers «en la huella» y el bridge no dispara la salida ni al pisar campo abierto ni con huellas anidadas. O se arregla antes del merge, o se retoca la prosa y se abre un issue. F2 a F5 son menores.
+
+## Segunda vuelta de la fase 2
+
+Rama `feature/tanda-bm`, HEAD `ad109b2f`. Todo con el motor falso y 0 créditos. El material está en `labs/narrative/runs/tanda-bm-20260929/fase3/`: scripts `cadena.mjs`, `extra*.mjs`, `viaje.mjs`, `f2f5.mjs` y `proxy.mjs`, más los logs y `PIDS.txt`.
+
+Stack propio en puertos libres: fake-ai en :19465, un proxy de captura en :19466 delante del fake, bridge del worktree en :10577 con State API en :10578, emulador en :10599 y narrative-mcp del worktree en :13737. El mundo es el del playtest, que ahora se sirve por replay, más los lugares y triggers que añado por `POST /map/place` y `POST /map/trigger`. Cada trigger apunta un `story_update` `E:<id>` o `L:<id>`, y los leo en los `narrative_event map_trigger` del wire. Al terminar se pararon por grupo los grupos propios. El worktree queda limpio.
+
+### F1: la cadena de huellas
+
+Tile (2,0) de la Torre del Hilo, que no tiene ningún lugar sin rect. Añado `barrio2 [0,0,50,50]` y, dentro, `taberna2 [10,10,10,10]`. La posición entra por frames `input`.
+
+| Paso | Disparos | Activo |
+|---|---|---|
+| campo abierto | `[]` | — |
+| entrar en el barrio | `E:barrio2` | barrio2 |
+| entrar en la taberna (anidada) | **solo** `E:taberna2` | taberna2 |
+| volver al barrio | **solo** `L:taberna2` | barrio2 |
+| de la taberna a campo abierto | `L:taberna2`, `L:barrio2` (de dentro afuera) | taberna2 (retenido) |
+| dos celdas más de campo abierto | `[]`, `[]` | taberna2 |
+| la torre | `E:torre_del_hilo` (sin ningún `L:barrio2` falso) | torre |
+| campo abierto | `L:torre_del_hilo` | torre |
+| la torre otra vez | UNA `E:torre_del_hilo` | torre |
+| de la torre al barrio directamente | `L:torre`, `E:barrio2` | barrio2 |
+| al tile (1,0), campo abierto | `L:barrio2` | barrio2 (retenido) |
+| la cisterna (rect) | `E:cisterna_clara` | cisterna |
+| a `vado_almar` (sin rect, el tile entero) | `L:cisterna_clara`, `E:vado_almar` | vado_almar |
+| otra celda de vado_almar | `[]` | vado_almar |
+
+Los 16 pasos cumplen lo esperado. El bloque C del guion 280 también sale en verde: `node qa/run.mjs 280 214 74 144` da **5 en verde · 0 en rojo de 5**.
+
+**La desviación aceptada no produce disparos falsos.** Con `active_place_id` retenido en campo abierto (taberna2):
+- moverse por campo abierto no dispara nada;
+- entrar directamente en la taberna da `E:barrio2` y `E:taberna2`, y ninguna salida;
+- volver a campo abierto da `L:taberna2` y `L:barrio2`, una sola vez;
+- cambiar de tile en campo abierto no dispara nada;
+- entrar en otro lugar da solo su entrada.
+
+**Viaje a un lugar realizado:**
+- Taberna → `cisterna_clara`: dispara `L:taberna2`, `L:barrio2` y `E:cisterna_clara` en la llegada, y los primeros frames en el `spawn` (52, -0.5) no disparan nada. **Sin duplicados.**
+- Taberna → `vado_almar`: igual; los frames en (0, -64) dan `[]`.
+- Cisterna → `taberna2`, un lugar que anclé por API y nunca se realizó: el viaje pasa por «Viajando a…», y la cadena se dispara en el primer frame en el sitio de llegada (col 15, row 15): `L:cisterna_clara`, `E:barrio2` y `E:taberna2`, una sola vez. Llega un frame más tarde, pero es correcto.
+
+**Resume:**
+- En el mismo proceso del bridge, reanudar dentro de la taberna y moverse a otra celda suya no dispara nada, y en el barrio tampoco.
+- **Con el bridge reiniciado** y la partida reanudada dentro del barrio, el primer frame dispara `E:barrio2` (G1).
+
+### F2 a F5
+
+| Criterio | Veredicto | Evidencia |
+|---|---|---|
+| **F2**: sin `placeId`, el `place` del tile es el que ocupa el tile | ✅ | Tile (1,1), con `herreria_x` (rect) insertado ANTES que `aldea_x` (sin rect). El motor recibe `lugar: aldea_x` y `anclados: [herreria_x con su rect]`, y el tile se etiqueta `place_id = aldea_x` (save). Con todo el tile con rect (`sitio_y [10,10,8,8]` antes que `pueblo_y [0,0,100,100]`), `lugar: pueblo_y` |
+| **F3**: `scene_validate` aplica la forma del respond | ✅ | Con `role:"herrero"` devuelve `ERR Invalid scene shape … role "herrero"`; con `merchant`, `ok: true` |
+| **F4**: todo rechazo deja UNA línea | ✅ | narrative-mcp del worktree por stdio, 9 llamadas. `rechazo forma_escena kind=scene_validate`, `rechazo argumentos kind=map_upsert_place` (sin `parent_id`), `rechazo bridge kind=map_upsert_place` (padre inexistente), `rechazo herramienta kind=no_existe_tool` y `rechazo forma_escena kind=scene req=req-f34`. Las 4 llamadas buenas (scene_validate, upsert, map_get, respond) no dejan ninguna línea. **Ninguna línea duplicada** |
+| **F5**: tope de `anchored_places` | ✅ | Con 40 lugares en (1,-1), el proxy captura el `generate_tile` real: `place casa_0`, `anchored_places: 12` y `anchored_places_omitted: 27` (1 + 12 + 27 = 40). La prosa lo nombra (`tile_instructions.md:87`) |
+
+### Candados en negativo (sabotajes míos, restaurados con el md5 comprobado)
+
+- Si `cruceDeCadenas` no invierte el orden de las salidas, salen **2 rojos**: «de la taberna a campo abierto se sale de las dos, de dentro afuera» y «cruceDeCadenas: salen de dentro afuera…».
+- Si el viaje no dispara por la cadena (la línea `pasarALaCadena` de `scene.ts` desactivada), **los 3678 tests siguen en verde**. Ver G2.
+- Los 28 tests de los cuatro ficheros nuevos o tocados van en verde sin sabotaje.
+
+### Hallazgos de la segunda vuelta
+
+**G1 — menor, anterior a la tanda.** Tras reiniciar el bridge y reanudar la partida con el jugador dentro de una huella, el primer frame dispara `player_entered` del lugar en el que ya estaba (`B1 … disparos=["E:barrio2"]`). Es porque `posTracking.cadena` no se siembra al reanudar. `first_visit` no se repite. En main pasa lo mismo, con el `placeId` nulo. Que «cargar la partida» cuente como «entrar» es discutible. Si no se quiere, basta sembrar la cadena con la posición del save al reanudar.
+
+**G2 — menor: el disparo del viaje no tiene candado.** Se puede quitar sin que se ponga rojo ningún test. El efecto observable es pequeño: sin esa línea, los triggers saltan en el primer frame en la llegada en vez de con el `ready`, y lo he visto en el viaje a `taberna2`. Pero la línea existe precisamente para eso. Si importa que la llegada y su trigger vayan juntos, hace falta un test que lo afirme.
+
+**G3 — nota para contar #239 por el log.** El mismo `role` inválido deja ahora hasta dos líneas: una con `kind=scene_validate` (el dry-run) y otra con `kind=scene` (el respond). Para contar rechazos reales del respond hay que filtrar por `kind=scene`.
+
+**G4 — nota sobre F5.** Pasan al motor los 12 primeros en orden del mapa, no los de mayor huella. Un pueblo insertado tarde puede quedar entre los omitidos. El motor tiene `map_get` para recuperarlo, así que no lo trato como defecto.
+
+### Veredicto de la segunda vuelta
+
+**Apto.** F1 cumple en anidados, a campo abierto, al volver y en viajes a lugares realizados. La desviación del `active_place_id` retenido no produce ningún disparo falso. F2, F3, F4 y F5 cumplen en el flujo real con el motor falso. G1 y G2 son menores y no bloquean. La conducta del modelo con la prosa nueva sigue pendiente del playtest corto tras el merge.

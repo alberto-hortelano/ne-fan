@@ -12,7 +12,8 @@ import assert from "node:assert/strict";
 
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type { NarrativeEventMessage } from "../src/protocol/messages.js";
-import { makeCtx, makeSocket, porElBorde } from "./helpers.js";
+import type { SessionStartedMessage } from "../src/protocol/messages.js";
+import { entrarEnLaPartida, makeCtx, makeSocket, porElBorde, waitFor } from "./helpers.js";
 
 /** Tile (0,0): barrio [10,10,60,60] con la taberna [20,20,10,10] dentro, y
  *  ningún lugar sin rect (fuera del barrio es campo abierto). Tile (1,0): la
@@ -61,7 +62,16 @@ function montar() {
     return nuevos;
   };
   const activo = () => narrative.worldMap.serialize().active_place_id;
-  return { pisar, activo };
+  /** Los triggers que saltaron desde la última lectura SIN mover al jugador. */
+  const nuevos = (): string[] => {
+    const eventos = broadcasts.filter(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "map_trigger",
+    );
+    const n = eventos.slice(visto).flatMap((m) => m.consequences.map((c) => String((c as { delta?: string }).delta)));
+    visto = eventos.length;
+    return n;
+  };
+  return { pisar, activo, nuevos, ctx, narrative };
 }
 
 describe("la huella dispara al entrar y al salir (#465, F1)", () => {
@@ -98,5 +108,57 @@ describe("la huella dispara al entrar y al salir (#465, F1)", () => {
     assert.deepEqual(await pisar(1, 50, 50), ["E:torre"]);
     // Del pie de la torre al barrio del tile vecino: sale de una y entra en el otro.
     assert.deepEqual(await pisar(0, 50, 50), ["L:torre", "E:barrio"]);
+  });
+
+  it("el viaje a un lugar realizado dispara EN la llegada, no en el frame siguiente (G2)", async () => {
+    const { pisar, nuevos, ctx, narrative } = montar();
+    narrative.worldMap.attachRealizedScene("torre", "tile_1_0");
+    assert.deepEqual(await pisar(0, 50, 50), ["E:barrio"]);
+    const { socket } = makeSocket();
+    await porElBorde({ type: "player_entered_place", placeId: "torre" }, socket, ctx);
+    // Ningún `input` todavía: el cliente ni ha aplicado el spawn.
+    assert.deepEqual(nuevos(), ["L:barrio", "E:torre"], "la llegada no disparó sus triggers");
+    // …y el primer frame en el sitio de llegada (el centro de la huella) no los repite.
+    assert.deepEqual(await pisar(1, 50, 50), []);
+  });
+});
+
+describe("reanudar dentro de una huella no es entrar en ella (#465, G1)", () => {
+  it("tras reiniciar el bridge, el primer frame en la posición del save no dispara player_entered", async () => {
+    const { ctx, narrative, broadcasts } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await waitFor(() => narrative.hasTile(0, 0));
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    narrative.worldMap.upsertPlace({
+      id: "barrio", kind: "site", parent_id: "world", name: "Barrio", anchor: { tx: 0, ty: 0, rect: [10, 10, 60, 60] },
+    });
+    narrative.worldMap.addTrigger("barrio", {
+      id: "e_barrio", when: { type: "player_entered" }, consequences: [{ type: "story_update", delta: "E:barrio" }],
+    });
+    const disparos = () =>
+      broadcasts
+        .filter((m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "map_trigger")
+        .flatMap((m) => m.consequences.map((c) => String((c as { delta?: string }).delta)));
+    const input = (ws: typeof socket) =>
+      porElBorde(
+        { type: "input", delta: 0.016, inputs: { playerPosition: { x: -7, y: 0, z: -7 }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: false } },
+        ws,
+        ctx,
+      );
+    // Celda (50,50) del tile (0,0): dentro del barrio.
+    await input(socket);
+    assert.deepEqual(disparos(), ["E:barrio"], "premisa: entrar en el barrio dispara");
+    await ctx.narrative.save();
+
+    // Proceso nuevo: el tracking de posición nace vacío (el de ws-server.ts).
+    ctx.posTracking = { cellKey: null, tileKey: null, placeId: null };
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await porElBorde({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
+    assert.equal((sent2[0] as SessionStartedMessage).ok, true);
+    assert.deepEqual(narrative.player.position.slice(0, 1), [-7], "premisa: la posición del save es la de dentro del barrio");
+    await input(s2);
+    assert.deepEqual(disparos(), ["E:barrio"], "reanudar disparó otra vez la entrada del lugar donde ya estaba");
   });
 });
