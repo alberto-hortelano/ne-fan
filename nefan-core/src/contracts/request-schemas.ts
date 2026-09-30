@@ -1,7 +1,7 @@
 /** Espejos zod de los REQUEST bodies de los HTTP internos — el análogo del
  *  candado WS (`protocol/message-schema.ts`) para el State API del bridge
  *  (`bridge/state-http-server.ts`) y el asset-store
- *  (`services/asset-store/http-server.ts`), que hasta ahora validaban a mano
+ *  (`services/asset-store/rutas.ts`), que hasta ahora validaban a mano
  *  (2-3 campos comprobados y cast del resto).
  *
  *  Convención idéntica al espejo WS: objetos NO strict (campos extra se
@@ -160,7 +160,7 @@ export const PluginRegisterRequestSchema = z.object({
   ),
 });
 
-// ── asset-store (services/asset-store/http-server.ts) ──
+// ── asset-store (services/asset-store/rutas.ts) ──
 
 // `POST /assets` es la puerta de la SUPERFICIE y solo de ella (#257, #376):
 // un registro de otro kind es 400 aquí, no una fila que el prune no sabrá

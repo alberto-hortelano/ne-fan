@@ -16,12 +16,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { once } from "node:events";
-import { createServer, type Server } from "node:http";
+import { createServer, request as httpRequest, type Server } from "node:http";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 
 import type { AssetByHashResponse, AssetKind } from "../src/contracts/asset-store.js";
-import { refDeArteDePersonaje } from "../src/contracts/asset-store.js";
+import { AssetStoreApi, refDeArteDePersonaje } from "../src/contracts/asset-store.js";
+import { fillPath } from "../src/contracts/http.js";
+import { casarRuta, matchStylesRoute, parseRequestPath } from "../services/asset-store/http-wire.js";
+import { RUTAS, type AssetStoreRouteKey } from "../services/asset-store/rutas.js";
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { loadAssetStoreConfig } from "../services/asset-store/config.js";
 import { createAssetStoreServer } from "../services/asset-store/http-server.js";
@@ -32,6 +35,7 @@ let db: ManifestDb;
 let server: Server;
 let baseUrl: string;
 let worldState: Server;
+let worldStateUrl: string;
 let keepRefs: string[] = [];
 
 function surfaceDir(base: string): string {
@@ -72,6 +76,7 @@ before(async () => {
   worldState.listen(0, "127.0.0.1");
   await new Promise<void>((r) => worldState.on("listening", () => r()));
   const wsPort = (worldState.address() as AddressInfo).port;
+  worldStateUrl = `http://127.0.0.1:${wsPort}`;
 
   server = createAssetStoreServer({
     port: 0,
@@ -79,7 +84,7 @@ before(async () => {
     blobDirs: blobDirs(root),
     stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
     cacheMaxBytes: 1024 * 1024,
-    worldStateUrl: `http://127.0.0.1:${wsPort}`,
+    worldStateUrl,
   });
   await new Promise<void>((r) => server.on("listening", () => r()));
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -172,6 +177,26 @@ describe("cable exacto de blobs (cache_assets.py)", () => {
     assert.equal(miss.body.toString(), "Not found");
   });
 
+  it("servir un blob de superficie refresca su last_used: es lo que lo aleja del LRU del prune", async () => {
+    // El prune evicta por `max(last_used, created_at)` más antiguo: un blob
+    // que se sirve sin `touch` envejece como si nadie lo usara, y el arte
+    // pagado que está en pantalla sería el primero en caer. Hash propio: el
+    // `touch` tiene debounce por hash en memoria.
+    const hash = "70c70c70c70c70c7";
+    writeSurface(root, hash);
+    db.importEntry({
+      hash, type: "surface", subtype: "surface", prompt: "losas",
+      created_at: "2026-01-01T00:00:00.000Z", size_bytes: 4, extra: {},
+    });
+    assert.equal(db.findByHash(hash)[0].last_used, undefined, "recién plantado, sin uso");
+    const antes = new Date().toISOString();
+    assert.equal((await getRaw(`/cache/surface/${hash}`)).status, 200);
+    const usado = db.findByHash(hash)[0].last_used;
+    assert.ok(usado !== undefined && usado >= antes, `last_used = ${usado}`);
+    // Un miss no toca nada: no hay fila que refrescar ni blob que servir.
+    assert.equal((await getRaw("/cache/surface/70c70c70c70c70c8")).status, 404);
+  });
+
   it("sprite_sheet: regex del filename → 400 'Invalid filename'; frame válido se sirve", async () => {
     const bad = await getRaw("/cache/sprite_sheet/h1/evil.png");
     assert.equal(bad.status, 400);
@@ -244,6 +269,282 @@ describe("cable exacto de blobs (cache_assets.py)", () => {
 
     // Y la subcarpeta de rol sigue viva (3 o 4 segmentos, no más).
     assert.equal((await getRaw("/styles/medievo_crudo/faces/x/y.jpg")).status, 404);
+  });
+});
+
+/** Petición cruda por `node:http`: `fetch` no deja pedir ciertos paths tal
+ *  cual (un método `HEAD` sin cuerpo que leer, un `%E0` que no es UTF-8), y
+ *  estos tests necesitan que el servidor reciba EXACTAMENTE la línea escrita. */
+function crudo(
+  method: string,
+  path: string,
+  body?: string,
+): Promise<{ status: number; contentType: string; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(`${baseUrl}${path}`, { method }, (res) => {
+      const trozos: Buffer[] = [];
+      res.on("data", (d: Buffer) => trozos.push(d));
+      res.on("end", () =>
+        resolve({
+          status: res.statusCode ?? 0,
+          contentType: String(res.headers["content-type"] ?? ""),
+          body: Buffer.concat(trozos).toString("utf-8"),
+        }),
+      );
+    });
+    req.on("error", reject);
+    if (body !== undefined) req.write(body);
+    req.end();
+  });
+}
+
+/** Qué contesta el store a las URL que NO son las de manual. Se escribió
+ *  ANTES de que el router pasara de trece `if` a la tabla de `AssetStoreApi`
+ *  (tanda BR), contra el código de entonces, para que el refactor no pudiera
+ *  cambiar el cable sin que nada se pusiera rojo. Cada caso es una rareza que
+ *  el router conservó a propósito, no un diseño que alguien eligiera; las que
+ *  merecen arreglo son issues aparte (un cuerpo JSON roto y un `%E0` salen 500
+ *  y no 400).
+ *
+ *  La que decide la forma del router nuevo: las rutas con `{param}` leen los
+ *  SEGMENTOS no vacíos (una barra doble interior se colapsa) y las literales
+ *  comparan el path ENTERO (no se colapsa). */
+describe("cable de rutas del store: las URL raras (caracterizadas antes del router por contrato)", () => {
+  it("barra doble interior: se colapsa en las rutas con parámetros, no en las literales", async () => {
+    // Con parámetros: casa como si la barra fuera una.
+    const blob = await crudo("GET", "/cache//surface/abc");
+    assert.deepEqual([blob.status, blob.body], [404, "Not found"]);
+    const unpin = await crudo("DELETE", "/assets//pin/x");
+    assert.equal(unpin.status, 200);
+    assert.deepEqual(JSON.parse(unpin.body), { ok: true, ref: "x", removed: 0 });
+    assert.deepEqual(
+      [(await crudo("GET", "/assets/by_hash//x")).status, (await crudo("GET", "/assets/by_hash//x")).body],
+      [404, "Not found"],
+    );
+    const estilo = await crudo("GET", "/styles//medievo_crudo/cover.jpg");
+    assert.deepEqual([estilo.status, estilo.contentType], [200, "image/jpeg"]);
+    // Y colapsada sigue ganando la ruta más específica: el hero, no el
+    // catch-all de blobs (que diría 400 «Invalid kind»).
+    const hero = await crudo("GET", "/cache//sprite_hero/fedcba9876543210");
+    assert.deepEqual([hero.status, hero.body], [404, "Not found"]);
+
+    // Literales: la barra doble es otra ruta, y el 404 la nombra tal cual.
+    for (const [method, path] of [
+      ["POST", "/cache//prune"],
+      ["POST", "/assets//pin"],
+      ["POST", "/assets//character"],
+      ["GET", "/a//health"],
+    ] as const) {
+      const r = await crudo(method, path, method === "POST" ? "{}" : undefined);
+      assert.equal(r.status, 404, `${method} ${path}`);
+      assert.deepEqual(JSON.parse(r.body), { ok: false, error: `no route for ${method} ${path}` });
+    }
+  });
+
+  it("barras en los bordes: `//x` es un host para `new URL`, la final se recorta", async () => {
+    // `//assets` es una URL relativa de protocolo: el pathname que queda es `/`.
+    const r = await crudo("GET", "//assets");
+    assert.deepEqual([r.status, JSON.parse(r.body)], [404, { ok: false, error: "no route for GET /" }]);
+    assert.equal((await crudo("GET", "/assets//")).status, 200);
+    assert.equal((await crudo("GET", "/health//")).status, 200);
+    assert.deepEqual(JSON.parse((await crudo("GET", "/")).body), { ok: false, error: "no route for GET /" });
+  });
+
+  it("el método es parte de la ruta, y un segmento de más no cae en otra", async () => {
+    const head = await crudo("HEAD", "/health");
+    assert.equal(head.status, 404);
+    const post = await crudo("POST", "/health", "{}");
+    assert.deepEqual([post.status, JSON.parse(post.body)], [404, { ok: false, error: "no route for POST /health" }]);
+    const deMas = await crudo("GET", "/cache/sprite_hero/a/b");
+    assert.deepEqual(JSON.parse(deMas.body), { ok: false, error: "no route for GET /cache/sprite_hero/a/b" });
+    assert.equal((await crudo("GET", "/assets/pin/x")).status, 404);
+  });
+
+  it("unpin DECODIFICA el ref (`/` y `%` escapados), y un escape que no es UTF-8 sale 500", async () => {
+    // `matchRoute` no decodifica a propósito; quien lo hace es el unpin, y
+    // es lo que deja pedir un ref con barras (`character:…`, `game_style:…`
+    // no las llevan hoy, pero nada lo impide).
+    const r = await crudo("DELETE", "/assets/pin/a%2Fb%25c");
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, ref: "a/b%c", removed: 0 });
+    // Caracterización, NO diseño: debería ser 400 (backlog de la tanda BR).
+    const malo = await crudo("DELETE", "/assets/pin/%E0");
+    assert.equal(malo.status, 500);
+    assert.deepEqual(JSON.parse(malo.body), { ok: false, error: "URI malformed" });
+  });
+
+  it("estilos con subcarpeta de rol: 4 segmentos sirven el fichero del pack", async () => {
+    const r = await fetch(`${baseUrl}/styles/medievo_crudo/faces/fachada.jpg`);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get("content-type"), "image/jpeg");
+    const bytes = Buffer.from(await r.arrayBuffer());
+    assert.ok(bytes.byteLength > 0);
+    assert.equal(r.headers.get("content-length"), String(bytes.byteLength));
+    // Los tres roles del pack, no solo `faces/`.
+    for (const f of ["surfaces/surfaces.jpg", "characters/noble.jpg"]) {
+      assert.equal((await getRaw(`/styles/medievo_crudo/${f}`)).status, 200, f);
+    }
+    // Un rol que no existe es el 404 del lector, no el de «no route».
+    const falta = await getRaw("/styles/medievo_crudo/faces/no-existe.jpg");
+    assert.equal(falta.status, 404);
+    assert.doesNotMatch(falta.body.toString(), /no route/);
+  });
+});
+
+/** El router del store ES su contrato (tanda BR): la tabla de handlers es un
+ *  `Record` sobre las claves de `AssetStoreApi`, y qué clave contesta una URL
+ *  lo decide `matchRoute` por especificidad. */
+describe("el router del store es AssetStoreApi", () => {
+  it("cada endpoint, rellenado con fillPath, vuelve a SU clave: ninguna URL del contrato es ambigua", () => {
+    // `getSpriteHero` es el caso que lo justifica: `/cache/sprite_hero/abc`
+    // casa también `getBlob` (`/cache/{kind}/{hash}`), que va ANTES en la
+    // tabla. Con la precedencia por orden este bucle se pone rojo ahí.
+    for (const [nombre, ep] of Object.entries(AssetStoreApi)) {
+      const params: Record<string, string> = {};
+      for (const m of ep.path.matchAll(/\{(\w+)\}/g)) params[m[1]] = "abc";
+      const match = casarRuta(AssetStoreApi, ep.method, parseRequestPath(fillPath(ep.path, params)));
+      assert.ok(match, `${nombre}: ${ep.method} ${ep.path} no casa consigo mismo`);
+      assert.equal(match.key, nombre);
+      assert.deepEqual(match.params, params);
+    }
+  });
+
+  it("la tabla de handlers cubre el contrato entero, y nada más", () => {
+    // En compilación: falta una clave o sobra una, y esto no compila (lo
+    // mismo que la anotación de `RUTAS`; aquí queda a la vista del test).
+    const exhaustiva: Record<AssetStoreRouteKey, unknown> = RUTAS;
+    // En ejecución, por si alguien lo afloja con un cast.
+    assert.deepEqual(Object.keys(exhaustiva).sort(), Object.keys(AssetStoreApi).sort());
+    for (const handler of Object.values(RUTAS)) assert.equal(typeof handler, "function");
+  });
+
+  it("una literal casa con el path ENTERO; una con {param}, con los segmentos", () => {
+    const literal = casarRuta(AssetStoreApi, "POST", parseRequestPath("/cache//prune"));
+    assert.equal(literal, null, "la barra doble no se colapsa en una literal");
+    assert.equal(casarRuta(AssetStoreApi, "POST", parseRequestPath("/cache/prune/"))?.key, "prune");
+    assert.deepEqual(casarRuta(AssetStoreApi, "GET", parseRequestPath("/cache//surface/h")), {
+      key: "getBlob",
+      params: { kind: "surface", hash: "h" },
+    });
+    assert.equal(casarRuta(AssetStoreApi, "GET", parseRequestPath("/")), null);
+  });
+
+  it("con `//` interior las literales no compiten: si otra con {param} casa, contesta ésa", () => {
+    // `AssetStoreApi` no tiene hoy una literal y una con parámetros que casen
+    // la misma URL; esta tabla sintética sí. Con `/a/b` limpia gana la
+    // literal (especificidad); con `/a//b` la literal no puede ser (compara el
+    // path entero), y la URL va a la siguiente candidata, no a un 404.
+    const tabla = {
+      literal: { method: "GET", path: "/a/b" },
+      conParam: { method: "GET", path: "/a/{x}" },
+    } as const;
+    assert.deepEqual(casarRuta(tabla, "GET", parseRequestPath("/a/b")), { key: "literal", params: {} });
+    assert.deepEqual(casarRuta(tabla, "GET", parseRequestPath("/a//b")), { key: "conParam", params: { x: "b" } });
+    // Y sin candidata con parámetros, el 404 de siempre.
+    assert.equal(casarRuta({ literal: tabla.literal }, "GET", parseRequestPath("/a//b")), null);
+  });
+
+  it("matchStylesRoute (el que usa el motor falso) sale de la misma tabla: 3 o 4 segmentos", () => {
+    assert.deepEqual(matchStylesRoute("GET", ["styles", "x", "cover.jpg"]), { styleId: "x", file: "cover.jpg" });
+    assert.deepEqual(matchStylesRoute("GET", ["styles", "x", "faces", "f.jpg"]), {
+      styleId: "x",
+      file: "faces/f.jpg",
+    });
+    assert.equal(matchStylesRoute("GET", ["styles", "x", "a", "b", "c"]), null);
+    assert.equal(matchStylesRoute("GET", ["styles", "x"]), null);
+    assert.equal(matchStylesRoute("POST", ["styles", "x", "cover.jpg"]), null);
+    // Solo las de estilos: una URL de otra ruta del store no es de estilos.
+    assert.equal(matchStylesRoute("GET", ["cache", "surface", "h"]), null);
+    assert.equal(matchStylesRoute("GET", ["health"]), null);
+  });
+});
+
+/** `POST /assets/pin` — con lo que el cliente protege del prune el arte
+ *  pre-generado de una aplicación de estilo (`nefan-html/src/ui/style-apply.ts`,
+ *  ref `game_style:{juego}:{estilo}`). Hasta la tanda BR era la única ruta viva
+ *  del store sin un test por HTTP: un pin roto deja ese arte, que está PAGADO,
+ *  podable por LRU sin que nadie se entere. */
+describe("pin del batch de estilo (POST /assets/pin)", () => {
+  const REF = "game_style:alta_fantasia:medievo_crudo";
+  const H1 = "c0c0c0c0c0c0c0c1";
+  const H2 = "c0c0c0c0c0c0c0c2";
+
+  it("200 {ok, ref, pinned} y los hashes entran en la unión de pins; repetir no duplica", async () => {
+    const r = await post("/assets/pin", { ref: REF, hashes: [H1, H2] });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { ok: true, ref: REF, pinned: 2 });
+    const pineados = db.pinnedHashes();
+    assert.ok(pineados.has(H1) && pineados.has(H2), [...pineados].join(","));
+    // Re-pinear el mismo ref AÑADE (idempotente por PK): `pinned` cuenta lo
+    // pedido, y el unpin cuenta lo que de verdad había.
+    assert.deepEqual((await post("/assets/pin", { ref: REF, hashes: [H1, H2] })).body, { ok: true, ref: REF, pinned: 2 });
+    const del = await fetch(`${baseUrl}/assets/pin/${encodeURIComponent(REF)}`, { method: "DELETE" });
+    assert.deepEqual(await del.json(), { ok: true, ref: REF, removed: 2 });
+    assert.ok(!db.pinnedHashes().has(H1), "soltado");
+  });
+
+  it("400 ErrorResponse con el texto del zod, y el 400 no pinea nada", async () => {
+    const antes = db.pinnedHashes().size;
+    const sinHashes = await post("/assets/pin", { ref: REF });
+    assert.equal(sinHashes.status, 400);
+    assert.equal(sinHashes.body.ok, false);
+    assert.match(String(sinHashes.body.error), /hashes/);
+    const refVacio = await post("/assets/pin", { ref: "", hashes: [H1] });
+    assert.equal(refVacio.status, 400);
+    assert.match(String(refVacio.body.error), /ref/);
+    const noLista = await post("/assets/pin", { ref: REF, hashes: H1 });
+    assert.equal(noLista.status, 400);
+    // Sin cuerpo: `readJson` da `undefined` y el zod lo dice.
+    const vacio = await crudo("POST", "/assets/pin", "");
+    assert.deepEqual([vacio.status, JSON.parse(vacio.body)], [400, { ok: false, error: "Required" }]);
+    assert.equal(db.pinnedHashes().size, antes);
+  });
+
+  it("un cuerpo que no es JSON sale 500 (caracterización: debería ser 400, backlog de la tanda BR)", async () => {
+    const r = await crudo("POST", "/assets/pin", "{nope");
+    assert.equal(r.status, 500);
+    assert.deepEqual(JSON.parse(r.body), { ok: false, error: "invalid JSON body" });
+  });
+
+  it("lo pineado por HTTP sobrevive a POST /cache/prune aunque ningún save lo referencie", async () => {
+    // El POR QUÉ de la ruta, de punta a punta: dos superficies iguales, la más
+    // vieja pineada (el LRU la evictaría la PRIMERA), keep-list de saves
+    // vacía y un techo de 1 byte. Solo el pin la salva, y la otra es el
+    // control: sin él, lo que no se borra no probaría nada.
+    const base = join(root, "pinestilo");
+    const pdb = new ManifestDb(join(root, "pinestilo.sqlite3"));
+    for (const [i, h] of [H1, H2].entries()) {
+      writeSurface(base, h, 100);
+      pdb.importEntry({
+        hash: h, type: "surface", subtype: "surface", prompt: h,
+        created_at: `2026-0${i + 1}-01T00:00:00.000Z`, size_bytes: 100, extra: {},
+      });
+    }
+    keepRefs = [];
+    const srv = createAssetStoreServer({
+      port: 0, db: pdb, blobDirs: blobDirs(base),
+      stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
+      cacheMaxBytes: 1, worldStateUrl,
+    });
+    await once(srv, "listening");
+    try {
+      const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+      const pin = await fetch(`${url}/assets/pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: REF, hashes: [H1] }),
+      });
+      assert.equal(pin.status, 200);
+      const prune = await fetch(`${url}/cache/prune`, { method: "POST" });
+      assert.equal(prune.status, 200);
+      assert.deepEqual(await prune.json(), { ok: true, pruned: 1, freed_bytes: 100, total_bytes: 100 });
+      assert.ok(existsSync(join(surfaceDir(base), H1)), "lo pineado sigue en disco");
+      assert.equal(pdb.findByHash(H1).length, 1, "y sigue indexado");
+      assert.ok(!existsSync(join(surfaceDir(base), H2)), "lo no pineado se podó");
+    } finally {
+      srv.close();
+      pdb.close();
+    }
   });
 });
 

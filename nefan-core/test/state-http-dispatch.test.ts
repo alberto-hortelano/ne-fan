@@ -143,6 +143,51 @@ describe("matchRoute · la inversa exacta de fillPath", () => {
     }
   });
 
+  it("entre dos plantillas con {param} gana la de más literales, esté antes o después", () => {
+    // El caso del asset-store (tanda BR): `/cache/sprite_hero/{key}` y
+    // `/cache/{kind}/{hash}` casan LAS DOS con `/cache/sprite_hero/k`. Con la
+    // regla anterior («la primera con parámetros») el ganador dependía del
+    // orden de la tabla. En los dos órdenes, y con la URL que solo casa la
+    // general, para que «gana la específica» no pueda leerse como «gana la
+    // segunda».
+    const generalPrimero = {
+      blob: { method: "GET", path: "/cache/{kind}/{hash}" },
+      hero: { method: "GET", path: "/cache/sprite_hero/{key}" },
+    } as const satisfies EndpointTable;
+    const especificaPrimero = {
+      hero: { method: "GET", path: "/cache/sprite_hero/{key}" },
+      blob: { method: "GET", path: "/cache/{kind}/{hash}" },
+    } as const satisfies EndpointTable;
+    for (const tabla of [generalPrimero, especificaPrimero]) {
+      assert.deepEqual(matchRoute(tabla, "GET", "/cache/sprite_hero/k"), { key: "hero", params: { key: "k" } });
+      assert.deepEqual(matchRoute(tabla, "GET", "/cache/surface/h"), {
+        key: "blob",
+        params: { kind: "surface", hash: "h" },
+      });
+    }
+    // Cuenta literales, no posiciones: `/a/{x}/c` y `/a/b/{y}` empatan (dos
+    // literales cada una), y un empate lo decide el orden — la PRIMERA, en
+    // los dos órdenes.
+    const ab = {
+      primera: { method: "GET", path: "/a/{x}/c" },
+      segunda: { method: "GET", path: "/a/b/{y}" },
+    } as const satisfies EndpointTable;
+    assert.equal(matchRoute(ab, "GET", "/a/b/c")?.key, "primera");
+    const ba = { segunda: ab.segunda, primera: ab.primera } as const satisfies EndpointTable;
+    assert.equal(matchRoute(ba, "GET", "/a/b/c")?.key, "segunda");
+    // Y tres niveles: con una de 1, otra de 2 y otra de 3 literales, en orden
+    // creciente, gana la última — la que más literales tiene, no la primera
+    // que mejora a la anterior ni la primera que casa.
+    const escalera = {
+      uno: { method: "GET", path: "/{a}/{b}/{c}" },
+      dos: { method: "GET", path: "/x/{b}/{c}" },
+      tres: { method: "GET", path: "/x/y/{c}" },
+    } as const satisfies EndpointTable;
+    assert.equal(matchRoute(escalera, "GET", "/x/y/z")?.key, "tres");
+    assert.equal(matchRoute(escalera, "GET", "/x/q/z")?.key, "dos");
+    assert.equal(matchRoute(escalera, "GET", "/p/q/z")?.key, "uno");
+  });
+
   it("los ids llegan sin decodificar, como los dejaba el router viejo", () => {
     // `fillPath` percent-codifica; decodificar aquí sería un cambio de
     // contrato disfrazado de refactor (y `%2F` partiría el path en dos).

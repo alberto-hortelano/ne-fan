@@ -262,7 +262,22 @@ export interface AssetRegisterResponse {
   ok: true;
 }
 
+/** `GET /health`: el probe del launcher y del ai_server. Vivía en el
+ *  servidor y la ruta no estaba en `AssetStoreApi`; desde que el router se
+ *  deriva de esta tabla (tanda BR), una ruta servida sin entrada aquí no
+ *  compila, así que entra en el contrato con su tipo. */
+export interface AssetStoreHealthResponse {
+  ok: true;
+  total_count: number;
+  total_bytes: number;
+}
+
+/** La tabla de endpoints del store, y la del ROUTER: `services/asset-store/rutas.ts`
+ *  es un `Record` sobre estas claves, así que un endpoint sin handler (o un
+ *  handler sin endpoint) no compila. Qué endpoint contesta una URL lo decide
+ *  `matchRoute` por especificidad, no por el orden de estas claves. */
 export const AssetStoreApi = {
+  health: endpoint<void, AssetStoreHealthResponse>("GET", "/health"),
   /** kind = KIND_BLOB_PLANO (cualquier otro → 400 texto plano "Invalid kind"); PNG. */
   getBlob: endpoint<void, BinaryResponse, "kind" | "hash">("GET", "/cache/{kind}/{hash}"),
   /** filename con regex dir_\d+_frame_\d{3}\.png. */
@@ -295,6 +310,14 @@ export const AssetStoreApi = {
   getStyleFile: endpoint<void, BinaryResponse, "style_id" | "file">(
     "GET",
     "/styles/{style_id}/{file}",
+  ),
+  /** El fichero de un pack en su carpeta de ROL (`faces/fachada.jpg`,
+   *  `surfaces/…`, `characters/…`): el formato de los packs desde el rediseño
+   *  de refs. Era la misma ruta que `getStyleFile` con un segmento de más, y
+   *  el contrato no lo decía. Un nivel, no más: 5 segmentos no casan (404). */
+  getStyleRoleFile: endpoint<void, BinaryResponse, "style_id" | "role" | "file">(
+    "GET",
+    "/styles/{style_id}/{role}/{file}",
   ),
 } as const;
 

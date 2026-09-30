@@ -118,8 +118,18 @@ export interface RouteMatch<K extends string> {
  *    doble interior tampoco se colapsa. Un `{param}` nunca casa con vacío.
  *  - Las barras FINALES se recortan (`/health/` ≡ `/health`), que es lo que
  *    hacía el router y lo que emiten los clientes despistados.
- *  - Precedencia: si una URL casa con una plantilla literal y con otra que usa
- *    `{param}`, gana la literal (`/npcs/in_transit` antes que `/npcs/{id}`).
+ *  - Precedencia por ESPECIFICIDAD, no por orden: si una URL casa con varias
+ *    plantillas, gana la de más segmentos literales: en `AssetStoreApi`,
+ *    `GET /cache/sprite_hero/k` casa `/cache/sprite_hero/{key}` (dos
+ *    literales) y `/cache/{kind}/{hash}` (uno), y gana la primera. Una
+ *    plantilla toda literal gana, por tanto, a cualquiera con `{param}` de su
+ *    misma longitud (`WorldStateApi` no tiene hoy ningún par así: la regla la
+ *    fija una tabla sintética en test/state-http-dispatch.test.ts). Solo un
+ *    empate lo decide el orden de la tabla:
+ *    la primera. Hasta la tanda BR la regla era «la literal entera gana; si
+ *    no, la PRIMERA con parámetros», y el asset-store —que sí tiene dos
+ *    plantillas con parámetros que casan la misma URL— dependía de que nadie
+ *    reordenara su tabla.
  *  - El método forma parte de la identidad: `GET /vocabulary` no es
  *    `POST /vocabulary`. */
 export function matchRoute<T extends EndpointTable>(
@@ -128,7 +138,7 @@ export function matchRoute<T extends EndpointTable>(
   path: string,
 ): RouteMatch<Extract<keyof T, string>> | null {
   const pedido = normalizePath(path).split("/");
-  let conParams: RouteMatch<Extract<keyof T, string>> | null = null;
+  let mejor: { match: RouteMatch<Extract<keyof T, string>>; literales: number } | null = null;
   for (const key of Object.keys(table)) {
     const ep = table[key];
     if (ep.method !== method) continue;
@@ -136,7 +146,7 @@ export function matchRoute<T extends EndpointTable>(
     if (plantilla.length !== pedido.length) continue;
     const params: Record<string, string> = {};
     let casa = true;
-    let literal = true;
+    let literales = 0;
     for (const [i, segmento] of plantilla.entries()) {
       const nombre = paramName(segmento);
       if (nombre === null) {
@@ -144,6 +154,7 @@ export function matchRoute<T extends EndpointTable>(
           casa = false;
           break;
         }
+        literales++;
       } else if (pedido[i] === "") {
         // `/npc//arrive`: el id vendría VACÍO y el handler buscaría el npc "".
         // Tiene que rebotar aquí; la comprobación de longitud no lo caza,
@@ -152,15 +163,15 @@ export function matchRoute<T extends EndpointTable>(
         break;
       } else {
         params[nombre] = pedido[i];
-        literal = false;
       }
     }
     if (!casa) continue;
-    const encontrado = { key: key as Extract<keyof T, string>, params };
-    if (literal) return encontrado;
-    conParams ??= encontrado;
+    // Estricto: en un empate se queda la que ya estaba, o sea la primera.
+    if (mejor === null || literales > mejor.literales) {
+      mejor = { match: { key: key as Extract<keyof T, string>, params }, literales };
+    }
   }
-  return conParams;
+  return mejor?.match ?? null;
 }
 
 /** Un path en su forma canónica: sin barras finales, y `/` para la raíz.

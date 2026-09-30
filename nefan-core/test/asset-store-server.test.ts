@@ -27,7 +27,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ENV_MANIFEST_DB, loadAssetStoreConfig } from "../services/asset-store/config.js";
-import type { AssetStoreHealthResponse } from "../services/asset-store/http-server.js";
+import type { AssetStoreHealthResponse } from "../src/contracts/asset-store.js";
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { SCRIPT_DE_PURGA } from "../services/asset-store/kinds-con-productor.js";
 
