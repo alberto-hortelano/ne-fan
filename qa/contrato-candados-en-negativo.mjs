@@ -194,7 +194,10 @@ const INVARIANTES = [
         "    scenes: z.record(z.string(), ExpandedSceneSchema),",
         "    scenes: z.record(z.string(), z.record(z.string(), z.unknown())),",
       ],
-      ['import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";\n', ""],
+      [
+        'import { ExpandedSceneSchema, type ExpandedScene } from "../contract/model-io/scene-schema.js";\n',
+        'import type { ExpandedScene } from "../contract/model-io/scene-schema.js";\n',
+      ],
     ],
   ],
   // ── #237/#259 · el espejo Python, por el set COMPARTIDO ─────────────────
