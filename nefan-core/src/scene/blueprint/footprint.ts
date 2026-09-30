@@ -1,6 +1,9 @@
-/** Huella analítica de un volumen — la fuente ÚNICA de colisión, orden del
- *  pintor y manifest: siempre la huella DECLARADA en celdas de mundo, nunca
- *  los píxeles pintados. */
+/** Huella DECLARADA de un volumen en celdas de mundo, nunca los píxeles
+ *  pintados. La consumen la exclusión del scatter, los bloqueos del derive, la
+ *  forma pintada del prop y la colisión de `gate`/`custom`. NO es la colisión
+ *  del resto (torre, fuente, roca y prop-punto colisionan por su disco,
+ *  `volumeSolidDiscRadiusCells`) ni el manifest (`volumeFootprintCells` en
+ *  volume-metrics.ts). */
 
 import type { Volume } from "./volumes.js";
 
@@ -23,41 +26,37 @@ export function rotatedRectCorners(
   );
 }
 
-function rotatedFootprint(
-  rect: [number, number, number, number],
-  angleDeg: number,
-): { depthPoint: [number, number]; cells: [number, number, number, number] } {
-  const corners = rotatedRectCorners(rect, angleDeg);
+/** Huella en celdas [minU, minV, maxU, maxV]. */
+export type FootprintCells = [number, number, number, number];
+
+function rotatedFootprint(rect: [number, number, number, number], angleDeg: number): FootprintCells {
   let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
-  let depth: [number, number] = corners[0];
-  for (const [u, vv] of corners) {
+  for (const [u, vv] of rotatedRectCorners(rect, angleDeg)) {
     minU = Math.min(minU, u);
     minV = Math.min(minV, vv);
     maxU = Math.max(maxU, u);
     maxV = Math.max(maxV, vv);
-    if (vv > depth[1]) depth = [u, vv];
   }
-  return { depthPoint: depth, cells: [minU, minV, maxU, maxV] };
+  return [minU, minV, maxU, maxV];
 }
 
-/** Punto de contacto con el suelo más profundo (clave del orden del pintor)
- *  y huella en celdas [minU, minV, maxU, maxV] de un volumen. Con `angle`, la
- *  huella es el AABB del rect rotado (colisión y orden conservadores). */
-export function volumeFootprint(v: Volume): { depthPoint: [number, number]; cells: [number, number, number, number] } {
+/** Huella en celdas [minU, minV, maxU, maxV] de un volumen. Con `angle`, es
+ *  el AABB del rect rotado (conservadora). */
+export function volumeFootprint(v: Volume): FootprintCells {
   switch (v.type) {
     case "building": {
       if (v.angle) return rotatedFootprint(v.rect, v.angle);
       const [u0, v0, w, d] = v.rect;
-      return { depthPoint: [u0 + w, v0 + d], cells: [u0, v0, u0 + w, v0 + d] };
+      return [u0, v0, u0 + w, v0 + d];
     }
     case "prop": {
       if (v.rect) {
         if (v.angle) return rotatedFootprint(v.rect, v.angle);
         const [u0, v0, w, d] = v.rect;
-        return { depthPoint: [u0 + w, v0 + d], cells: [u0, v0, u0 + w, v0 + d] };
+        return [u0, v0, u0 + w, v0 + d];
       }
       const [u, vv] = v.at!;
-      return { depthPoint: [u + 1.4, vv + 1.4], cells: [u - 1.4, vv - 1.4, u + 1.4, vv + 1.4] };
+      return [u - 1.4, vv - 1.4, u + 1.4, vv + 1.4];
     }
     case "wall": {
       let minU = Infinity;
@@ -71,25 +70,23 @@ export function volumeFootprint(v: Volume): { depthPoint: [number, number]; cell
         maxV = Math.max(maxV, vv);
       }
       const half = (v.width ?? 3) / 2;
-      return { depthPoint: [maxU + half, maxV + half], cells: [minU - half, minV - half, maxU + half, maxV + half] };
+      return [minU - half, minV - half, maxU + half, maxV + half];
     }
     case "tower": {
       const r = v.r ?? 6;
-      return { depthPoint: [v.at[0] + r, v.at[1] + r], cells: [v.at[0] - r, v.at[1] - r, v.at[0] + r, v.at[1] + r] };
+      return [v.at[0] - r, v.at[1] - r, v.at[0] + r, v.at[1] + r];
     }
     case "gate": {
       const w = v.w ?? 8;
       const along = w / 2 + 3;
       const dh = 2.2;
-      const cells: [number, number, number, number] =
-        v.orient === "x"
-          ? [v.at[0] - along, v.at[1] - dh, v.at[0] + along, v.at[1] + dh]
-          : [v.at[0] - dh, v.at[1] - along, v.at[0] + dh, v.at[1] + along];
-      return { depthPoint: [cells[2], cells[3]], cells };
+      return v.orient === "x"
+        ? [v.at[0] - along, v.at[1] - dh, v.at[0] + along, v.at[1] + dh]
+        : [v.at[0] - dh, v.at[1] - along, v.at[0] + dh, v.at[1] + along];
     }
     case "fountain": {
       const r = v.r ?? 5;
-      return { depthPoint: [v.at[0] + r, v.at[1] + r], cells: [v.at[0] - r, v.at[1] - r, v.at[0] + r, v.at[1] + r] };
+      return [v.at[0] - r, v.at[1] - r, v.at[0] + r, v.at[1] + r];
     }
     case "custom": {
       // AABB XZ de las piezas (dims × scale) alrededor de `at`, rotado por
@@ -125,7 +122,7 @@ export function volumeFootprint(v: Volume): { depthPoint: [number, number]; cell
           maxV = Math.max(maxV, v.at[1] + rv);
         }
       }
-      return { depthPoint: [maxU, maxV], cells: [minU, minV, maxU, maxV] };
+      return [minU, minV, maxU, maxV];
     }
     case "prism": {
       // Huella = AABB del contorno poligonal (sin margen: el polígono ES la
@@ -135,12 +132,12 @@ export function volumeFootprint(v: Volume): { depthPoint: [number, number]; cell
         minU = Math.min(minU, u); minV = Math.min(minV, vv);
         maxU = Math.max(maxU, u); maxV = Math.max(maxV, vv);
       }
-      return { depthPoint: [maxU, maxV], cells: [minU, minV, maxU, maxV] };
+      return [minU, minV, maxU, maxV];
     }
     default: {
-      const s = ("s" in v ? v.s : 1) ?? 1;
+      const s = v.s ?? 1;
       const r = v.type === "rock" ? 2.1 * s : 1.2 * s;
-      return { depthPoint: [v.at[0], v.at[1]], cells: [v.at[0] - r, v.at[1] - r, v.at[0] + r, v.at[1] + r] };
+      return [v.at[0] - r, v.at[1] - r, v.at[0] + r, v.at[1] + r];
     }
   }
 }

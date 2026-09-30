@@ -14,6 +14,26 @@ function solidAt(grid: string[], c: number, r: number): boolean {
   return grid[r][c] === "S";
 }
 
+/** ¿Se llega andando de `a` a `b`? Relleno 4-conexo por celdas libres: es la
+ *  pregunta del jugador («¿puedo entrar por ahí?»), no la de una celda suelta. */
+function alcanzable(grid: string[], a: [number, number], b: [number, number]): boolean {
+  if (solidAt(grid, a[0], a[1]) || solidAt(grid, b[0], b[1])) return false;
+  const visto = new Set<number>([a[1] * grid[0].length + a[0]]);
+  const cola: Array<[number, number]> = [a];
+  while (cola.length > 0) {
+    const [c, r] = cola.pop()!;
+    if (c === b[0] && r === b[1]) return true;
+    for (const [nc, nr] of [[c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]] as const) {
+      if (nr < 0 || nc < 0 || nr >= grid.length || nc >= grid[0].length) continue;
+      const k = nr * grid[0].length + nc;
+      if (visto.has(k) || solidAt(grid, nc, nr)) continue;
+      visto.add(k);
+      cola.push([nc, nr]);
+    }
+  }
+  return false;
+}
+
 describe("blueprint/collision", () => {
   it("tile vacío → null", () => {
     assert.equal(volumeCollisionGrid([], RECT), null);
@@ -144,5 +164,64 @@ describe("blueprint/collision", () => {
       RECT,
     )!;
     assert.ok(solidAt(g0.grid, 49, 43));
+  });
+});
+
+describe("blueprint/collision: por dónde se pasa", () => {
+  // Muro norte-sur que parte el tile en dos: sin vano no hay forma de cruzar.
+  const muroNS = (width: number): Volume => (
+    { id: "muro", label: "muralla", type: "wall", points: [[64, 0], [64, 127]], width, h: 7 }
+  );
+  const puertaY: Volume = { id: "puerta", label: "portón", type: "gate", at: [64, 64], w: 8, orient: "y" };
+
+  it("gate `orient:\"y\"` en un muro norte-sur: se cruza de oeste a este por el vano, y sin él no", () => {
+    const g = volumeCollisionGrid([muroNS(3), puertaY], RECT)!;
+    assert.ok(alcanzable(g.grid, [40, 64], [90, 64]), "el portón deja cruzar el muro");
+    const sinPuerta = volumeCollisionGrid([muroNS(3)], RECT)!;
+    assert.equal(alcanzable(sinPuerta.grid, [40, 64], [90, 64]), false, "control: el muro sin portón sella");
+    // El vano (w 8 → filas 60..67) está libre en todo el grosor del muro.
+    for (let r = 60; r <= 67; r++) for (let c = 62; c <= 65; c++) assert.ok(!solidAt(g.grid, c, r), `vano (${c},${r})`);
+    assert.ok(solidAt(g.grid, 64, 59) && solidAt(g.grid, 64, 68), "las jambas, a cada lado del vano, bloquean");
+    assert.ok(solidAt(g.grid, 64, 20), "el muro lejos del portón bloquea");
+  });
+
+  it("gate `orient:\"y\"` en un muro GRUESO: el vano cruza los 12 de grosor, no solo la holgura fija", () => {
+    // Con 3.5 de holgura el vano dejaría sólidas las columnas 58-59 y 68-69
+    // del muro (±6): puerta pintada abierta y muro invisible en medio.
+    const g = volumeCollisionGrid([muroNS(12), puertaY], RECT)!;
+    for (let r = 60; r <= 67; r++) for (let c = 55; c <= 73; c++) assert.ok(!solidAt(g.grid, c, r), `vano (${c},${r})`);
+    assert.ok(alcanzable(g.grid, [40, 64], [90, 64]));
+    assert.ok(solidAt(g.grid, 58, 20) && solidAt(g.grid, 69, 20), "el muro grueso bloquea en todo su grosor lejos del portón");
+  });
+
+  // Casa enterable [20,20]..[40,36]: interior (30,28); fuera, (10,10) y (50,28).
+  const casa = (doors: Array<{ edge: "n" | "s" | "e" | "w"; at: number; w?: number }>): Volume => (
+    { id: "casa", label: "casa", type: "building", rect: [20, 20, 20, 16], cutaway: true, doors }
+  );
+  const DENTRO: [number, number] = [30, 28];
+
+  it("cutaway sin puertas: el anillo sella el interior (control de los de abajo)", () => {
+    const g = volumeCollisionGrid([casa([])], RECT)!;
+    assert.equal(alcanzable(g.grid, [10, 10], DENTRO), false);
+  });
+
+  for (const [edge, fuera, hueco, muro] of [
+    ["n", [30, 10], [[28, 20], [31, 21]], [27, 20]],
+    ["w", [10, 28], [[20, 26], [21, 29]], [20, 25]],
+    ["e", [50, 28], [[39, 26], [38, 29]], [39, 30]],
+  ] as Array<["n" | "w" | "e", [number, number], Array<[number, number]>, [number, number]]>) {
+    it(`cutaway con puerta \`${edge}\`: se entra desde fuera por ella`, () => {
+      const g = volumeCollisionGrid([casa([{ edge, at: edge === "n" ? 8 : 6, w: 4 }])], RECT)!;
+      assert.ok(alcanzable(g.grid, fuera, DENTRO), `desde ${fuera} se llega al interior por la puerta ${edge}`);
+      for (const [c, r] of hueco) assert.ok(!solidAt(g.grid, c, r), `hueco (${c},${r})`);
+      assert.ok(solidAt(g.grid, muro[0], muro[1]), `el muro junto a la puerta ${edge} sigue sólido`);
+    });
+  }
+
+  it("cutaway con DOS puertas en el mismo muro: se abren las dos y el tramo entre ellas sigue en pie", () => {
+    const g = volumeCollisionGrid([casa([{ edge: "n", at: 2, w: 4 }, { edge: "n", at: 12, w: 4 }])], RECT)!;
+    for (const c of [22, 25, 32, 35]) assert.ok(!solidAt(g.grid, c, 20), `hueco en la columna ${c}`);
+    for (const c of [21, 26, 29, 31, 36]) assert.ok(solidAt(g.grid, c, 20), `muro en la columna ${c}`);
+    assert.ok(alcanzable(g.grid, [23, 10], DENTRO) && alcanzable(g.grid, [33, 10], DENTRO));
   });
 });

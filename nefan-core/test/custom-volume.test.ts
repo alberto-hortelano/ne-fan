@@ -9,7 +9,7 @@ import { buildFpsTileSpec } from "../src/scene/blueprint/fps-spec.js";
 import { volumeCollisionGrid } from "../src/scene/blueprint/collision.js";
 import { volumeFootprint } from "../src/scene/blueprint/footprint.js";
 import { parseVolumes, type CustomVolume } from "../src/scene/blueprint/volumes.js";
-import { volumePrimsForTile, customPartTop } from "../src/scene/greybox/volume-prims.js";
+import { volumePrimsForTile, customPartTop, customPartAabb } from "../src/scene/greybox/volume-prims.js";
 import { buildLayout } from "../src/scene/greybox/surfaces.js";
 import { TILE_CELLS, TILE_MPC, tileWorldRect } from "../src/scene/tile.js";
 
@@ -103,7 +103,7 @@ describe("custom: prims", () => {
 
   it("huella = AABB de las piezas y colisión estampada (solid default)", () => {
     const v = carreta();
-    const fp = volumeFootprint(v).cells;
+    const fp = volumeFootprint(v);
     assert.ok(fp[0] < 72 && fp[2] > 72 && fp[1] < 74 && fp[3] > 74, `huella alrededor de at: ${fp}`);
     assert.ok(fp[2] - fp[0] >= 6, "cubre al menos el ancho de la caja");
     const grid = volumeCollisionGrid([v], tileWorldRect(0, 0));
@@ -135,6 +135,56 @@ describe("custom: prims", () => {
     const a = buildFpsTileSpec({ volumes: [v], biome: "dirt" }, "k");
     const b = buildFpsTileSpec({ volumes: [v], biome: "dirt" }, "k");
     assert.deepEqual(a.primsM, b.primsM);
+  });
+
+  it("cono, esfera y cilindro con rTop: la forma declarada, apoyada en el suelo y dentro de lo que colisiona", () => {
+    // Una pieza de cada forma redonda que admite el zod, con y sin `seg`, y
+    // una sin `pos` ni `color` (se planta en el `at` con el color de clay).
+    const parsed = parseVolumes([{
+      id: "altar", label: "altar de piezas", type: "custom", at: [60, 60],
+      parts: [
+        { shape: "cone", r: 2, h: 3, pos: [-5, 0, 0] },
+        { shape: "cone", r: 1, h: 2, seg: 6, pos: [5, 0, 0] },
+        { shape: "sphere", r: 1.5, pos: [0, 0, 5] },
+        { shape: "sphere", r: 1, seg: 8, pos: [0, 0, -5] },
+        { shape: "cylinder", rBottom: 1, rTop: 2, h: 3 },
+      ],
+    }]);
+    assert.ok(parsed.ok, !parsed.ok ? parsed.error : "");
+    const v = parsed.volumes[0] as CustomVolume;
+    const prims = volumePrimsForTile(v, []);
+    // Tamaños con el contrato de GreyboxPrimitive: cone [r, h, seg],
+    // sphere [r, seg?], cylinder [rBottom, h, rTop]. El cono sin seg lleva
+    // uno fijo (el renderer no debe decidir la facetación de una pieza).
+    assert.deepEqual(prims.map((p) => [p.shape, p.size]), [
+      ["cone", [2, 3, 12]],
+      ["cone", [1, 2, 6]],
+      ["sphere", [1.5]],
+      ["sphere", [1, 8]],
+      ["cylinder", [1, 3, 2]],
+    ]);
+    assert.deepEqual(prims[4].pos, [60, 0, 60], "sin pos: en el at, apoyada");
+    assert.match(prims[4].color, /^#[0-9a-f]{6}$/i, "sin color: el clay por defecto");
+    const altura = [3, 2, 3, 2, 3];
+    const radio = [2, 1, 1.5, 1, 2]; // el cilindro abre hacia arriba: manda rTop
+    v.parts.forEach((p, i) => {
+      const { min, max } = customPartAabb(p, 0);
+      assert.ok(Math.abs(min[1]) < 1e-9, `pieza ${i} apoya en y=0 (${min[1]})`);
+      assert.ok(Math.abs(max[1] - altura[i]) < 1e-9, `pieza ${i} alta ${altura[i]} (${max[1]})`);
+      for (const k of [0, 2]) {
+        assert.ok(Math.abs(max[k] - radio[i]) < 1e-9 && Math.abs(min[k] + radio[i]) < 1e-9, `pieza ${i} eje ${k}: ±${radio[i]}`);
+      }
+      // Lo que se pinta de la pieza (su AABB en planta) colisiona entero, con
+      // la pieza SOLA: la huella del conjunto es el AABB de todas y taparía
+      // a una pieza que no aportara la suya.
+      const grid = volumeCollisionGrid([{ ...v, parts: [p] }], tileWorldRect(0, 0))!;
+      const [px, , pz] = prims[i].pos;
+      for (const u of [px + min[0] * 0.98, px + max[0] * 0.98]) {
+        for (const w of [pz + min[2] * 0.98, pz + max[2] * 0.98]) {
+          assert.equal(grid.grid[Math.floor(w)][Math.floor(u)], "S", `pieza ${i}: (${u.toFixed(2)},${w.toFixed(2)}) sin colisión`);
+        }
+      }
+    });
   });
 
   it("las celdas locales admiten margen: TILE_CELLS es el tope del at", () => {

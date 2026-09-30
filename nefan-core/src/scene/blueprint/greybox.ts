@@ -156,12 +156,10 @@ export function buildTileGreyboxSpec(plan: TileGreyboxPlan, seedKey: string): Ti
   });
   primitives.push(...groundDetailPrims(base, biome, seedKey));
 
-  // ── Rasgos declarativos del suelo (áreas/caminos < agua < decks): transform
-  // identidad y unidades en celdas. ─────────────────────────────────────────
+  // ── Rasgos declarativos del suelo (áreas/caminos < agua < decks), en
+  // celdas. ─────────────────────────────────────────────────────────────────
   primitives.push(
     ...groundFeaturePrims(plan.ground ?? [], {
-      toXZ: (u, v) => [u, v],
-      scale: 1,
       layers: GROUND_LAYERS_CELLS,
       layerT: GROUND_LAYER_T_CELLS,
     }),

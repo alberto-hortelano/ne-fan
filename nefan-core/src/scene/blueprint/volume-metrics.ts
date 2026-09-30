@@ -27,7 +27,7 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
   switch (v.type) {
     case "building": {
       if (v.angle) {
-        const { cells } = volumeFootprint(v);
+        const cells = volumeFootprint(v);
         return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
       }
       return v.rect;
@@ -56,7 +56,7 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
       // puerta bloquea caía dentro de la huella del manifest, así que el
       // jugador chocaba justo donde el manifest decía que no había nada
       // (#187). El vano no es la huella de la puerta: es el hueco que deja.
-      const { cells } = volumeFootprint(v);
+      const cells = volumeFootprint(v);
       return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
     }
     case "tree": {
@@ -78,7 +78,7 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
     case "prop": {
       if (v.rect) {
         if (v.angle) {
-          const { cells } = volumeFootprint(v);
+          const cells = volumeFootprint(v);
           return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
         }
         return v.rect;
@@ -100,7 +100,7 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
     }
     case "custom": {
       // Composición libre: la MISMA huella que footprint.ts (AABB de piezas).
-      const { cells } = volumeFootprint(v);
+      const cells = volumeFootprint(v);
       return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
     }
   }

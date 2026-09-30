@@ -286,7 +286,7 @@ export function volumeCollisionGrid(
         break;
       case "gate": {
         // jambas: cuerpo completo; el vano se limpia en la pasada final
-        const fp = volumeFootprint(v).cells;
+        const fp = volumeFootprint(v);
         markRect(grid, fp[0], fp[1], fp[2], fp[3], dims);
         break;
       }
@@ -305,7 +305,7 @@ export function volumeCollisionGrid(
         // Composición libre: estampa el AABB de sus piezas (la MISMA huella
         // del manifest — footprint.ts) salvo que se declare no-sólida.
         if (v.solid === false) break;
-        const fp = volumeFootprint(v).cells;
+        const fp = volumeFootprint(v);
         markRect(grid, fp[0], fp[1], fp[2], fp[3], dims);
         break;
       }
