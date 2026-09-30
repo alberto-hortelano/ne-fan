@@ -275,21 +275,31 @@ export function informeDeBateriaRota(id: string, stdout: string, stderr: string)
 
 // ── el corredor ──────────────────────────────────────────────────────────────
 
-/** Une los ficheros de cobertura que deja UNA corrida: `tsx` arranca más de un
+/** Une los volcados de cobertura que deja UNA corrida: `tsx` arranca más de un
  *  hilo, así que `NODE_V8_COVERAGE` deja varios `coverage-*.json` y el fichero
  *  que interesa puede estar en cualquiera de ellos. */
 function coberturaDe(dir: string, raiz: string): Map<string, CoberturaDeFichero> {
+  if (!existsSync(dir)) return new Map();
+  const volcados = readdirSync(dir)
+    .filter((x) => x.endsWith(".json"))
+    .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as { result?: CoberturaDeFichero[] });
+  return fusionarVolcados(volcados, raiz);
+}
+
+/** La regla de fusión, sin disco. El MISMO fichero puede salir en dos volcados
+ *  (dos hilos que lo cargaron). Se queda el que más llamadas trae: quedarse con
+ *  el primero daría «solo cargado» sobre un fichero que sí se ejerció en el
+ *  otro. Con empate se queda el primero (`>` estricto). */
+export function fusionarVolcados(
+  volcados: ReadonlyArray<{ result?: CoberturaDeFichero[] }>,
+  raiz: string,
+): Map<string, CoberturaDeFichero> {
   const out = new Map<string, CoberturaDeFichero>();
-  if (!existsSync(dir)) return out;
-  for (const f of readdirSync(dir).filter((x) => x.endsWith(".json"))) {
-    const crudo = JSON.parse(readFileSync(join(dir, f), "utf8")) as { result?: CoberturaDeFichero[] };
+  for (const crudo of volcados) {
     for (const script of crudo.result ?? []) {
       const ruta = rutaDelScript(script.url, raiz);
       if (ruta === undefined) continue;
       const previo = out.get(ruta);
-      // El MISMO fichero puede salir en dos volcados (dos hilos que lo
-      // cargaron). Se queda el que más llamadas trae: quedarse con el primero
-      // daría «solo cargado» sobre un fichero que sí se ejerció en el otro.
       if (previo === undefined || cuenta(script) > cuenta(previo)) out.set(ruta, script);
     }
   }

@@ -164,14 +164,14 @@ export function purgar(db: ManifestDb, opts: OpcionesPurga): Resumen {
 
 // ── CLI ──
 
-interface Args {
+export interface Args {
   ejecutar: boolean;
   db?: string;
   cache?: string;
   archivo?: string;
 }
 
-function parseArgs(argv: string[]): Args | { error: string } {
+export function parseArgs(argv: string[]): Args | { error: string } {
   const args: Args = { ejecutar: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -183,6 +183,57 @@ function parseArgs(argv: string[]): Args | { error: string } {
     } else return { error: `flag desconocida: ${a}` };
   }
   return args;
+}
+
+/** Lo que `main` averigua del mundo antes de abrir la DB. Son HECHOS: el
+ *  orden en que pesan no lo decide quien los mide, lo decide
+ *  `veredictoDeGuardias`. */
+export interface HechosDeGuardia {
+  /** Entradas de `cache/` que no son de un kind con productor (`guardiaDeOrden`). */
+  sobrantes: string[];
+  storeArriba: boolean;
+  dbExiste: boolean;
+}
+
+export interface RutasDeGuardia {
+  cacheDir: string;
+  archivoDir: string;
+  storeUrl: string;
+  dbPath: string;
+}
+
+export type VeredictoDeGuardias =
+  | { ok: true }
+  | { ok: false; guardia: "blobs" | "store" | "db"; lineas: string[] };
+
+/** La precedencia de las guardias, que es lo que protege el material pagado
+ *  (ver el ORDEN de la cabecera): blobs archivados > store parado > DB
+ *  existe. Con dos fallando a la vez manda la de más arriba, porque su
+ *  remedio (`mv` de blobs) es el que no se puede hacer después. */
+export function veredictoDeGuardias(h: HechosDeGuardia, rutas: RutasDeGuardia): VeredictoDeGuardias {
+  if (h.sobrantes.length > 0) {
+    return {
+      ok: false,
+      guardia: "blobs",
+      lineas: [
+        `manifest-kinds-con-productor: ${rutas.cacheDir} todavía tiene material que no es de un kind con productor — archívalo primero:`,
+        ...h.sobrantes.map((s) => `  mv ${join(rutas.cacheDir, s)} ${join(rutas.archivoDir, s)}`),
+      ],
+    };
+  }
+  if (h.storeArriba) {
+    return {
+      ok: false,
+      guardia: "store",
+      lineas: [
+        `manifest-kinds-con-productor: hay un asset-store respondiendo en ${rutas.storeUrl} — párale primero (tecla k de start.sh): VACUUM exige exclusividad.`,
+      ],
+    };
+  }
+  if (!h.dbExiste) {
+    return { ok: false, guardia: "db", lineas: [`manifest-kinds-con-productor: no existe ${rutas.dbPath}`] };
+  }
+  return { ok: true };
 }
 
 async function storeArriba(url: string): Promise<boolean> {
@@ -211,6 +262,55 @@ function tabla(r: Resumen): string {
   ].join("\n");
 }
 
+/** Lo que se imprime tras `purgar` y con qué código se sale: 0 salvo que
+ *  una purga ejecutada deje filas ajenas (`quedan > 0` → 1). */
+export function informeDePurga(r: Resumen, ejecutar: boolean, dbPath: string): { lineas: string[]; codigo: 0 | 1 } {
+  const cabeza = [`manifest-kinds-con-productor: ${dbPath}`, tabla(r)];
+  if (!ejecutar) {
+    return {
+      lineas: [...cabeza, r.totalFilas === 0 ? "0 filas ajenas, nada que hacer." : "dry-run: nada tocado. Repite con --ejecutar para exportar y borrar."],
+      codigo: 0,
+    };
+  }
+  if (r.exportado === undefined) return { lineas: [...cabeza, "0 filas ajenas, nada que hacer."], codigo: 0 };
+  return {
+    lineas: [
+      ...cabeza,
+      `exportadas ${r.exportado.filas} → ${r.exportado.ruta}${r.exportado.reutilizado ? " (ya existía con el mismo contenido)" : ""}`,
+      `borradas ${r.borradas!.filas} filas, ${r.borradas!.pins} pins, ${r.borradas!.meta} meta`,
+      "VACUUM ok",
+      `quedan ${r.quedan} filas ajenas`,
+    ],
+    codigo: r.quedan === 0 ? 0 : 1,
+  };
+}
+
+/** Las rutas efectivas: las flags mandan sobre la config del store. */
+export function rutasDeCli(
+  parsed: Args,
+  cfg: { dbPath: string; cacheDir: string },
+  storeUrl: string,
+  repoRoot: string,
+): RutasDeGuardia {
+  return {
+    dbPath: parsed.db ?? cfg.dbPath,
+    cacheDir: parsed.cache ?? cfg.cacheDir,
+    archivoDir: parsed.archivo ?? resolve(repoRoot, "archivo", "cache"),
+    storeUrl,
+  };
+}
+
+/** Mide los tres hechos EN EL ORDEN de la cabecera y sin abrir la DB. */
+async function medirHechos(rutas: RutasDeGuardia): Promise<HechosDeGuardia> {
+  return {
+    sobrantes: guardiaDeOrden(existsSync(rutas.cacheDir) ? readdirSync(rutas.cacheDir) : []),
+    storeArriba: await storeArriba(rutas.storeUrl),
+    dbExiste: existsSync(rutas.dbPath),
+  };
+}
+
+/** Cableado: mide, delega el veredicto y el informe en las funciones puras
+ *  de arriba, e imprime. La DB solo se abre con el veredicto en verde. */
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2));
   if ("error" in parsed) {
@@ -218,51 +318,19 @@ async function main(): Promise<number> {
     console.error("uso: npx tsx scripts/manifest-kinds-con-productor.ts [--ejecutar] [--db <p>] [--cache <dir>] [--archivo <dir>]");
     return 2;
   }
-  const cfg = loadAssetStoreConfig(process.env);
-  const dbPath = parsed.db ?? cfg.dbPath;
-  const cacheDir = parsed.cache ?? cfg.cacheDir;
-  const archivoDir = parsed.archivo ?? resolve(REPO_ROOT, "archivo", "cache");
-
-  // Guardia 1: blobs archivados.
-  const sobrantes = guardiaDeOrden(existsSync(cacheDir) ? readdirSync(cacheDir) : []);
-  if (sobrantes.length > 0) {
-    console.error(`manifest-kinds-con-productor: ${cacheDir} todavía tiene material que no es de un kind con productor — archívalo primero:`);
-    for (const s of sobrantes) console.error(`  mv ${join(cacheDir, s)} ${join(archivoDir, s)}`);
+  const rutas = rutasDeCli(parsed, loadAssetStoreConfig(process.env), resolveServiceUrl("asset-store", process.env), REPO_ROOT);
+  const veredicto = veredictoDeGuardias(await medirHechos(rutas), rutas);
+  if (!veredicto.ok) {
+    console.error(veredicto.lineas.join("\n"));
     return 1;
   }
 
-  // Guardia 2: store parado.
-  const storeUrl = resolveServiceUrl("asset-store", process.env);
-  if (await storeArriba(storeUrl)) {
-    console.error(`manifest-kinds-con-productor: hay un asset-store respondiendo en ${storeUrl} — párale primero (tecla k de start.sh): VACUUM exige exclusividad.`);
-    return 1;
-  }
-
-  if (!existsSync(dbPath)) {
-    console.error(`manifest-kinds-con-productor: no existe ${dbPath}`);
-    return 1;
-  }
-
-  const db = new ManifestDb(dbPath);
+  const db = new ManifestDb(rutas.dbPath);
   try {
-    const r = purgar(db, { dbPath, archivoDir, ejecutar: parsed.ejecutar });
-    console.log(`manifest-kinds-con-productor: ${dbPath}`);
-    console.log(tabla(r));
-    if (!parsed.ejecutar) {
-      console.log(r.totalFilas === 0 ? "0 filas ajenas, nada que hacer." : "dry-run: nada tocado. Repite con --ejecutar para exportar y borrar.");
-      return 0;
-    }
-    if (r.exportado === undefined) {
-      console.log("0 filas ajenas, nada que hacer.");
-      return 0;
-    }
-    console.log(
-      `exportadas ${r.exportado.filas} → ${r.exportado.ruta}${r.exportado.reutilizado ? " (ya existía con el mismo contenido)" : ""}`,
-    );
-    console.log(`borradas ${r.borradas!.filas} filas, ${r.borradas!.pins} pins, ${r.borradas!.meta} meta`);
-    console.log("VACUUM ok");
-    console.log(`quedan ${r.quedan} filas ajenas`);
-    return r.quedan === 0 ? 0 : 1;
+    const r = purgar(db, { dbPath: rutas.dbPath, archivoDir: rutas.archivoDir, ejecutar: parsed.ejecutar });
+    const informe = informeDePurga(r, parsed.ejecutar, rutas.dbPath);
+    console.log(informe.lineas.join("\n"));
+    return informe.codigo;
   } catch (err) {
     console.error(`manifest-kinds-con-productor: ${(err as Error).message}`);
     return 1;

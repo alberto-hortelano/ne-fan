@@ -15,7 +15,11 @@ import {
   cabeceraDe,
   enColaDeCrap,
   itemsDeMutacion,
+  opcionesDeCli,
+  planDeImpresion,
+  redactarCola,
   rotuloSinEjercer,
+  TOP_POR_DEFECTO,
   unaLinea,
   type InformeModulo,
 } from "../scripts/deuda.js";
@@ -371,5 +375,55 @@ describe("cola de deuda · legibilidad", () => {
     const out = unaLinea("x".repeat(200), 20);
     assert.equal(out.length, 20);
     assert.ok(out.endsWith("…"));
+  });
+});
+
+describe("cola de deuda · qué se imprime (la decisión, no la redacción)", () => {
+  const bloque = (titulo: string, n: number) => ({
+    titulo,
+    fuente: "x",
+    items: Array.from({ length: n }, (_, i) => ({ donde: `${titulo}.ts:${i + 1}`, que: "q", peso: 1 })),
+  });
+
+  it("de cada bloque salen los `top` primeros y se cuentan los que quedan fuera", () => {
+    const plan = planDeImpresion([bloque("A", 0), bloque("B", 4), bloque("C", 7)], 4);
+    assert.deepEqual(
+      plan.map((p) => [p.bloque.titulo, p.mostrados.length, p.resto]),
+      [["A", 0, 0], ["B", 4, 0], ["C", 4, 3]],
+    );
+    assert.deepEqual(plan[2].mostrados.map((i) => i.donde), ["C.ts:1", "C.ts:2", "C.ts:3", "C.ts:4"]);
+  });
+
+  it("los dos formatos enseñan cada item mostrado y el número que queda fuera, y ninguno oculto", () => {
+    const plan = planDeImpresion([bloque("B", 2), bloque("C", 7)], 4);
+    for (const formato of ["md", "texto"] as const) {
+      const out = redactarCola("cabecera", plan, formato);
+      for (const p of plan) for (const it of p.mostrados) assert.ok(out.includes(it.donde), `${formato}: ${it.donde}`);
+      assert.ok(!out.includes("C.ts:5"), `${formato}: C.ts:5 debía quedar fuera`);
+      assert.match(out, /…y 3 más/, formato);
+      assert.doesNotMatch(out, /…y 0 más/, formato);
+    }
+  });
+});
+
+describe("cola de deuda · argv (fail-loud)", () => {
+  it("sin flags: texto y el top por defecto", () => {
+    assert.deepEqual(opcionesDeCli([]), { ok: true, formato: "texto", top: TOP_POR_DEFECTO });
+  });
+
+  it("--md, --json (que manda sobre --md) y --top N", () => {
+    assert.deepEqual(opcionesDeCli(["--md", "--top", "5"]), { ok: true, formato: "md", top: 5 });
+    assert.deepEqual(opcionesDeCli(["--md", "--json"]), { ok: true, formato: "json", top: TOP_POR_DEFECTO });
+  });
+
+  it("un --top que no es entero positivo es error, no un 12 silencioso", () => {
+    for (const argv of [["--top"], ["--top", "0"], ["--top", "x"], ["--top", "-3"], ["--top", "2.5"]]) {
+      assert.equal(opcionesDeCli(argv).ok, false, argv.join(" "));
+    }
+  });
+
+  it("un posicional suelto o una flag desconocida es error: `deuda 5` ya no recorta a 5", () => {
+    assert.equal(opcionesDeCli(["5"]).ok, false);
+    assert.equal(opcionesDeCli(["--mdd"]).ok, false);
   });
 });
