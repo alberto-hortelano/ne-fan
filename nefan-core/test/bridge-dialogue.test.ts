@@ -10,6 +10,8 @@ import type {
   SessionStartedMessage,
   } from "../src/protocol/messages.js";
 import type { Consequence } from "../src/narrative/types.js";
+import type { EnemyPersonality } from "../src/types.js";
+import { createCombatant } from "../src/combat/combatant.js";
 import {
   capturarLogDelBridge,
   entrarEnLaPartida,
@@ -286,3 +288,120 @@ describe("bridge: player_healed cura al jugador (#613)", () => {
     assert.equal((aviso as { kind?: string } | undefined)?.kind, "despertar");
     assert.match(aviso?.message ?? "", /Estás caído/);
   });});
+
+/** Tanda BW, H1: la réplica del motor a un turno del jugador se decide en el
+ *  bridge AL LLEGAR. El motor falso cambia el mundo MIENTRAS «piensa» —lo que
+ *  pasó jugando: el jugador se fue de viaje, se alejó o empezó una pelea— y
+ *  el broadcast tiene que traer `replica_diferida` con el texto del motor
+ *  intacto. Sin cambiar nada, el `show_dialogue` de siempre. */
+describe("bridge: la réplica tardía no abre el panel (tanda BW)", () => {
+  const TEXTO = "¡Eso, eso, encárgate de Brasco!";
+  const bravucon: EnemyPersonality = {
+    aggression: 1,
+    preferred_attacks: ["quick"],
+    reaction_time: 0.1,
+    combat_range: 4,
+    aggro_radius: 6,
+  };
+
+  async function replicaCon(
+    mientrasPiensa: (b: ReturnType<typeof makeCtx>) => void,
+    mensaje: "dialogue_choice" | "interact_entity" = "dialogue_choice",
+  ) {
+    const bundle: ReturnType<typeof makeCtx> = makeCtx({
+      ai: {
+        reportPlayerChoice: async () => {
+          mientrasPiensa(bundle);
+          return {
+            ok: true,
+            consequences: [{ type: "dialogue", speaker: "Orio", text: TEXTO, choices: ["Voy"] }] as Consequence[],
+          };
+        },
+      },
+    });
+    const { ctx, broadcasts, narrative } = bundle;
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await entrarEnLaPartida(ctx, socket, (sent[0] as SessionStartedMessage).sessionId!);
+    // Orio, a 3 m del jugador (que está en el origen), en el tile activo.
+    narrative.recordEntitySpawned("orio", "npc", narrative.world.active_scene_id, { x: 3, y: 0, z: 0 }, { name: "Orio" });
+    const before = broadcasts.length;
+    await porElBorde(
+      mensaje === "dialogue_choice"
+        ? { type: "dialogue_choice", eventId: "e", choiceIndex: 0, speaker: "Orio", chosenText: "Me encargo", speakerId: "orio" }
+        : { type: "interact_entity", entityId: "orio", entityName: "Orio" },
+      socket,
+      ctx,
+    );
+    const event = broadcasts
+      .slice(before)
+      .find((m): m is NarrativeEventMessage => m.type === "narrative_event");
+    assert.ok(event, "narrative_event difundido");
+    return event.effects;
+  }
+
+  it("esperando al lado, el panel se abre como siempre (show_dialogue con sus opciones)", async () => {
+    const effects = await replicaCon(() => {});
+    assert.equal(effects.length, 1);
+    const d = effects[0]!;
+    assert.equal(d.kind, "show_dialogue");
+    if (d.kind === "show_dialogue") {
+      assert.equal(d.text, TEXTO);
+      assert.equal(d.speakerId, "orio");
+      assert.deepEqual(d.choices, ["Voy"]);
+    }
+  });
+
+  it("el jugador se aleja más allá del alcance del nombre → replica_diferida «lejos»", async () => {
+    const effects = await replicaCon(({ store }) => store.dispatch("player_moved", { pos: [0, 0, 40] }));
+    assert.deepEqual(effects, [
+      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "lejos" },
+    ]);
+  });
+
+  it("el jugador cambia de tile mientras el motor piensa → replica_diferida «otro_tile»", async () => {
+    const effects = await replicaCon(({ narrative }) => {
+      narrative.world.active_scene_id = "tile_0_-1";
+    });
+    assert.deepEqual(effects, [
+      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "otro_tile" },
+    ]);
+  });
+
+  const input = (atacar: boolean) => ({
+    playerPosition: { x: 0, y: 0, z: 0 },
+    playerForward: { x: 0, y: 0, z: -1 },
+    playerMoving: false,
+    ...(atacar ? { attackRequested: true, attackType: "quick" } : {}),
+  });
+
+  it("el jugador ATACA mientras el motor piensa → replica_diferida «combate»", async () => {
+    const effects = await replicaCon(({ sim }) => {
+      const antes = sim.ataquesDelJugador;
+      sim.tick(0.016, input(true));
+      assert.equal(sim.ataquesDelJugador, antes + 1, "premisa: el ataque empezó");
+    });
+    assert.deepEqual(effects, [
+      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "combate" },
+    ]);
+  });
+
+  /** El HUECO CONOCIDO de la opción B (decisión 2026-09-30), escrito como
+   *  test para que cerrarlo sea una decisión y no un accidente: un hostil que
+   *  engancha al jugador SIN que este ataque no degrada la réplica. */
+  it("HUECO: un hostil le engancha pero el jugador no ataca → el panel se abre igual", async () => {
+    const effects = await replicaCon(({ sim }) => {
+      sim.addCombatant(createCombatant("brasco", 60, "short_sword", { x: 0, y: 0, z: 2 }), bravucon);
+      sim.tick(0.016, input(false));
+      assert.equal(sim.jugadorEnCombate, true, "premisa: Brasco le tiene enganchado");
+    });
+    assert.equal(effects[0]?.kind, "show_dialogue");
+  });
+
+  it("el saludo con E (interact_entity) recibe el mismo trato", async () => {
+    const effects = await replicaCon(({ store }) => store.dispatch("player_moved", { pos: [0, 0, 40] }), "interact_entity");
+    assert.equal(effects[0]?.kind, "replica_diferida");
+    const normal = await replicaCon(() => {}, "interact_entity");
+    assert.equal(normal[0]?.kind, "show_dialogue");
+  });
+});

@@ -721,13 +721,14 @@ pause_for_claude_code() {
     2. Run:    claude
     3. When Claude Code is ready, paste this prompt:
 
-       "Llama a narrative_listen en bucle y responde con el schema
-        adecuado a cada tipo de request (room, weapon_orient,
-        weapon_verify, narrative_event)."
+       "Eres el motor narrativo del juego. Llama a narrative_listen
+        en bucle: cada petición trae su tipo, sus instrucciones y su
+        schema. Respóndela con narrative_respond y vuelve a escuchar."
 
   If you skip:
     · With ANTHROPIC_API_KEY set — ai_server falls back to direct API.
-    · Without API key — fallback rooms (very limited gameplay).
+    · Without API key — narrative requests fail with 503 (there is no
+      scripted fallback): the game says so and waits for the engine.
 
   Tip: si el terminal del motor debe POSEER el puerto del MCP (flujo labs/narrative),
   relanza con NEFAN_EAGER_BIND=0 para que este launcher no arranque su

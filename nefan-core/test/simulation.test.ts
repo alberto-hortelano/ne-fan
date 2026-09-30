@@ -466,6 +466,50 @@ describe("GameSimulation.respawn", () => {
     assert.ok(bandido.position.z > 0, "reentrar en su radio lo vuelve a enganchar");
   });
 
+  /** Tanda BW: lo que el HUD (barra del enemigo) y el bridge (réplica del
+   *  motor) leen del sim. La barra de Brasco seguía en pantalla tras despertar
+   *  en la posada: al despertar, el hostil suelta, y eso es lo que se lee. */
+  it("enganchado(id) y jugadorEnCombate: true enganchado, false tras respawn, true al reentrar", () => {
+    const { sim, bandido } = morirContraElBandido();
+    // Muerto el jugador el bandido sigue enganchado hasta el respawn.
+    assert.equal(sim.enganchado("bandido"), true);
+    assert.equal(sim.jugadorEnCombate, true);
+    const { punto } = sim.respawn(sim.puntoSeguroActual!);
+    assert.equal(sim.enganchado("bandido"), false, "al despertar le suelta");
+    assert.equal(sim.jugadorEnCombate, false);
+    sim.tick(0.05, quietoEn(punto));
+    assert.equal(sim.enganchado("bandido"), false, "fuera del radio sigue suelto");
+    sim.tick(0.05, quietoEn({ x: 0, y: 0, z: 5 }));
+    assert.equal(sim.enganchado("bandido"), true, "reentrar en su radio lo engancha");
+    assert.equal(sim.jugadorEnCombate, true);
+    // Un muerto no engancha a nadie, ni un id sin IA.
+    bandido.health = 0;
+    assert.equal(sim.enganchado("bandido"), false, "muerto no engancha");
+    assert.equal(sim.jugadorEnCombate, false);
+    assert.equal(sim.enganchado("player"), false, "sin IA no engancha");
+    assert.equal(sim.enganchado("nadie"), false);
+  });
+
+  /** Tanda BW, H1 (opción B): el bridge pregunta «¿ha atacado el jugador desde
+   *  que pidió la réplica?» comparando dos lecturas de este contador. */
+  it("ataquesDelJugador cuenta los ataques EMPEZADOS, no los pedidos durante un wind-up", () => {
+    const sim = new GameSimulation(config, new GameStore(), 42);
+    sim.addCombatant(createCombatant("player", 100, "short_sword", { x: 0, y: 0, z: 0 }));
+    const pide = (attack: boolean) => ({
+      playerPosition: { x: 0, y: 0, z: 0 },
+      playerForward: { x: 0, y: 0, z: -1 },
+      playerMoving: false,
+      ...(attack ? { attackRequested: true, attackType: "quick" } : {}),
+    });
+    assert.equal(sim.ataquesDelJugador, 0);
+    sim.tick(0.001, pide(false));
+    assert.equal(sim.ataquesDelJugador, 0, "andar no es atacar");
+    sim.tick(0.001, pide(true));
+    assert.equal(sim.ataquesDelJugador, 1);
+    sim.tick(0.001, pide(true));
+    assert.equal(sim.ataquesDelJugador, 1, "pedir otro con el wind-up en marcha no empieza nada");
+  });
+
   it("sin un tick, el punto seguro es donde se dio de alta el jugador (resume)", () => {
     const sim = new GameSimulation(config, new GameStore(), 42);
     const player = createCombatant("player", 100, "short_sword", { x: 3, y: 1.2, z: -7 });

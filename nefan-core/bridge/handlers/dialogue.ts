@@ -3,6 +3,7 @@
  *  reportarlo al motor narrativo, aplicar las consequences y hacer broadcast. */
 
 import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
+import { entregarReplica } from "../../src/narrative/entrega-de-la-replica.js";
 import { falloDeReaccionParaElJugador } from "../../src/protocol/status-motivo.js";
 import { aplicarCuraciones, npcSync, runPluginTick, sessionChangedError, type BridgeContext } from "../context.js";
 import type {
@@ -25,6 +26,10 @@ async function reportAndDispatch(
   speakerHintId?: string,
 ): Promise<void> {
   const jobSession = ctx.narrative.session_id;
+  // Dónde estaba el jugador al pedir: con esto y la foto de al llegar se decide
+  // si la réplica sigue siendo la conversación actual (tanda BW, H1).
+  const escenaAlPedir = ctx.narrative.world.active_scene_id;
+  const ataquesAlPedir = ctx.sim.ataquesDelJugador;
   const llmCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
   const result = await ctx.aiClient.reportPlayerChoice({
     eventId,
@@ -105,12 +110,28 @@ async function reportAndDispatch(
   // Un spawn_entity dinámico puede haber creado NPCs — engancharlos a la
   // vida ambiental sin esperar al siguiente cambio de tile.
   npcSync(ctx);
-  ctx.broadcastNarrative({
-    type: "narrative_event",
-    eventId,
-    consequences,
-    effects: [...dispatched.effects, ...pluginFx],
-  });
+  // La réplica que llega cuando la conversación ya no es la actual (el
+  // jugador se puso a pelear, otro tile, hablante lejos) NO abre el panel: va al registro, entera. Se
+  // decide aquí, con la foto de AHORA, y no en el cliente, que no sabe casar
+  // la réplica con su elección ni si hay un hostil enganchado. El despertar y
+  // los `map_trigger` difunden por otro camino y no pasan por aquí.
+  const ahora = ctx.store.state.player.pos;
+  const effects = entregarReplica(
+    [...dispatched.effects, ...pluginFx],
+    {
+      escenaAlPedir,
+      escenaAhora: ctx.narrative.world.active_scene_id,
+      // «En combate» = el jugador ha ATACADO mientras el motor pensaba: la
+      // conversación dejó de ser lo que estaba haciendo (decisión 2026-09-30).
+      atacoDesdeQuePidio: ctx.sim.ataquesDelJugador > ataquesAlPedir,
+      jugador: { x: ahora[0], z: ahora[2] },
+    },
+    (id) => {
+      const p = ctx.narrative.getEntity(id)?.position;
+      return p ? { x: p[0], z: p[2] } : undefined;
+    },
+  );
+  ctx.broadcastNarrative({ type: "narrative_event", eventId, consequences, effects });
 }
 
 export async function handleDialogueChoice(

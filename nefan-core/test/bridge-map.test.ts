@@ -970,7 +970,13 @@ describe("bridge activación por posición (tiles + anchors)", () => {
     narrative.worldMap.addTrigger("claro", {
       id: "bienvenida",
       when: { type: "player_entered" },
-      consequences: [{ type: "story_update", delta: "Llegas al claro." }],
+      // El diálogo que el motor ABRE por su cuenta (tanda BW): llega tras un
+      // cambio de tile por naturaleza y se abre como siempre — la réplica
+      // diferida es solo la de un turno del jugador.
+      consequences: [
+        { type: "story_update", delta: "Llegas al claro." },
+        { type: "dialogue", speaker: "Ermitaño", text: "Bienvenido al claro.", choices: [] },
+      ],
     });
 
     const { socket } = makeSocket();
@@ -997,6 +1003,11 @@ describe("bridge activación por posición (tiles + anchors)", () => {
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "map_trigger",
     );
     assert.ok(trigger, "map_trigger difundido");
+    assert.deepEqual(
+      trigger.effects.map((e) => e.kind),
+      ["story_delta", "show_dialogue"],
+      "el diálogo de un trigger abre el panel aunque el jugador acabe de cambiar de tile",
+    );
 
     // Re-pisar el anchor no re-dispara player_entered en bucle (gate por celda
     // + place ya activo).

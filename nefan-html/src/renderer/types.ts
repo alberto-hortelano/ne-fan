@@ -31,6 +31,9 @@ export interface Entity {
   maxHp?: number;
   alive: boolean;
   attacking?: boolean;
+  /** Enemigo que le tiene enganchado al jugador (`state_update`, lo decide el
+   *  sim). Solo lo lee el HUD: su barra se ve si está enganchado o cerca. */
+  enganchado?: boolean;
   /** Tipo de ataque en curso (del sim) — selecciona la anim del sprite. */
   attackType?: string;
   /** Descripción narrativa usada como prompt del skin IA del sprite. */

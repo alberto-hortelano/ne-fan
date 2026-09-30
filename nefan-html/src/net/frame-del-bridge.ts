@@ -16,15 +16,10 @@ export interface FrameResult {
    *  se calcula el aro del telegraph. */
   playerMaxHp: number;
   playerWeaponId: string;
-  enemies: {
-    id: string;
-    hp: number;
-    state: string;
-    alive: boolean;
-    pos?: { x: number; y: number; z: number };
-    forward?: { x: number; y: number; z: number };
-    attackType?: string;
-  }[];
+  /** Los enemigos del sim, con la MISMA forma del wire: copiarla a mano es
+   *  como un campo nuevo (el `enganchado` de la tanda BW) se queda por el
+   *  camino sin que tsc lo note. */
+  enemies: StateUpdateMessage["enemies"];
   /** Vida ambiental de NPCs del bridge (state_update.npcs). */
   npcs?: StateUpdateMessage["npcs"];
   /** Dónde despierta el jugador: SOLO en el frame que lo levanta

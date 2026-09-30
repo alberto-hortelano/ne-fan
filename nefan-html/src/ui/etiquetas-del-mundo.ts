@@ -8,7 +8,7 @@
  *  `WorldLabels` solo coloca las cajas. */
 
 import type { Vec3 } from "@nefan-core/src/types.js";
-import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
+import { ALCANCE_DEL_NOMBRE_M, pickAimTarget } from "@nefan-core/src/scene/aim.js";
 import type { FpsRenderer } from "../renderer/fps-renderer.js";
 import type { MundoDelCliente } from "../world/mundo-del-cliente.js";
 import { WorldLabels, type WorldLabel } from "./world-labels.js";
@@ -35,8 +35,6 @@ export interface EtiquetasDelMundo {
   actualizar(): void;
 }
 
-/** Alcance al que se muestra el nombre de un personaje. */
-const LABEL_RANGE_M = 18;
 /** Alcance de la puntería: cerca, para que encender la mirilla signifique
  *  algo ("puedo tratar con esto"), no "hay algo por ahí". */
 const AIM_RANGE_M = 12;
@@ -141,7 +139,7 @@ export function crearEtiquetasDelMundo(deps: DepsDeEtiquetasDelMundo): Etiquetas
 
     const labels: WorldLabel[] = [];
     for (const n of personajes) {
-      if (Math.hypot(n.pos.x - playerPos.x, n.pos.z - playerPos.z) > LABEL_RANGE_M) continue;
+      if (Math.hypot(n.pos.x - playerPos.x, n.pos.z - playerPos.z) > ALCANCE_DEL_NOMBRE_M) continue;
       const text = recorta(n.name ?? n.label ?? n.id);
       if (!text) continue;
       labels.push({

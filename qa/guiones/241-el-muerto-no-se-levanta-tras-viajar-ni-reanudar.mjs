@@ -67,6 +67,66 @@ const esperarMuerte = (ctx, quien) =>
       ),
   );
 
+/** Alcance del nombre del HUD (`ALCANCE_DEL_NOMBRE_M`, `nefan-core/src/scene/aim.ts`),
+ *  copiado porque el guion es `.mjs`: si core lo cambia, el aserto de abajo se
+ *  pone rojo y hay que mirar los dos. */
+const ALCANCE_DEL_NOMBRE_M = 18;
+
+/** TANDA BW, H2 — lo que salió jugando: tras caer y despertar en la posada, la
+ *  barra «Brasco el del Remo 60» seguía en el HUD. Al despertar, todo hostil
+ *  SUELTA al jugador (#613, pieza B), así que la barra de cada enemigo se ve
+ *  solo si está vivo y al alcance del nombre; la del muerto, nunca. Se mira
+ *  JUSTO al despertar, antes de que el banco devuelva al jugador a donde cayó.
+ *  En main este aserto es rojo: la barra no se ocultaba nunca. */
+const barrasTrasDespertar = async (ctx) => {
+  const reparto = await ctx.absorbe("si el reparto no llega a casar, lo afirma el `expect` H2 de abajo", () =>
+    ctx.waitFor(
+      "cada barra de enemigo se ve si y solo si está vivo y al alcance del nombre",
+      (alcance) => {
+        const p = window.__nefan.state().pos;
+        const filas = window.__nefan.enemies().map((e) => {
+          const vital = document.getElementById(`hp-text-${e.id}`)?.parentElement ?? null;
+          const d = Math.hypot(e.pos.x - p.x, e.pos.z - p.z);
+          const debeVerse = e.alive !== false && d <= alcance;
+          return { id: e.id, d: Number(d.toFixed(1)), alive: e.alive, oculta: vital?.hidden ?? null, debeVerse };
+        });
+        return filas.every((f) => f.oculta === !f.debeVerse) ? filas : null;
+      },
+      5_000,
+      ALCANCE_DEL_NOMBRE_M,
+    ),
+  );
+  const foto = await ctx.page.evaluate(() =>
+    window.__nefan.enemies().map((e) => ({
+      id: e.id,
+      alive: e.alive,
+      oculta: document.getElementById(`hp-text-${e.id}`)?.parentElement?.hidden ?? null,
+    })),
+  );
+  ctx.log(`barras al despertar: ${JSON.stringify(reparto ?? foto)}`);
+  ctx.expect(
+    "al despertar, la barra de un enemigo que ya no te tiene enganchado solo se ve si está vivo y cerca (H2)",
+    Boolean(reparto),
+    JSON.stringify(foto),
+  );
+  ctx.expect(
+    "al despertar, la barra de un enemigo muerto no se ve",
+    foto.filter((f) => f.alive === false).every((f) => f.oculta === true),
+    JSON.stringify(foto),
+  );
+  // Y sin ninguna barra a la vista no queda el panel vacío (el rectángulo
+  // translúcido que salió en la primera captura de la tanda).
+  const panel = await ctx.page.evaluate(() => {
+    const el = document.getElementById("enemy-bars");
+    return { visibles: el?.querySelectorAll(":scope > .nf-vital:not([hidden])").length ?? 0, display: el ? getComputedStyle(el).display : null };
+  });
+  ctx.expect(
+    "sin barras a la vista, el panel de enemigos no se pinta vacío",
+    panel.visibles > 0 || panel.display === "none",
+    JSON.stringify(panel),
+  );
+};
+
 /** Despertar y volver a donde se cayó; devuelve la vida con la que se vuelve.
  *
  *  Desde #613 (tanda BN) dónde despierta lo decide el MOTOR, sin tecla, y el
@@ -77,6 +137,7 @@ const esperarMuerte = (ctx, quien) =>
 const reaparecer = async (ctx) => {
   const cayo = await ctx.nefan("state");
   const r = await esperarElDespertar(ctx, "el jugador caído", { velo: false });
+  await barrasTrasDespertar(ctx);
   await ctx.nefan("setPlayerPos", cayo.pos.x, cayo.pos.z);
   await ctx.waitFor(
     "el banco devuelve al jugador a donde cayó",

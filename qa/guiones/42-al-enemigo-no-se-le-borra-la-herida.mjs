@@ -238,6 +238,19 @@ export default async function (ctx) {
     typeof vidaTrasViajar === "number",
     `#hp-text-${BANDIDO} = ${JSON.stringify(vidaTrasViajar)}`,
   );
+  // Y se VE (tanda BW, H2): desde que la barra se oculta cuando su enemigo no
+  // le importa al jugador, leer la cifra por id ya no dice que el jugador la
+  // vea. El bandido le tiene enganchado —la pelea es con él—, así que sigue
+  // a la vista aunque se haya quedado lejos, en el otro tile.
+  const barraVisible = await ctx.page.evaluate(
+    (eid) => document.getElementById(`hp-text-${eid}`)?.parentElement?.hidden === false,
+    BANDIDO,
+  );
+  ctx.expect(
+    "la barra del enemigo que te tiene enganchado se VE tras cambiar de tile (no solo está en el DOM)",
+    barraVisible,
+    `.nf-vital de ${BANDIDO} hidden=${!barraVisible}`,
+  );
   const trasViajar = await medir(ctx, BANDIDO);
   ctx.log(`${BANDIDO} tras el viaje: ${JSON.stringify(trasViajar)}`);
   await ctx.shot("enemigo-tras-cambiar-de-tile");
