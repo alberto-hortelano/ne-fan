@@ -28,6 +28,7 @@ export class ScriptedInputProvider implements InputProvider {
   private tileConfirmRequested = false;
   private tileDeclineRequested = false;
   private respawnRequested = false;
+  private jumpRequested = false;
 
   // --- API del driver (window.__nefan.inputDriver) ---
 
@@ -70,6 +71,12 @@ export class ScriptedInputProvider implements InputProvider {
 
   queueTileDecline(): void {
     this.tileDeclineRequested = true;
+  }
+
+  /** Espacio. Como las demás intenciones del driver, NO pregunta por el
+   *  diálogo: la guarda que importa es la del bucle (`puedeMoverse`). */
+  queueJump(): void {
+    this.jumpRequested = true;
   }
 
   // --- Contrato InputProvider ---
@@ -137,6 +144,12 @@ export class ScriptedInputProvider implements InputProvider {
       return true;
     }
     return false;
+  }
+
+  consumeJump(): boolean {
+    const pedido = this.jumpRequested;
+    this.jumpRequested = false;
+    return pedido;
   }
 
   dispose(): void {

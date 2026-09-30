@@ -42,10 +42,33 @@ export const PLAYER_EYE_M = 1.6;
 /** Plano cercano de la cámara del jugador en METROS (`fps-gl.ts`). */
 export const CAMERA_NEAR_M = 0.3;
 
-/** Altura LIBRE mínima de un vano que se cruza andando, en METROS: los ojos
- *  más el plano cercano. Con algo pintado más bajo, al pasar por debajo la
- *  cámara lo corta (o lo atraviesa) — la colisión es 2D y no lo impide. */
-export const PASO_LIBRE_M = PLAYER_EYE_M + CAMERA_NEAR_M;
+/** Cuánto SUBE el jugador en el apogeo del salto, en METROS: lo que se le
+ *  suma a los ojos en el punto más alto (`simulation/salto-del-jugador.ts`).
+ *  Vive aquí y no en `combat_config.json` porque la geometría que se pinta
+ *  depende de él: el dintel de un gate se dimensiona con `PASO_LIBRE_M`, y un
+ *  apogeo editable sin recompilar dejaría los gates ya pintados cortando la
+ *  cámara. La DURACIÓN del salto sí es de feel y está en el config. */
+export const SALTO_APOGEO_M = 0.8;
+
+/** Lo más alto que el jugador SALTA, en METROS — la frontera única entre lo
+ *  que se pasa por encima y lo que no. La lee la colisión en el aire
+ *  (`esSaltable` → `planCollisionGridEnElAire`) y la lee el render de las
+ *  vallas (`fps-detail.ts`): un `wall` saltable se pinta como cerca de
+ *  estacas, y uno que no, como muro. Son la MISMA pregunta, y por eso un
+ *  número: con dos, habría vallas que se ven saltables y no se saltan.
+ *
+ *  1,2 m = 2,4 celdas × `TILE_MPC`, el umbral que ya tenía la valla pintada.
+ *  No es la física del apogeo (0,8 m): es cuánto puede medir lo que se deja
+ *  atrás. Que la cámara no lo corte lo candan los tests con
+ *  `ALTURA_SALTABLE_M + CAMERA_NEAR_M ≤ PLAYER_EYE_M`: aterrizar encima de una
+ *  valla deja los ojos por encima de ella. */
+export const ALTURA_SALTABLE_M = 1.2;
+
+/** Altura LIBRE mínima de un vano que se cruza, en METROS: los ojos, más lo
+ *  que suben en el apogeo de un salto, más el plano cercano. Con algo pintado
+ *  más bajo, al pasar por debajo —andando o saltando— la cámara lo corta (o lo
+ *  atraviesa): la colisión con lo alto es 2D y no lo impide. */
+export const PASO_LIBRE_M = PLAYER_EYE_M + SALTO_APOGEO_M + CAMERA_NEAR_M;
 
 /** El cuerpo MAYOR que el simulador mueve por el mundo. Quien decida cuánto
  *  hueco hay que dejar deriva de aquí, no del jugador.

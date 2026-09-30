@@ -100,6 +100,9 @@ export interface DepsDelHook {
     collidesAt(x: number, z: number): boolean;
     ocupadoEn(x: number, z: number): boolean;
   };
+  /** El salto del jugador: fase y metros de elevación (core,
+   *  `salto-del-jugador.ts`). Lo lee el guion del salto. */
+  salto(): { fase: "suelo" | "aire"; elevacion: number };
   dialogoAbierto(): boolean;
   /** Id del sistema de combate de la sesión y su catálogo: los reescribe cada
    *  partida `ui/hud-de-combate.ts`, así que llegan como preguntas y no como
@@ -251,6 +254,7 @@ export function instalarNefanHook(deps: DepsDelHook): void {
         // y que duplica a otra no es depuración: es la que alguien confundirá
         // algún día con una señal independiente, que es exactamente cómo nació
         // aquel vigilante que no podía ponerse rojo.
+        salto: deps.salto(),
         combatSystem: deps.combatSystemId(),
         attackCatalog: deps.attackCatalog().map((a) => a.id),
         blocked: {

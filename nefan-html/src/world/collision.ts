@@ -7,7 +7,8 @@
  *  el cliente aporta de este último es solo el SUELO: los colliders de cada
  *  tile tocado —`collider` (terrain_grid: el agua w) y `svgCollider` (el PLAN,
  *  derivado por `planCollisionGrid` — el MISMO cálculo que el bridge en
- *  sim-collision, así que jugador y NPCs no divergen)— unidos en una sola
+ *  sim-collision, así que jugador y NPCs no divergen A PIE; saltando, el
+ *  jugador lee `svgColliderAire`, sin lo saltable)— unidos en una sola
  *  consulta de punto. Hasta #616 la regla del terreno vivía DENTRO del
  *  collider —eximía las celdas que ya se solapaban— y no sacaba de un macizo.
  *
@@ -32,6 +33,7 @@ import {
 } from "@nefan-core/src/simulation/obstaculos-del-jugador.js";
 import {
   planCollisionGrid,
+  planCollisionGridEnElAire,
   type GroundFeature,
   type Volume,
 } from "@nefan-core/src/scene/blueprint/index.js";
@@ -53,6 +55,9 @@ export interface CollisionDeps {
   getPlayerPos(): { x: number; z: number };
   /** Objetos del esquema que colisionan por caja (buildings/props). */
   getObstacles(): readonly CollisionObstacle[];
+  /** ¿El jugador está saltando? Lo contesta core (`enElAire`); aquí solo
+   *  elige qué grid del plan es el suelo de `collidesAt`. */
+  enElAire(): boolean;
 }
 
 export class CollisionSystem {
@@ -73,16 +78,21 @@ export class CollisionSystem {
       tiene: (tx, ty) => tileStore.has(tx, ty),
       planAplicadoEn: (x, z) => tileStore.getAt(x, z)?.svgApplied === true,
     };
-    this.suelo = {
+    // Dos suelos que solo difieren en QUÉ grid del plan leen: a pie el
+    // completo, en el aire el que no tiene lo saltable. El agua del
+    // terrain_grid (`collider`) está en los dos.
+    const sueloCon = (plan: "svgCollider" | "svgColliderAire"): SueloSolido => ({
       ocupado: (x, z, radio) => {
         for (const t of tileStore.keysTouching(x, z, radio)) {
           const tile = tileStore.get(t.tx, t.ty);
           if (tile?.collider?.solapaSolido(x, z, radio)) return true;
-          if (tile?.svgCollider?.solapaSolido(x, z, radio)) return true;
+          if (tile?.[plan]?.solapaSolido(x, z, radio)) return true;
         }
         return false;
       },
-    };
+    });
+    this.suelo = sueloCon("svgCollider");
+    this.sueloEnElAire = sueloCon("svgColliderAire");
   }
 
   /** EL SUELO del jugador visto por la regla de core: los dos colliders
@@ -94,14 +104,20 @@ export class CollisionSystem {
    *  rumbos de salida que se pelean. Se construye una vez y lee en vivo — el
    *  store es mutable y la respuesta tiene que ser la de este frame. */
   private readonly suelo: SueloSolido;
+  /** El mismo suelo con el grid del plan EN EL AIRE: el que usa `collidesAt`
+   *  mientras el jugador salta. `ocupadoEn` no lo mira nunca (ver allí). */
+  private readonly sueloEnElAire: SueloSolido;
 
   /** ¿El destino (x,z) está bloqueado para el jugador? Unión de las tres
-   *  fuentes de la cabecera, en el orden más barato primero. */
+   *  fuentes de la cabecera, en el orden más barato primero. Saltando, el
+   *  suelo es el del aire: se pasa por encima de lo bajo del plan. Las CAJAS
+   *  de lo que spawnea el motor siguen macizas en el aire (no tienen altura). */
   collidesAt(x: number, z: number): boolean {
     const desde = this.deps.getPlayerPos();
     const hasta = { x, z };
     if (fronteraBloquea(desde, hasta, PLAYER_RADIUS, this.tiles)) return true;
-    if (solidoBloquea(desde, hasta, PLAYER_RADIUS, this.suelo)) return true;
+    const suelo = this.deps.enElAire() ? this.sueloEnElAire : this.suelo;
+    if (solidoBloquea(desde, hasta, PLAYER_RADIUS, suelo)) return true;
     return aabbBloquea(desde, hasta, PLAYER_RADIUS, this.deps.getObstacles(), this.tiles);
   }
 
@@ -126,7 +142,10 @@ export class CollisionSystem {
    *  medida de cuánto se está metido en él. Consecuencia que hay que saber: a
    *  menos de un radio del borde del mundo conocido, `collidesAt` bloquea y
    *  esto contesta «libre». Lo que se pregunta es si HAY ALGO ahí, no si el
-   *  jugador podría ir. */
+   *  jugador podría ir.
+   *
+   *  Y SIEMPRE A PIE: no depende de si el jugador salta, por lo mismo que no
+   *  depende de dónde está. Una cerca OCUPA su sitio aunque se pueda saltar. */
   ocupadoEn(x: number, z: number, radio: number = PLAYER_RADIUS): boolean {
     if (this.suelo.ocupado(x, z, radio)) return true;
     return aabbOcupa({ x, z }, radio, this.deps.getObstacles(), this.tiles);
@@ -158,7 +177,13 @@ export function applyPlanCollision(
     // colisionan igual sobre el mismo plan.
     const grid = planCollisionGrid(plan.ground, plan.volumes, rect);
     const collider = grid ? createTerrainCollider(grid) : null;
-    tileStore.setSvgCollider(key, collider, "derivada");
+    // Y el del aire: el mismo cálculo sin lo saltable (core decide qué lo es).
+    const aire = planCollisionGridEnElAire(plan.ground, plan.volumes, rect);
+    tileStore.setSvgCollider(
+      key,
+      { aPie: collider, enElAire: aire ? createTerrainCollider(aire) : null },
+      "derivada",
+    );
     dlog(
       `[collision] ${key}: plan aplicado — ${collider?.solidCellCount ?? 0} celdas sólidas`,
     );

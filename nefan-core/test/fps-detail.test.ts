@@ -10,6 +10,34 @@ import { buildFpsTileSpec } from "../src/scene/blueprint/fps-spec.js";
 import { buildTileGreyboxSpec } from "../src/scene/blueprint/greybox.js";
 import { parseVolumes } from "../src/scene/blueprint/volumes.js";
 import { canonicalGreyboxJson } from "../src/scene/greybox/common.js";
+import { esSaltable, volumeHeightM } from "../src/scene/blueprint/volume-metrics.js";
+import { ALTURA_SALTABLE_M } from "../src/scene/terrain-collision.js";
+
+/** El tipo de prim, tomado de la firma: nombrar `surfaces.ts` metería este
+ *  test en una batería de mutación a la que no le mata nada. */
+type SurfacePrim = ReturnType<typeof buildFpsTileSpec>["primsM"][number];
+
+/** Lo más alto que PINTA una prim, en metros (pos.y es la base; la esfera
+ *  mide su diámetro; `scale.y` estira). Las prims giradas en X/Z (ruedas,
+ *  troncos caídos de `custom`) no se miden: por eso `custom` está fuera. */
+function cimaPintada(p: SurfacePrim): number {
+  const sy = p.scale?.[1] ?? 1;
+  if (p.shape === "sphere") return p.pos[1] + 2 * p.size[0] * sy;
+  if (p.shape === "polygon") return p.pos[1] + p.size[0];
+  return p.pos[1] + p.size[1] * sy;
+}
+
+/** La altura que se VE de un volumen solo en su tile, sobre varias semillas
+ *  (matorral y roca sortean el tamaño de sus esferas). */
+function alturaPintada(raw: Record<string, unknown>, semillas = ["a", "b", "c", "d", "e"]): number {
+  let max = 0;
+  for (const seed of semillas) {
+    const { primsM } = buildFpsTileSpec({ volumes: vols([raw]), biome: "grass" }, seed);
+    for (const p of primsM) if (p.volId === `vol_${String(raw.id)}`) max = Math.max(max, cimaPintada(p));
+  }
+  assert.ok(max > 0, `${String(raw.id)} no pinta nada`);
+  return max;
+}
 
 function vols(raw: unknown[]) {
   const parsed = parseVolumes(raw);
@@ -112,5 +140,95 @@ describe("fps-detail", () => {
     // paga con IA— dejarían de ser estables.
     const base = buildTileGreyboxSpec({ volumes, biome: "grass" }, "k");
     assert.equal(canonicalGreyboxJson(a.spec), canonicalGreyboxJson(base));
+  });
+});
+
+/** Tanda BY: lo que se VE saltable tiene que SER saltable, y al revés. El
+ *  caso que importa es `wall` —valla contra muro—, y para él se afirma sobre
+ *  la altura PINTADA por las prims, no sobre la publicada: si divergen, hay
+ *  una cerca que se ve y no se salta. */
+describe("lo que se ve saltable es lo que se salta", () => {
+  const tramo = (extra: Record<string, unknown>) => ({
+    id: "t", label: "cerca", type: "wall", points: [[20, 40], [60, 40]], ...extra,
+  });
+
+  it("WALL: pintado ≤ 1,2 m ⇔ esSaltable, en todo el barrido de alturas, con y sin almena", () => {
+    let saltables = 0;
+    let altos = 0;
+    // Cada 0,5 celdas más las fronteras (liso 2,4/2,41; almenado 1,4/1,5).
+    // Una semilla: el muro no sortea nada.
+    const alturas = [0.5, 1, 1.4, 1.5, 1.6, 2, 2.3, 2.4, 2.41, 2.5, 3, 3.5, 4, 5, 6];
+    for (const h of alturas) {
+      for (const crenellated of [false, true]) {
+        for (const label of ["cerca", "tapia de piedra"]) {
+          const raw = tramo({ h, crenellated, label });
+          const pintada = alturaPintada(raw, ["a"]);
+          const v = vols([raw])[0];
+          assert.ok(Math.abs(pintada - volumeHeightM(v, 0.5)) < 1e-9,
+            `${JSON.stringify(raw)}: pinta ${pintada} m y publica ${volumeHeightM(v, 0.5)} m`);
+          assert.equal(esSaltable(v), pintada <= ALTURA_SALTABLE_M + 1e-9, JSON.stringify(raw));
+          if (esSaltable(v)) saltables++;
+          else altos++;
+        }
+      }
+    }
+    assert.ok(saltables > 10 && altos > 10, `el barrido cubre los dos lados (${saltables}/${altos})`);
+  });
+
+  it("WALL: se pinta como VALLA de estacas ⇔ se salta (salvo las de piedra, que son murete)", () => {
+    const esValla = (raw: Record<string, unknown>) => {
+      const { primsM } = buildFpsTileSpec({ volumes: vols([raw]), biome: "grass" }, "k");
+      return primsM.some((p) => p.volId === "vol_t" && p.mat === "wood_beam");
+    };
+    for (const h of [1, 2, 2.4, 2.41, 3, 5]) {
+      for (const crenellated of [false, true]) {
+        const raw = tramo({ h, crenellated });
+        assert.equal(esValla(raw), esSaltable(vols([raw])[0]), JSON.stringify(raw));
+      }
+    }
+    // Un muro bajo de piedra se salta, pero se pinta macizo: es un murete.
+    const murete = tramo({ h: 2, label: "tapia de piedra" });
+    assert.equal(esValla(murete), false);
+    assert.equal(esSaltable(vols([murete])[0]), true);
+  });
+
+  /** LA DIVERGENCIA DECLARADA de los demás tipos, MEDIDA. `volumeHeightM` es
+   *  una aproximación de lo que pinta el greybox, y aquí se fija cuánto se
+   *  equivoca donde el salto lo nota. Si alguien la arregla (la altura
+   *  publicada saliendo de las prims), este test se pone rojo y hay que
+   *  borrar la línea de la divergencia que ya no existe. */
+  it("resto de tipos: la divergencia pintado↔publicado es la declarada y ninguna más", () => {
+    const caso = (raw: Record<string, unknown>) => {
+      const v = vols([raw])[0];
+      return { pintada: alturaPintada(raw), publicada: volumeHeightM(v, 0.5), salta: esSaltable(v) };
+    };
+    // ROCA: se pinta a ~0,6·s y se publica a 1,1·s. Una roca de s 1,5 se ve
+    // de rodilla (≈ 0,9 m) y NO se salta. Dirección segura (nunca se salta
+    // algo que se vea alto), pero es una roca que parece saltable y no lo es.
+    const roca = caso({ id: "r", label: "peña", type: "rock", at: [40, 40], s: 1.5 });
+    assert.ok(roca.pintada < ALTURA_SALTABLE_M && !roca.salta, JSON.stringify(roca));
+    assert.ok(roca.pintada < 0.65 * roca.publicada, `la roca pinta ${roca.pintada} de ${roca.publicada}`);
+    // PROP CILINDRO: la tapa sobresale 0,06 celdas (3 cm) sobre `h`. En la
+    // frontera, un barril de 1,23 m pintados se salta. Es el único caso en la
+    // dirección mala, y son tres centímetros.
+    const barril = caso({ id: "b", label: "barril", type: "prop", shape: "cylinder", at: [40, 40], h: 2.4 });
+    assert.ok(barril.salta && Math.abs(barril.pintada - barril.publicada - 0.03) < 1e-9, JSON.stringify(barril));
+    // FUENTE: pinta 1,3 m y publica 1,4: las dos por encima, no se salta y no
+    // se ve saltable. Sin divergencia que el jugador note.
+    const fuente = caso({ id: "f", label: "fuente", type: "fountain", at: [40, 40] });
+    assert.ok(!fuente.salta && fuente.pintada > ALTURA_SALTABLE_M, JSON.stringify(fuente));
+    // MATORRAL: pinta ~0,7·s y publica 1,3·s, pero NO bloquea ni a pie
+    // (`volumeCollisionGrid` lo trata como decorado): la divergencia no llega
+    // al salto. Casa, torre, gate y árbol: publicada y pintada muy por encima
+    // de 1,2 m. `custom` no se mide (piezas giradas).
+    for (const raw of [
+      { id: "c", label: "casa", type: "building", rect: [30, 30, 8, 6] },
+      { id: "t", label: "torre", type: "tower", at: [40, 40] },
+      { id: "g", label: "puerta", type: "gate", at: [40, 40], orient: "x" },
+      { id: "a", label: "roble", type: "tree", at: [40, 40] },
+    ]) {
+      const c = caso(raw);
+      assert.ok(!c.salta && c.pintada > 2 * ALTURA_SALTABLE_M, `${raw.type}: ${JSON.stringify(c)}`);
+    }
   });
 });

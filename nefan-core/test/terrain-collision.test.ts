@@ -9,6 +9,11 @@ import {
   celdasQueCubreRadio,
   createTerrainCollider,
   type TerrainGridData,
+  ALTURA_SALTABLE_M,
+  CAMERA_NEAR_M,
+  PASO_LIBRE_M,
+  PLAYER_EYE_M,
+  SALTO_APOGEO_M,
 } from "../src/scene/terrain-collision.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
 import { escenaCargable } from "../src/scene/escena-cargable.js";
@@ -272,4 +277,25 @@ describe("el cuerpo mayor que transita el mundo", () => {
     assert.equal(celdasQueCubreRadio(NPC_RADIUS_M, TILE_MPC) * TILE_MPC, 2 * NPC_RADIUS_M, "el NPC cae justo en el borde");
     assert.ok(celdasQueCubreRadio(PLAYER_RADIUS_M, TILE_MPC) * TILE_MPC < 2 * PLAYER_RADIUS_M, "el jugador no llena su celda");
   });
+});
+
+/** Las constantes del salto (tanda BY) y lo que la cámara promete con ellas. */
+describe("la cámara y el salto", () => {
+  it("aterrizar encima de lo saltable deja los ojos por encima de ello (plano cercano incluido)", () => {
+    // La colisión en el aire es binaria: se puede acabar DENTRO de una valla.
+    // Esto es lo que hace que no se vea: la cámara nunca corta lo saltable.
+    assert.ok(ALTURA_SALTABLE_M + CAMERA_NEAR_M <= PLAYER_EYE_M, `${ALTURA_SALTABLE_M} + ${CAMERA_NEAR_M} > ${PLAYER_EYE_M}`);
+  });
+
+  it("«saltable» es el umbral que ya tenía la valla pintada: 2,4 celdas", () => {
+    assert.equal(ALTURA_SALTABLE_M, 2.4 * TILE_MPC);
+  });
+
+  it("el paso libre incluye el apogeo: bajo un dintel se puede saltar sin meter la cámara", () => {
+    assert.equal(PASO_LIBRE_M, PLAYER_EYE_M + SALTO_APOGEO_M + CAMERA_NEAR_M);
+  });
+
+  // Y que el gate por defecto (8 celdas) no cambia con el apogeo lo afirma
+  // `volume-metrics.test.ts` («los defaults en CELDAS…», 8 · 0,5 m): el
+  // mínimo de `gateAlturaCeldas` sube a 7,8 celdas, por debajo de 8.
 });

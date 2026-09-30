@@ -315,6 +315,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
       // La colisión base del plan se deriva justo debajo (o se restaura si la
       // escena no cambió).
       svgCollider: null,
+      svgColliderAire: null,
       svgApplied: false,
     });
     // Mundo 3D: spec fps del tile + layout de superficies (la clave del atlas).
@@ -334,7 +335,11 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     // (analítica, síncrona) si es nueva o cambió. Agua∖decks del ground +
     // huellas de volumes — espacio de mundo.
     if (prevEntry?.svgApplied && !sceneChanged) {
-      tileStore.setSvgCollider(key, prevEntry.svgCollider, "restaurada");
+      tileStore.setSvgCollider(
+        key,
+        { aPie: prevEntry.svgCollider, enElAire: prevEntry.svgColliderAire },
+        "restaurada",
+      );
     } else if (planInfo) {
       applyPlanCollision(key, { ground: planInfo.ground, volumes: planInfo.volumes }, rect, tileStore);
     }

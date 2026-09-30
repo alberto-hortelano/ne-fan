@@ -207,7 +207,8 @@
     "walk_speed": 1.9,
     "sprint_speed": 3.8,
     "speed_scale": 2.2,
-    "interact_range_m": 2.5
+    "interact_range_m": 2.5,
+    "salto_duracion_s": 0.7
   },
   "animations": {
     "idle": {

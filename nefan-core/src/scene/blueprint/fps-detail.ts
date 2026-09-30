@@ -24,6 +24,7 @@ import { darken, roofColors } from "./palette.js";
 import type { Volume } from "./volumes.js";
 import type { SurfacePrim } from "../greybox/surfaces.js";
 import { gateAlturaCeldas } from "../greybox/volume-prims.js";
+import { esSaltable } from "./volume-metrics.js";
 
 /** Especies que se quedan con la copa cónica clásica. */
 const CONIFER_RE = /pin|abet|con[ií]fer|cipr|fir|spruce|cedro|cedar|tejo|yew/i;
@@ -336,12 +337,13 @@ export function enrichFpsPrims(
     if (
       vol.type === "wall" &&
       p.shape === "box" &&
-      (vol.h ?? 5) <= 2.4 &&
+      esSaltable(vol) &&
       p.pos[1] === 0 &&
       !/piedr|stone|tapia|adobe/i.test(vol.label ?? "")
     ) {
       // Muro BAJO = valla/cerca: el slab macizo jamás leerá como estacas.
-      // Postes + dos travesaños de madera, mismo tramo/rotY/colisión.
+      // Postes + dos travesaños de madera, mismo tramo/rotY/colisión. «Bajo»
+      // es «se salta» (`esSaltable`): la cerca que se pinta es la que se pasa.
       out.push(...fencePrims(p));
       continue;
     }

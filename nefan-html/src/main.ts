@@ -89,6 +89,7 @@ import { CONFIG } from "@nefan-core/src/config.js";
  *  config no los trae o los trae imposibles, no hay partida, y el jugador lee
  *  POR QUÉ en el arranque en vez de mirar una pantalla negra. */
 import { playerCfg } from "./config-de-combate.js";
+import { SaltoDelJugador } from "./world/salto-del-jugador.js";
 
 // --- DOM elements ---
 /** Caja del MUNDO: el renderer mete aquí dentro su lienzo WebGL (y la UI de
@@ -455,10 +456,12 @@ const barrasDeEnemigo = crearBarrasDeEnemigo({ contenedor: enemyBarsContainer, m
 const rebuildEnemyBars = (): void => barrasDeEnemigo.reconstruir();
 
 // --- Collision (lógica en world/collision.ts; aquí solo el cableado) ---
+const salto = new SaltoDelJugador(playerCfg.salto_duracion_s);
 const collision = new CollisionSystem({
   tileStore,
   getPlayerPos: () => playerPos,
   getObstacles: () => mundo.objetos,
+  enElAire: () => salto.enElAire(),
 });
 const collidesAt = (x: number, z: number): boolean => collision.collidesAt(x, z);
 
@@ -568,6 +571,7 @@ function gameLoop(now: number): void {
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
   // generación de mundo: la frontera bloquea solo direccionalmente.
+  salto.frame(delta, input.consumeJump(), puedeMoverse());
   if (!puedeMoverse()) {
     // El diálogo (y estar caído) suspende la propuesta de tile: sus teclas Y/N quedan mudas.
     // Ya no hay que decírselo al proveedor — lo DERIVA él
@@ -699,6 +703,7 @@ function gameLoop(now: number): void {
     fpsRenderer.render(
       {
         pos: playerPos,
+        elevacion: salto.elevacion(),
         forward: mirada.forward,
         hp: result.playerHp,
         maxHp: result.playerMaxHp,
@@ -829,6 +834,7 @@ instalarNefanHook({
   estadosTirados: () => gameClient.estadosTirados(),
   session,
   collision,
+  salto: () => salto.estado(),
   dialogoAbierto,
   combatSystemId: () => hud.sistemaId(),
   attackCatalog: () => hud.catalogo(),

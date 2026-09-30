@@ -295,6 +295,19 @@ function buildingPrims(v: BuildingVolume): GreyboxPrimitive[] {
     return prims;
 }
 
+/** Lo que sube una almena sobre el muro, en celdas: la pieza de `wallPrims`
+ *  arranca en `h` y mide esto. */
+export const ALMENA_CELDAS = 1;
+
+/** Altura PINTADA de un muro, en celdas: el lienzo (`h`, 5 por defecto) más
+ *  la almena si la lleva. Es la que publica `volumeHeightM` y la que decide si
+ *  se salta (`esSaltable`): de aquí y no de una copia, porque un muro que se
+ *  pinta más alto de lo que la colisión cree es una valla que se ve y no se
+ *  salta. */
+export function wallAlturaCeldas(v: WallVolume): number {
+  return (v.h ?? 5) + (v.crenellated ? ALMENA_CELDAS : 0);
+}
+
 /** Muro poligonal troceado a ~14 celdas, con los vanos de los `gates` que
  *  lo cruzan tallados (el visual debe casar con clearGatePassage). */
 function wallPrims(v: WallVolume, gates: GateVolume[]): GreyboxPrimitive[] {
@@ -353,7 +366,7 @@ function wallPrims(v: WallVolume, gates: GateVolume[]): GreyboxPrimitive[] {
           for (let o = width / 2; o < clen; o += 2.4) {
             const f = o / clen;
             prims.push(
-              box(1, 1, width + 0.4, ax + (bx - ax) * f, h, az + (bz - az) * f, PALETTE.merlon, "wall", {
+              box(1, ALMENA_CELDAS, width + 0.4, ax + (bx - ax) * f, h, az + (bz - az) * f, PALETTE.merlon, "wall", {
                 volId: `vol_${v.id}`,
               }),
             );

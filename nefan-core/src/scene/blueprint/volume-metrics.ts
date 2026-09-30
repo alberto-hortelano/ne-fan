@@ -17,7 +17,9 @@
 import { volumeSolidDiscRadiusCells } from "./collision.js";
 import { volumeFootprint } from "./footprint.js";
 import type { Volume } from "./volumes.js";
-import { customPartTop, gateAlturaCeldas } from "../greybox/volume-prims.js";
+import { customPartTop, gateAlturaCeldas, wallAlturaCeldas } from "../greybox/volume-prims.js";
+import { ALTURA_SALTABLE_M } from "../terrain-collision.js";
+import { TILE_MPC } from "../tile.js";
 
 /** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
  *  compartido por el manifest del greybox y la colisión declarada (si
@@ -118,7 +120,7 @@ export function volumeHeightM(v: Volume, mpc: number): number {
         : wallHM + Math.max(1, wallHM * 0.5);
     }
     case "wall":
-      return (v.h ?? 5) * mpc + (v.crenellated ? 0.4 : 0);
+      return wallAlturaCeldas(v) * mpc;
     case "tower":
       return (v.h ?? 12) * mpc + 0.5;
     case "gate":
@@ -138,4 +140,20 @@ export function volumeHeightM(v: Volume, mpc: number): number {
     case "custom":
       return Math.max(...v.parts.map(customPartTop)) * mpc;
   }
+}
+
+/** ¿El jugador pasa por ENCIMA de este volumen saltando? Sí si su altura
+ *  (`volumeHeightM`, la que se levanta) no pasa de `ALTURA_SALTABLE_M`.
+ *
+ *  Es la MISMA pregunta para dos consumidores, y por eso una función: la
+ *  colisión en el aire (`planCollisionGridEnElAire` quita lo saltable) y el
+ *  render de las vallas (`fps-detail.ts` pinta estacas en un `wall` saltable).
+ *  Si divergieran habría cercas que se ven saltables y no se saltan.
+ *
+ *  Para `wall` la altura publicada ES la pintada (`wallAlturaCeldas`, almena
+ *  incluida) y hay candado que lo mide sobre las prims. Para los demás tipos
+ *  `volumeHeightM` es una aproximación de lo que pinta el greybox, y la
+ *  divergencia está medida y declarada en `test/salto-del-jugador.test.ts`. */
+export function esSaltable(v: Volume, mpc: number = TILE_MPC): boolean {
+  return volumeHeightM(v, mpc) <= ALTURA_SALTABLE_M;
 }

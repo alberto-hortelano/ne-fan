@@ -282,16 +282,17 @@ describe("loadConfig · el config del jugador es obligatorio", () => {
   /** El de verdad, clonado, para poder quitarle cosas de una en una. */
   const bueno = () => JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
 
-  it("el combat_config.json REAL carga y trae los cuatro números del jugador", () => {
+  it("el combat_config.json REAL carga y trae los cinco números del jugador", () => {
     const p = loadConfig(bueno()).player;
     assert.equal(typeof p.walk_speed, "number");
     assert.equal(typeof p.sprint_speed, "number");
     assert.equal(typeof p.speed_scale, "number");
     assert.equal(typeof p.interact_range_m, "number");
+    assert.equal(typeof p.salto_duracion_s, "number");
     // Y son los del juego: si alguien los cambia, este aserto lo dice.
     assert.deepEqual(
-      { w: p.walk_speed, s: p.sprint_speed, e: p.speed_scale, i: p.interact_range_m },
-      { w: 1.9, s: 3.8, e: 2.2, i: 2.5 },
+      { w: p.walk_speed, s: p.sprint_speed, e: p.speed_scale, i: p.interact_range_m, j: p.salto_duracion_s },
+      { w: 1.9, s: 3.8, e: 2.2, i: 2.5, j: 0.7 },
     );
   });
 
@@ -301,8 +302,8 @@ describe("loadConfig · el config del jugador es obligatorio", () => {
     assert.throws(() => loadConfig(sinJugador), /player/);
   });
 
-  it("cada uno de los cuatro campos, por separado, es obligatorio", () => {
-    for (const campo of ["walk_speed", "sprint_speed", "speed_scale", "interact_range_m"]) {
+  it("cada uno de los cinco campos, por separado, es obligatorio", () => {
+    for (const campo of ["walk_speed", "sprint_speed", "speed_scale", "interact_range_m", "salto_duracion_s"]) {
       const roto = bueno();
       delete (roto.player as Record<string, unknown>)[campo];
       assert.throws(
@@ -341,8 +342,8 @@ describe("loadConfig · el config del jugador es obligatorio", () => {
    *  sin una queja, y el fallo no se veía en el arranque sino jugando: la tecla
    *  no hacía nada y no había dónde mirar. Un valor imposible es un error de
    *  configuración, y su sitio es la puerta. */
-  it("los cuatro son ESTRICTAMENTE positivos: el 0 y el negativo no son configuraciones", () => {
-    for (const campo of ["walk_speed", "sprint_speed", "speed_scale", "interact_range_m"]) {
+  it("los cinco son ESTRICTAMENTE positivos: el 0 y el negativo no son configuraciones", () => {
+    for (const campo of ["walk_speed", "sprint_speed", "speed_scale", "interact_range_m", "salto_duracion_s"]) {
       for (const valor of [0, -1, -0.0001]) {
         const roto = bueno();
         (roto.player as Record<string, unknown>)[campo] = valor;

@@ -1,7 +1,7 @@
 /** Proveedor de input por defecto: teclado + ratón.
  *
  *  WASD mueve (relativo al facing), las flechas orientan, Shift esprinta,
- *  E interactúa, LMB ataca (con pointer lock), el ratón acumula lookDelta
+ *  Espacio salta, E interactúa, LMB ataca (con pointer lock), el ratón acumula lookDelta
  *  bajo pointer lock (yaw y pitch de la mirada), 1..N
  *  seleccionan ataque del catálogo de la sesión, Y/N responden a la propuesta
  *  de tile y R pide respawn. Las teclas de DESARROLLO no están aquí — ver
@@ -32,6 +32,7 @@ export class KeyboardInputProvider implements InputProvider {
   private tileConfirmRequested = false;
   private tileDeclineRequested = false;
   private respawnRequested = false;
+  private jumpRequested = false;
 
   private readonly onKeyUp: (e: KeyboardEvent) => void;
   private readonly onMouseMove: (e: MouseEvent) => void;
@@ -136,7 +137,19 @@ export class KeyboardInputProvider implements InputProvider {
     // mundo no se ve, así que moverse, atacar o cambiar de ataque ahí es
     // actuar a ciegas. `keyup` va directo a propósito — descartar la soltada
     // de una tecla dejaría al jugador andando solo al volver del título.
-    this.desenganches.push(alPulsarTecla(onKeyDown), alPulsarRaton(onMouseDown));
+    // Espacio = saltar, en su propio manejador y no como un `case` más de
+    // `onKeyDown`: ese switch está congelado en su foto de CRAP (client-crap.json)
+    // sin un test que lo cubra, y cada tecla nueva lo empuja por encima. Las
+    // dos guardas son las MISMAS de arriba (conversación abierta; tecla ya
+    // consumida por el panel, que puede cerrarse en este mismo evento). Sin
+    // autorrepetición: mantener Espacio no encadena saltos. Y sin el scroll.
+    const onJumpKey = (e: KeyboardEvent): void => {
+      if (e.key !== " " || this.deps.dialogoAbierto() || e.defaultPrevented) return;
+      if (!e.repeat) this.jumpRequested = true;
+      e.preventDefault();
+    };
+
+    this.desenganches.push(alPulsarTecla(onKeyDown), alPulsarTecla(onJumpKey), alPulsarRaton(onMouseDown));
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("mousemove", this.onMouseMove);
   }
@@ -176,6 +189,10 @@ export class KeyboardInputProvider implements InputProvider {
 
   queueTileDecline(): void {
     if (this.deps.propuestaDeTileAbierta()) this.tileDeclineRequested = true;
+  }
+
+  queueJump(): void {
+    if (!this.deps.dialogoAbierto()) this.jumpRequested = true;
   }
 
   consumeLookDelta(): LookDelta {
@@ -223,6 +240,12 @@ export class KeyboardInputProvider implements InputProvider {
       return true;
     }
     return false;
+  }
+
+  consumeJump(): boolean {
+    const pedido = this.jumpRequested;
+    this.jumpRequested = false;
+    return pedido;
   }
 
   dispose(): void {
