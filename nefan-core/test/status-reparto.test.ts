@@ -124,6 +124,12 @@ describe("cada fallo termina solo su espera (#593)", () => {
   it("el takeover cierra el viaje abierto aunque no lleve placeId: no habla de un lugar", () => {
     assert.deepEqual(esperasQueTermina({ kind: "takeover", phase: "error" }, "forja"), { viaje: "fallo", saludo: true });
   });
+  it("el despertar fallido cierra las dos esperas: un caído no viaja ni habla (#613)", () => {
+    // Sin esto, `despertar: "ambas"` → cualquier otra cosa dejaba al caído con
+    // el «Viajando...» o el saludo colgados tras el rechazo del bridge.
+    assert.deepEqual(esperasQueTermina({ kind: "despertar", phase: "error" }, "forja"), { viaje: "fallo", saludo: true });
+    assert.deepEqual(esperasQueTermina({ kind: "despertar", phase: "error" }, null), { viaje: "fallo", saludo: true });
+  });
   it("el progreso y la preparación no terminan ninguna espera", () => {
     for (const phase of ["progress", "generating"] as const) {
       for (const kind of ["tile", "scene", "consequences", "takeover"] as const) {

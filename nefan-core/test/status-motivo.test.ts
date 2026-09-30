@@ -39,6 +39,10 @@ it("el fallo del despertar manda a pulsar R, con la misma causa que una reacció
     assert.equal(f.causaReaccion, falloDeReaccionParaElJugador(new Error(crudo)).causaReaccion);
   }
   assert.match(falloDelDespertarParaElJugador("fetch failed").message, /no responde/);
+  // Las dos causas tienen frase PROPIA: la de respuesta no culpa a la conexión.
+  const deRespuesta = falloDelDespertarParaElJugador(new Error("HTTP 422: invalid death resolution")).message;
+  assert.match(deRespuesta, /dónde despiertas/);
+  assert.doesNotMatch(deRespuesta, /no responde/);
 });
 
 describe("motivoParaElJugador: el cuerpo de un fallo de generación", () => {
