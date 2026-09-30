@@ -280,3 +280,42 @@ describe("blueprint/collision: por dónde se pasa", () => {
     assert.ok(alcanzable(g.grid, [23, 10], DENTRO) && alcanzable(g.grid, [33, 10], DENTRO));
   });
 });
+
+describe("#788: lo que ya bloqueaba no cambia (muros de eje, coordenadas enteras o medias)", () => {
+  // Rejilla ESPERADA escrita a mano, no copiada del código: un muro de eje con
+  // la banda [c − w/2, c + w/2] ocupa las filas que esa banda pisa con área
+  // (tocar la frontera no cuenta) y las columnas [ini, fin) — punta plana.
+  // Pasar de «centro de celda» a «solape» no puede mover ni una celda aquí.
+  function celdas(g: ReturnType<typeof volumeCollisionGrid>): Set<string> {
+    const s = new Set<string>();
+    g?.grid.forEach((fila, r) => [...fila].forEach((ch, c) => { if (ch === "S") s.add(`${c},${r}`); }));
+    return s;
+  }
+  function rect(c0: number, c1: number, r0: number, r1: number): string[] {
+    const out: string[] = [];
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) out.push(`${c},${r}`);
+    return out;
+  }
+  const casos: Array<{ w: number; v: number; filas: [number, number] }> = [
+    { w: 1, v: 30, filas: [29, 30] }, { w: 1, v: 30.5, filas: [30, 30] },
+    { w: 2, v: 30, filas: [29, 30] }, { w: 2, v: 30.5, filas: [29, 31] },
+    { w: 3, v: 30, filas: [28, 31] }, { w: 3, v: 30.5, filas: [29, 31] },
+    { w: 12, v: 30, filas: [24, 35] }, { w: 12, v: 30.5, filas: [24, 36] },
+  ];
+  for (const { w, v, filas } of casos) {
+    it(`width ${w} en v ${v}: filas ${filas[0]}..${filas[1]}, columnas 20..99`, () => {
+      const g = volumeCollisionGrid([{ id: "m", label: "tapia", type: "wall", points: [[20, v], [100, v]], width: w }], RECT);
+      assert.deepEqual([...celdas(g)].sort(), rect(20, 99, filas[0], filas[1]).sort());
+    });
+  }
+
+  it("L de width 3 con vértice compartido: los dos tramos más la tapa de la esquina por centro", () => {
+    const g = volumeCollisionGrid([{ id: "m", label: "tapia", type: "wall", points: [[20, 30], [100, 30], [100, 80]], width: 3 }], RECT);
+    const esperado = new Set([
+      ...rect(20, 99, 28, 31), // tramo este-oeste, punta oeste plana
+      ...rect(98, 101, 30, 79), // tramo norte-sur, punta sur plana
+      "100,29", // tapa: el único centro de la esquina exterior a ≤ 1,5 del vértice
+    ]);
+    assert.deepEqual([...celdas(g)].sort(), [...esperado].sort());
+  });
+});

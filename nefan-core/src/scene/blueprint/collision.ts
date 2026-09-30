@@ -37,7 +37,101 @@ function markRect(grid: Grid, u0: number, v0: number, u1: number, v1: number, di
   }
 }
 
+/** Tolerancia del solape: por debajo, dos figuras solo se TOCAN (un borde
+ *  sobre la frontera de celdas, o el `cos(90°)` que no da 0 exacto). */
+const SOLAPE_EPS = 1e-9;
+
+/** ¿Se cortan la proyección [a, b] de la figura (cerrada; si es un punto,
+ *  el punto) y la de la celda (lo, hi) ABIERTA? Tocarse no cuenta. */
+function proyeccionesSeCortan(a: number, b: number, lo: number, hi: number): boolean {
+  if (b - a <= SOLAPE_EPS) return a > lo + SOLAPE_EPS && a < hi - SOLAPE_EPS;
+  return Math.min(b, hi) - Math.max(a, lo) > SOLAPE_EPS;
+}
+
+/** ¿Ocupa el rect rotado ÁREA dentro de la celda (col, fila)? Rect de centro
+ *  `(cu, cv)`, eje largo unitario `(eu, ev)`, semilargo `sl` y semiancho `sa`
+ *  (con `sa` 0 es un segmento, y la pregunta es si cruza la celda abierta).
+ *  Ejes separadores (SAT): los dos de la rejilla, el eje y su normal.
+ *  Estricto: una figura que solo toca el borde de la celda no la marca. */
+function rectRotadoSolapaCelda(
+  cu: number, cv: number, eu: number, ev: number, sl: number, sa: number, col: number, fila: number,
+): boolean {
+  const nu = -ev;
+  const nv = eu;
+  const radioU = sl * Math.abs(eu) + sa * Math.abs(nu);
+  const radioV = sl * Math.abs(ev) + sa * Math.abs(nv);
+  if (!proyeccionesSeCortan(cu - radioU, cu + radioU, col, col + 1)) return false;
+  if (!proyeccionesSeCortan(cv - radioV, cv + radioV, fila, fila + 1)) return false;
+  const mu = col + 0.5;
+  const mv = fila + 0.5;
+  for (const [au, av, semi] of [[eu, ev, sl], [nu, nv, sa]] as const) {
+    const c = cu * au + cv * av;
+    const m = mu * au + mv * av;
+    const r = (Math.abs(au) + Math.abs(av)) / 2; // semiproyección de la celda
+    if (!proyeccionesSeCortan(c - semi, c + semi, m - r, m + r)) return false;
+  }
+  return true;
+}
+
+/** Marca toda celda donde el rect rotado ocupa área (barre el AABB de sus
+ *  cuatro esquinas). Contiene al criterio de centro: si el centro de una
+ *  celda cae en el rect, el rect ocupa área en ella. */
+function markRectRotadoPorSolape(
+  grid: Grid, cu: number, cv: number, eu: number, ev: number, sl: number, sa: number, dims: CollisionGridDims,
+): void {
+  const radioU = sl * Math.abs(eu) + sa * Math.abs(ev);
+  const radioV = sl * Math.abs(ev) + sa * Math.abs(eu);
+  for (let v = Math.floor(cv - radioV); v <= Math.floor(cv + radioV); v++) {
+    for (let u = Math.floor(cu - radioU); u <= Math.floor(cu + radioU); u++) {
+      if (rectRotadoSolapaCelda(cu, cv, eu, ev, sl, sa, u, v)) mark(grid, u + 0.5, v + 0.5, dims);
+    }
+  }
+}
+
+/** Disco por CENTRO de celda, más la celda que contiene el centro del disco.
+ *  No va por solape como el resto: un tronco de r 0,9 centrado pasaría de 1 a
+ *  9 celdas y la derivación del bosque (`vegetation.ts`, `MAX_VEG_DENSITY`)
+ *  dejaría de ser verdad. El único agujero del centro es un disco que no
+ *  contiene ningún centro (r < √2/2) y se queda en cero celdas: la celda del
+ *  centro lo cierra, y con r ≥ √2/2 ya estaba marcada. */
 function markDisc(grid: Grid, cu: number, cv: number, r: number, dims: CollisionGridDims): void {
+  mark(grid, cu, cv, dims);
+  markDiscPorCentro(grid, cu, cv, r, dims);
+}
+
+/** Banda gruesa a lo largo de una polilínea (muro): cada tramo es el rect
+ *  `[0, len] × [−width/2, width/2]` con los extremos PLANOS, y colisiona toda
+ *  celda donde ese rect ocupa área. Por solape y no por centro: una cerca de
+ *  `width` < 1 con el eje sobre una frontera de celdas no contenía NINGÚN
+ *  centro y se atravesaba (#788); ahora la unión de celdas contiene la banda,
+ *  que es continua, así que cierra por construcción en cualquier orientación.
+ *  RENDER ≠ COLISIÓN: la colisión cubre lo pintado (`wallPrims`, los mismos
+ *  tramos) redondeado hacia fuera hasta la celda, y no añade celdas sin
+ *  pintura salvo las tapas de los vértices compartidos.
+ *  - PUNTAS LIBRES: el extremo plano ES el corte — la banda acaba en seco,
+ *    como el muro pintado; la tapa redonda ponía hasta 3 m de muro invisible
+ *    delante de la punta (#787).
+ *  - VÉRTICES COMPARTIDOS: la tapa redonda de width/2 por CENTRO de celda
+ *    se queda. Ya no hace falta para sellar (los dos rects comparten el
+ *    vértice), pero quitarla borraría celdas que hoy bloquean; y ponerla por
+ *    solape añadiría la esquina exterior de todo anillo de eje de width 1.
+ *  - Tramo de longitud 0: no pinta nada y no marca nada. */
+function markBand(grid: Grid, points: [number, number][], width: number, dims: CollisionGridDims): void {
+  const half = width / 2;
+  const last = points.length - 1;
+  const cerrada = last > 1 && points[0][0] === points[last][0] && points[0][1] === points[last][1];
+  for (let i = 0; i < last; i++) {
+    const [au, av] = points[i];
+    const [bu, bv] = points[i + 1];
+    const len = Math.hypot(bu - au, bv - av);
+    if (len === 0) continue;
+    markRectRotadoPorSolape(grid, (au + bu) / 2, (av + bv) / 2, (bu - au) / len, (bv - av) / len, len / 2, half, dims);
+  }
+  for (let i = cerrada ? 0 : 1; i < last; i++) markDiscPorCentro(grid, points[i][0], points[i][1], half, dims);
+}
+
+/** Tapa de vértice: solo las celdas cuyo CENTRO cae en el disco. */
+function markDiscPorCentro(grid: Grid, cu: number, cv: number, r: number, dims: CollisionGridDims): void {
   for (let v = Math.floor(cv - r); v <= Math.ceil(cv + r); v++) {
     for (let u = Math.floor(cu - r); u <= Math.ceil(cu + r); u++) {
       const du = u + 0.5 - cu;
@@ -47,48 +141,12 @@ function markDisc(grid: Grid, cu: number, cv: number, r: number, dims: Collision
   }
 }
 
-/** Banda gruesa a lo largo de una polilínea (muro): celdas a distancia ≤
- *  width/2 de algún segmento. En las PUNTAS LIBRES (primer y último punto de
- *  una polilínea abierta) la banda acaba en seco, como el muro pintado
- *  (`wallPrims` corta sus tramos en [0, len]): la tapa redonda de width/2
- *  ponía hasta 3 m de muro invisible delante de la punta. En los vértices
- *  compartidos la tapa se queda: rellena la esquina convexa, que sin ella
- *  abriría rendija entre los dos tramos. */
-function markBand(grid: Grid, points: [number, number][], width: number, dims: CollisionGridDims): void {
-  const half = width / 2;
-  const last = points.length - 1;
-  const cerrada = last > 1 && points[0][0] === points[last][0] && points[0][1] === points[last][1];
-  for (let i = 0; i < points.length - 1; i++) {
-    const puntaIni = i === 0 && !cerrada;
-    const puntaFin = i === last - 1 && !cerrada;
-    const [au, av] = points[i];
-    const [bu, bv] = points[i + 1];
-    const minU = Math.floor(Math.min(au, bu) - half);
-    const maxU = Math.ceil(Math.max(au, bu) + half);
-    const minV = Math.floor(Math.min(av, bv) - half);
-    const maxV = Math.ceil(Math.max(av, bv) + half);
-    const dU = bu - au;
-    const dV = bv - av;
-    const len2 = dU * dU + dV * dV || 1;
-    for (let v = minV; v <= maxV; v++) {
-      for (let u = minU; u <= maxU; u++) {
-        const pu = u + 0.5;
-        const pv = v + 0.5;
-        const tRaw = ((pu - au) * dU + (pv - av) * dV) / len2;
-        if ((puntaIni && tRaw < 0) || (puntaFin && tRaw > 1)) continue; // más allá de una punta libre
-        const t = Math.max(0, Math.min(1, tRaw));
-        const dx = pu - (au + t * dU);
-        const dy = pv - (av + t * dV);
-        if (dx * dx + dy * dy <= half * half) mark(grid, pu, pv, dims);
-      }
-    }
-  }
-}
-
-/** Relleno de un polígono arbitrario (contorno de un `prism`): barre el AABB
- *  del contorno y marca las celdas cuyo centro cae dentro (point-in-polygon por
- *  ray-casting par-impar — el MISMO algoritmo que `shapeContains` para el agua
- *  del ground). */
+/** Relleno de un polígono arbitrario (contorno de un `prism`): la celda es
+ *  sólida si su centro cae dentro (point-in-polygon por ray-casting par-impar
+ *  — el MISMO algoritmo que `shapeContains` para el agua del ground) o si
+ *  alguna arista cruza la celda abierta. Las dos juntas son «el polígono
+ *  ocupa área en la celda»: sin las aristas, una tira de menos de una celda
+ *  de ancho no contenía ningún centro y se atravesaba (#788). */
 function markPolygon(grid: Grid, points: [number, number][], dims: CollisionGridDims): void {
   if (points.length < 3) return;
   let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
@@ -109,10 +167,17 @@ function markPolygon(grid: Grid, points: [number, number][], dims: CollisionGrid
       if (inside) mark(grid, pu, pv, dims);
     }
   }
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const [au, av] = points[j];
+    const [bu, bv] = points[i];
+    const len = Math.hypot(bu - au, bv - av);
+    if (len === 0) continue;
+    markRectRotadoPorSolape(grid, (au + bu) / 2, (av + bv) / 2, (bu - au) / len, (bv - av) / len, len / 2, 0, dims);
+  }
 }
 
-/** Rect rotado `angleDeg` alrededor de su centro (patrón de markBand: barrer
- *  el AABB y testear el centro de cada celda en el marco LOCAL del rect). */
+/** Rect rotado `angleDeg` alrededor de su centro, por solape. Su eje largo
+ *  es `(cos a, −sin a)`: el convenio de `rotatedRectCorners` (footprint.ts). */
 function markRotRect(
   grid: Grid,
   rect: [number, number, number, number],
@@ -120,23 +185,8 @@ function markRotRect(
   dims: CollisionGridDims,
 ): void {
   const [u0, v0, w, d] = rect;
-  const cu = u0 + w / 2;
-  const cv = v0 + d / 2;
   const a = (angleDeg * Math.PI) / 180;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  const eu = (Math.abs(c) * w + Math.abs(s) * d) / 2;
-  const ev = (Math.abs(s) * w + Math.abs(c) * d) / 2;
-  for (let v = Math.floor(cv - ev); v < Math.ceil(cv + ev); v++) {
-    for (let u = Math.floor(cu - eu); u < Math.ceil(cu + eu); u++) {
-      const du = u + 0.5 - cu;
-      const dv = v + 0.5 - cv;
-      // Marco local: rotar el offset por −angle (inversa de rotatedRectCorners).
-      const lu = du * c - dv * s;
-      const lv = du * s + dv * c;
-      if (Math.abs(lu) <= w / 2 && Math.abs(lv) <= d / 2) mark(grid, u + 0.5, v + 0.5, dims);
-    }
-  }
+  markRectRotadoPorSolape(grid, u0 + w / 2, v0 + d / 2, Math.cos(a), -Math.sin(a), w / 2, d / 2, dims);
 }
 
 /** Colisión de un edificio.
