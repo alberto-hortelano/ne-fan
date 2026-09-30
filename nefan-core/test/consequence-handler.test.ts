@@ -6,7 +6,12 @@ import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import type { Consequence } from "../src/narrative/types.js";
 import { combatForHostileRole } from "../src/combat/hostiles.js";
-import { spawnsDeRuntime } from "../src/session/mundo-persistido.js";
+import {
+  entidadesFueraDelMundo,
+  rectsDelMundo,
+  spawnsDeRuntime,
+} from "../src/session/mundo-persistido.js";
+import { HOLGURA_ENTRE_SPAWNS_M, mediaAnchura } from "../src/narrative/reparto-de-spawns.js";
 import { escenaExpandidaDePrueba } from "./helpers.js";
 
 function makeState() {
@@ -536,5 +541,122 @@ describe("dispatchConsequences", () => {
     const s = makeState();
     const eventId = s.recordDialogueEvent("a", "b", [], -1);
     assert.deepEqual(dispatchConsequences(s, eventId, [{ type: "noop" }]).curaciones, []);
+  });
+});
+
+/** Tanda CB: lo que el motor manda aparecer cae DENTRO del tile donde está el
+ *  jugador. Antes, hablando a menos de ~10 m de un borde, «junto a la fuente»
+ *  (forward × 10) o `near_player` (× 5) caían sin suelo, y al reanudar salía
+ *  a pantalla completa «Tu partida vuelve incompleta». El forward es el norte
+ *  fijo, como lo pasan hoy las tres llamadas del bridge. */
+describe("dispatchConsequences — ningún spawn sale del tile", () => {
+  const NORTE = { x: 0, y: 0, z: -1 };
+  const BORDES = [
+    { lado: "north", jugador: { x: 0, y: 0, z: -30 } },
+    { lado: "south", jugador: { x: 0, y: 0, z: 30 } },
+    { lado: "east", jugador: { x: 30, y: 0, z: 0 } },
+    { lado: "west", jugador: { x: -30, y: 0, z: 0 } },
+  ] as const;
+
+  /** Distancia del centro al borde más cercano del tile (0,0), por eje. */
+  function holguraAlBorde(p: readonly number[]): number {
+    return Math.min(32 - Math.abs(p[0]), 32 - Math.abs(p[2]));
+  }
+
+  for (const { lado, jugador } of BORDES) {
+    for (const hint of ["near_player", "junto a la fuente", `distant_${lado}`]) {
+      it(`jugador a 2 m del borde ${lado}, hint «${hint}»: cada cuerpo deja su margen hasta el borde`, () => {
+        const s = makeState();
+        let n = 0;
+        const cs: Consequence[] = [
+          { type: "spawn_entity", entity_kind: "building", name: "Forja", position_hint: hint },
+          { type: "spawn_entity", entity_kind: "npc", name: "Herrero", position_hint: hint },
+        ];
+        const r = dispatchConsequences(s, "evt_cb", cs, {
+          playerPosition: jugador,
+          playerForward: NORTE,
+          generateEntityId: (k) => `cb_${k}_${n++}`,
+        });
+        const fx = r.effects.filter((e) => e.kind === "spawn_entity");
+        assert.equal(fx.length, 2);
+        for (const [i, e] of fx.entries()) {
+          if (e.kind !== "spawn_entity") continue;
+          const margen = mediaAnchura({ kind: cs[i].type === "spawn_entity" ? cs[i].entity_kind : "" }) +
+            HOLGURA_ENTRE_SPAWNS_M;
+          const p = [e.position[0], e.position[1], e.position[2]];
+          assert.ok(holguraAlBorde(p) >= margen - 1e-9, `effect ${e.entityId} en ${p} (margen ${margen})`);
+          assert.deepEqual(s.entities[i].position, p, "el ledger guarda lo mismo que el effect");
+        }
+        // Lo que dispara el rótulo al reanudar, preguntado tal cual.
+        assert.deepEqual(entidadesFueraDelMundo(s.entities, rectsDelMundo(s.scenes_loaded)), []);
+      });
+    }
+  }
+
+  it("el reparto sobrevive a la esquina: tres edificios en el NE siguen a una holgura entre caras", () => {
+    const s = makeState();
+    let n = 0;
+    const cs: Consequence[] = [0, 1, 2].map((i) => ({
+      type: "spawn_entity" as const, entity_kind: "building", name: `Casa ${i}`,
+    }));
+    dispatchConsequences(s, "evt_cb", cs, {
+      playerPosition: { x: 30, y: 0, z: -30 },
+      playerForward: NORTE,
+      generateEntityId: (k) => `cb_${k}_${n++}`,
+    });
+    // Mirando al norte el lateral va en X; los tres comparten Z.
+    const xs = s.entities.map((e) => e.position[0]).sort((a, b) => a - b);
+    assert.deepEqual(xs, [19, 24, 29]);
+    assert.deepEqual(s.entities.map((e) => e.position[2]), [-29, -29, -29]);
+    const ancho = 2 * mediaAnchura({ kind: "building" });
+    assert.equal(xs[1] - xs[0] - ancho, HOLGURA_ENTRE_SPAWNS_M);
+    assert.equal(xs[2] - xs[1] - ancho, HOLGURA_ENTRE_SPAWNS_M);
+  });
+
+  it("en el centro del tile nada cambia: near_player sigue siendo jugador + forward × 5", () => {
+    const s = makeState();
+    const r = dispatchConsequences(s, "evt_cb", [
+      { type: "spawn_entity", entity_kind: "npc", name: "Aldo" },
+    ], { playerPosition: { x: 0, y: 0, z: 0 }, playerForward: NORTE });
+    const e = r.effects[0];
+    assert.equal(e.kind, "spawn_entity");
+    if (e.kind === "spawn_entity") assert.deepEqual(e.position, [0, 0, -5]);
+  });
+
+  it("la entity se apunta en el tile donde CAE, no en el activo (el despertar activa después)", () => {
+    const s = makeState(); // scene_1 en tile (0,0)
+    s.recordSceneLoaded("scene_2", escenaExpandidaDePrueba("scene_2", { tile: { tx: 1, ty: 0 } }));
+    assert.ok(s.setActiveTile(0, 0));
+    assert.equal(s.world.active_scene_id, "scene_1");
+    // El jugador abre los ojos junto al borde este del tile (1,0), en x = 94.
+    dispatchConsequences(s, "despertar_x", [
+      { type: "spawn_entity", entity_kind: "npc", name: "Curandera" },
+    ], { playerPosition: { x: 94, y: 0, z: 0 }, playerForward: NORTE, generateEntityId: () => "cb_npc" });
+    const rec = s.entities.find((e) => e.id === "cb_npc")!;
+    assert.equal(rec.scene_id, "scene_2");
+    assert.deepEqual(rec.position, [94, 0, -5]);
+    // Con el ancla al borde este: dentro del tile (1,0), [32, 96).
+    const r2 = dispatchConsequences(s, "despertar_y", [
+      { type: "spawn_entity", entity_kind: "npc", name: "Otro", position_hint: "distant_east" },
+    ], { playerPosition: { x: 94, y: 0, z: 0 }, playerForward: NORTE, generateEntityId: () => "cb_npc2" });
+    const e = r2.effects[0];
+    if (e.kind === "spawn_entity") assert.deepEqual(e.position, [94.5, 0, 0]);
+    else assert.fail("se esperaba un spawn_entity");
+  });
+
+  it("con el jugador fuera de todo tile realizado lanza nombrando la coordenada, sin tocar el ledger", () => {
+    const s = makeState();
+    const antes = s.entities.length;
+    assert.throws(
+      () => dispatchConsequences(s, "evt_cb", [
+        { type: "spawn_entity", entity_kind: "npc", name: "Fantasma" },
+      ], { playerPosition: { x: 200, y: 0, z: 0 }, playerForward: NORTE }),
+      /\(200, 0\).*tile_3_0/,
+    );
+    assert.equal(s.entities.length, antes);
+    // Sin spawns en el turno no hace falta suelo: un diálogo pasa.
+    const r = dispatchConsequences(s, "evt_cb", [{ type: "dialogue", speaker: "Voz", text: "…" }],
+      { playerPosition: { x: 200, y: 0, z: 0 } });
+    assert.equal(r.effects[0].kind, "show_dialogue");
   });
 });

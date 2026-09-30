@@ -6,8 +6,15 @@ import { resolveSpeaker } from "./speaker-resolve.js";
 import type { Consequence, ConsequenceEffect, Vec3Like } from "./types.js";
 import { toTuple } from "./types.js";
 import { combatForHostileRole } from "../combat/hostiles.js";
-import { repartirEnElTurno } from "./reparto-de-spawns.js";
+import {
+  anclaDentroDelTile,
+  HOLGURA_ENTRE_SPAWNS_M,
+  mediaAnchura,
+  repartirEnElTurno,
+  type CuerpoDelTurno,
+} from "./reparto-de-spawns.js";
 import { huellaEnMetros } from "../scene/scene-normalize.js";
+import { tileWorldRect, worldToTile } from "../scene/tile.js";
 
 export type { ConsequenceEffect };
 
@@ -56,14 +63,18 @@ export function dispatchConsequences(
   // el turno entero —cada cosa se apoya en el borde de la anterior— y el
   // bucle de abajo las procesa de una en una. Es la lista de desplazamientos
   // laterales en metros, en el orden en que el motor las mandó.
-  const reparto = repartirEnElTurno(
-    consequences
-      .filter((c) => c && typeof c === "object" && c.type === "spawn_entity")
-      .map((c) => ({
-        kind: (c as { entity_kind: string }).entity_kind,
-        footprint: (c as { footprint?: readonly [number, number] }).footprint ?? null,
-      })),
+  const spawns = consequences.filter(
+    (c): c is Extract<Consequence, { type: "spawn_entity" }> =>
+      !!c && typeof c === "object" && c.type === "spawn_entity",
   );
+  const cuerpos: CuerpoDelTurno[] = spawns.map((c) => ({
+    kind: c.entity_kind,
+    footprint: c.footprint ?? null,
+  }));
+  const reparto = repartirEnElTurno(cuerpos);
+  const colocacion = spawns.length > 0
+    ? colocacionDelTurno(state, spawns, cuerpos, reparto, opts)
+    : null;
   // …y el mismo turno también las colocaba a TODAS en el mismo punto, que es
   // el otro medio choque: `near_player` es «jugador + forward × 5» y no sabe
   // cuántas van. Medido jugando (QA 2026-08-31, H-5): un cofre y una forja
@@ -122,11 +133,17 @@ export function dispatchConsequences(
         // skin.
         const kind = c.entity_kind;
         const hint = c.position_hint ?? "near_player";
-        const pos = resolvePositionHint(hint, opts.playerPosition, opts.playerForward, reparto[spawnsDelTurno++] ?? 0);
+        // `colocacion` existe siempre que haya un spawn en el turno: se
+        // calcula arriba con la misma lista que recorre este bucle.
+        const { sceneId, anclas, fwd } = colocacion!;
+        const ancla = anclas.get(hint)!;
+        const lat = reparto[spawnsDelTurno++] ?? 0;
+        // Perpendicular al forward en el plano: el reparto va a izquierda y
+        // derecha de lo que el jugador está mirando, no hacia él ni al fondo.
+        const pos: [number, number, number] = [ancla[0] + fwd[2] * lat, ancla[1], ancla[2] - fwd[0] * lat];
         const entityId =
           opts.generateEntityId?.(kind) ??
           `narr_${kind}_${Math.floor(Date.now() / 1000)}_${spawnOrdinal++}`;
-        const sceneId = state.world.active_scene_id;
         // La SEGUNDA vía a un enemigo, y converge con la primera en
         // `combatForHostileRole`: un `spawn_entity` con `kind:"npc"` y
         // `role:"hostile"` sale con el MISMO bloque `combat` que emite
@@ -215,6 +232,10 @@ export function dispatchConsequences(
   return result;
 }
 
+/** `distant_*` es «hacia ese lado, lejos»: 50 m desde el jugador, que en un
+ *  tile de 64 m casi siempre acaba acotado por `anclaDentroDelTile` al borde
+ *  de ese lado. O sea, en la práctica, «junto al borde norte/sur/este/oeste
+ *  del tile»: nunca en el tile de al lado, que puede no existir (#382). */
 const HINT_OFFSETS: Record<string, [number, number, number]> = {
   distant_north: [0, 0, -50],
   distant_south: [0, 0, 50],
@@ -222,34 +243,82 @@ const HINT_OFFSETS: Record<string, [number, number, number]> = {
   distant_west: [-50, 0, 0],
 };
 
-/** Dónde aparece lo que el motor manda. `lateral` son los metros que le tocan a
- *  un lado o al otro del punto de referencia, y los calcula `repartirEnElTurno`
- *  MIRANDO LA HUELLA de cada cosa (#524): aquí vivía un número fijo de 1,8 m
- *  que no sabía el tamaño de lo que separaba, y con las cajas sólidas dos
- *  edificios del mismo turno se solapaban 40 cm. Sin reparto, «aparecen tres
- *  guardias» son tres personajes en la misma coordenada. */
-function resolvePositionHint(
+interface ColocacionDelTurno {
+  /** Escena del tile donde cae el ancla: ahí se apunta la entity. */
+  sceneId: string;
+  /** Punto de referencia de cada hint del turno, ya dentro del tile. */
+  anclas: Map<string, [number, number, number]>;
+  fwd: [number, number, number];
+}
+
+/** DÓNDE CAE CADA HINT del turno, dentro del tile REALIZADO que contiene al
+ *  jugador (el ancla). Es el tile activo al hablar o al cruzar un trigger, y
+ *  en el despertar es el del sitio donde el jugador va a abrir los ojos —que
+ *  el handler activa DESPUÉS de despachar—, no el de su muerte. Por eso la
+ *  entity se apunta en la escena de ESE tile y no en `active_scene_id`: con
+ *  el activo, la posición y el `scene_id` del ledger podían discrepar.
+ *
+ *  Un ancla fuera de todo tile realizado es fail-loud: hoy escribiría la
+ *  entity en el vacío, y al reanudar saldría como «fuera del mundo». */
+function colocacionDelTurno(
+  state: NarrativeState,
+  spawns: ReadonlyArray<Extract<Consequence, { type: "spawn_entity" }>>,
+  cuerpos: readonly CuerpoDelTurno[],
+  reparto: readonly number[],
+  opts: DispatchOptions,
+): ColocacionDelTurno {
+  const base = toTuple(opts.playerPosition ?? [0, 0, 0]);
+  const fwd = toTuple(opts.playerForward ?? [0, 0, -1]);
+  const t = worldToTile(base[0], base[2]);
+  const sceneId = state.sceneIdOfTile(t.tx, t.ty);
+  if (!sceneId) {
+    throw new Error(
+      `dispatchConsequences: el jugador está en (${base[0]}, ${base[2]}), tile_${t.tx}_${t.ty}, ` +
+        `que no está realizado: no hay suelo donde poner lo que el motor manda aparecer`,
+    );
+  }
+  const rect = tileWorldRect(t.tx, t.ty);
+  // Cada hint es un grupo: lo que cuelga del mismo ancla se mueve junto.
+  const grupos = new Map<string, { ext: number; mitad: number }>();
+  spawns.forEach((c, i) => {
+    const hint = c.position_hint ?? "near_player";
+    const g = grupos.get(hint) ?? { ext: 0, mitad: 0 };
+    g.ext = Math.max(g.ext, Math.abs(reparto[i]));
+    g.mitad = Math.max(g.mitad, mediaAnchura(cuerpos[i]));
+    grupos.set(hint, g);
+  });
+  const anclas = new Map<string, [number, number, number]>();
+  for (const [hint, g] of grupos) {
+    const libre = anclaDelHint(hint, base, fwd);
+    const dentro = anclaDentroDelTile(
+      { x: libre[0], z: libre[2] },
+      rect,
+      { x: fwd[0], z: fwd[2] },
+      g.ext,
+      g.mitad + HOLGURA_ENTRE_SPAWNS_M,
+    );
+    anclas.set(hint, [dentro.x, libre[1], dentro.z]);
+  }
+  return { sceneId, anclas, fwd };
+}
+
+/** El punto de referencia de un hint, SIN el lateral del reparto y SIN acotar:
+ *  `near_player` es jugador + forward × 5, `distant_*` ±50 m, y cualquier
+ *  otro texto jugador + forward × 10. El lateral lo calcula
+ *  `repartirEnElTurno` MIRANDO LA HUELLA de cada cosa (#524) y se suma
+ *  después, sobre el ancla ya acotada: sumarlo antes de acotar llevaba dos
+ *  cosas del mismo turno al mismo punto del borde. */
+function anclaDelHint(
   hint: string,
-  playerPos: Vec3Like = [0, 0, 0],
-  playerForward: Vec3Like = [0, 0, -1],
-  lateral = 0,
+  base: [number, number, number],
+  fwd: [number, number, number],
 ): [number, number, number] {
-  const base = toTuple(playerPos);
-  const fwd = toTuple(playerForward);
-  // Perpendicular al forward en el plano: el reparto va a izquierda y derecha
-  // de lo que el jugador está mirando, no hacia él ni al fondo.
-  const lat = lateral;
-  const sep: [number, number, number] = [fwd[2] * lat, 0, -fwd[0] * lat];
   if (hint === "near_player") {
-    return [base[0] + fwd[0] * 5 + sep[0], base[1] + fwd[1] * 5, base[2] + fwd[2] * 5 + sep[2]];
+    return [base[0] + fwd[0] * 5, base[1] + fwd[1] * 5, base[2] + fwd[2] * 5];
   }
   const off = HINT_OFFSETS[hint];
   if (off) {
-    return [base[0] + off[0] + sep[0], base[1] + off[1], base[2] + off[2] + sep[2]];
+    return [base[0] + off[0], base[1] + off[1], base[2] + off[2]];
   }
-  return [
-    base[0] + fwd[0] * 10 + sep[0],
-    base[1] + fwd[1] * 10,
-    base[2] + fwd[2] * 10 + sep[2],
-  ];
+  return [base[0] + fwd[0] * 10, base[1] + fwd[1] * 10, base[2] + fwd[2] * 10];
 }

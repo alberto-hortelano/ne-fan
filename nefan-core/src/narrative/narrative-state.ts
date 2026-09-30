@@ -267,6 +267,13 @@ export class NarrativeState {
     return sceneId ? this.scenes_loaded[sceneId] : undefined;
   }
 
+  /** Id de la escena registrada para el tile (tx,ty), o undefined si no está
+   *  realizado. Lo usa el despacho para apuntar lo que el motor pone en el
+   *  tile donde CAE, que en el despertar no es el activo todavía. */
+  sceneIdOfTile(tx: number, ty: number): string | undefined {
+    return this.tileIndex.get(tileKey(tx, ty));
+  }
+
   hasTile(tx: number, ty: number): boolean {
     return this.tileIndex.has(tileKey(tx, ty));
   }

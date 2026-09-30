@@ -15,6 +15,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  anclaDentroDelTile,
   HOLGURA_ENTRE_SPAWNS_M,
   mediaAnchura,
   repartirEnElTurno,
@@ -146,5 +147,59 @@ describe("repartirEnElTurno — la separación mira la HUELLA, no un número fij
     // `huellaEnMetros` es fail-loud y aquí no se tapa. Inventar una anchura
     // sería volver al número fijo por otra puerta.
     assert.throws(() => repartirEnElTurno([{ kind: "object" }, { kind: "dragon" }]), /dragon/);
+  });
+});
+
+/** El ancla de un hint, metida en el tile (tanda CB). Cada caso afirma la
+ *  coordenada EXACTA y no solo «dentro»: «dentro» lo cumple también un ancla
+ *  pegada al centro, y eso no es lo que se pide. */
+describe("anclaDentroDelTile — el grupo entero cae en el tile", () => {
+  const TILE = { minX: -32, minZ: -32, maxX: 32, maxZ: 32 };
+  const NORTE = { x: 0, z: -1 };
+
+  it("un ancla ya dentro no se mueve", () => {
+    assert.deepEqual(anclaDentroDelTile({ x: 5, z: -7 }, TILE, NORTE, 0, 1.5), { x: 5, z: -7 });
+  });
+
+  for (const [lado, ancla, esperado] of [
+    ["norte", { x: 0, z: -40 }, { x: 0, z: -30.5 }],
+    ["sur", { x: 0, z: 40 }, { x: 0, z: 30.5 }],
+    ["este", { x: 40, z: 0 }, { x: 30.5, z: 0 }],
+    ["oeste", { x: -40, z: 0 }, { x: -30.5, z: 0 }],
+  ] as const) {
+    it(`fuera por el ${lado}: vuelve a margen del borde`, () => {
+      assert.deepEqual(anclaDentroDelTile(ancla, TILE, NORTE, 0, 1.5), esperado);
+    });
+  }
+
+  it("en la esquina con reparto lateral: el lateral solo reserva en el eje perpendicular al forward", () => {
+    // Mirando al norte el lateral va en X: X reserva 1,5 + 3; Z solo 1,5.
+    assert.deepEqual(anclaDentroDelTile({ x: 31, z: -31 }, TILE, NORTE, 3, 1.5), { x: 27.5, z: -30.5 });
+  });
+
+  it("forward en diagonal: cada eje reserva la PROYECCIÓN del lateral que le toca", () => {
+    // sep = [fwd.z·lat, 0, −fwd.x·lat] → X ocupa |fwd.z|·ext = 8, Z |fwd.x|·ext = 6.
+    // Con los ejes cambiados saldría (25, −23): distinto a propósito.
+    assert.deepEqual(
+      anclaDentroDelTile({ x: 40, z: -40 }, TILE, { x: 0.6, z: -0.8 }, 10, 1),
+      { x: 23, z: -25 },
+    );
+    assert.deepEqual(
+      anclaDentroDelTile({ x: -40, z: 40 }, TILE, { x: -0.6, z: 0.8 }, 10, 1),
+      { x: -23, z: 25 },
+    );
+  });
+
+  it("en un tile que no está en el origen", () => {
+    const t = { minX: 32, minZ: -96, maxX: 96, maxZ: -32 };
+    assert.deepEqual(anclaDentroDelTile({ x: 20, z: -100 }, t, NORTE, 0, 2), { x: 34, z: -94 });
+  });
+
+  it("un grupo que cabe JUSTO tiene ancla (el centro); uno que no cabe lanza, diciendo el eje", () => {
+    assert.deepEqual(anclaDentroDelTile({ x: 9, z: 0 }, TILE, NORTE, 0, 32), { x: 0, z: 0 });
+    assert.throws(() => anclaDentroDelTile({ x: 0, z: 0 }, TILE, NORTE, 40, 1.5), (e: unknown) =>
+      e instanceof RangeError && /en x/.test(e.message));
+    assert.throws(() => anclaDentroDelTile({ x: 0, z: 0 }, TILE, { x: 1, z: 0 }, 40, 1.5), (e: unknown) =>
+      e instanceof RangeError && /en z/.test(e.message));
   });
 });

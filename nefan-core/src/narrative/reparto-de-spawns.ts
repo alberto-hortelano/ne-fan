@@ -126,3 +126,57 @@ export function repartirEnElTurno(cuerpos: readonly CuerpoDelTurno[]): number[] 
   });
   return salida;
 }
+
+/** Rect del tile en metros, semiabierto `[min, max)` como `tileWorldRect`. */
+export interface RectDelTile {
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+}
+
+/** DÓNDE PUEDE CAER EL PUNTO DE REFERENCIA de un hint para que TODO el grupo
+ *  que cuelga de él quede dentro del tile (tanda CB).
+ *
+ *  El problema, medido: el punto de un hint es «jugador + forward × 5» (o × 10
+ *  con texto libre, o ±50 m con `distant_*`) y nadie miraba dónde acaba el
+ *  tile. Hablando a 8 m del borde norte, «junto a la fuente» caía en z = −34
+ *  con el tile en [−32, 32): una entity sin suelo, inalcanzable en vivo y, al
+ *  reanudar, el muro «Tu partida vuelve incompleta» de `entidadesFueraDelMundo`.
+ *
+ *  Se acota el ANCLA y no cada punto final, y es a propósito: acotar cada
+ *  punto por separado lleva dos cosas del mismo turno pegadas a una esquina al
+ *  MISMO x, que es el solape que `repartirEnElTurno` existe para evitar
+ *  (#524). Aquí el grupo se mueve entero y los huecos entre caras no cambian.
+ *
+ *  - `extLateral`: el mayor desplazamiento lateral |reparto| del grupo. El
+ *    lateral va perpendicular al forward (`sep = [fwd.z·lat, 0, −fwd.x·lat]`),
+ *    así que en X ocupa `|fwd.z|·ext` y en Z `|fwd.x|·ext`.
+ *  - `margen`: media anchura del mayor cuerpo del grupo más la holgura: lo que
+ *    cada cuerpo necesita entre su centro y el borde para que el jugador lo
+ *    rodee sin pegarse al muro del tile.
+ *
+ *  Si el grupo no cabe en algún eje no hay ancla honesta: `RangeError`, en vez
+ *  de devolver un punto que ya se sabe fuera. */
+export function anclaDentroDelTile(
+  ancla: { x: number; z: number },
+  rect: RectDelTile,
+  fwd: { x: number; z: number },
+  extLateral: number,
+  margen: number,
+): { x: number; z: number } {
+  const x = acotarEje("x", ancla.x, rect.minX, rect.maxX, margen + Math.abs(fwd.z) * extLateral);
+  const z = acotarEje("z", ancla.z, rect.minZ, rect.maxZ, margen + Math.abs(fwd.x) * extLateral);
+  return { x, z };
+}
+
+function acotarEje(eje: string, v: number, min: number, max: number, reserva: number): number {
+  const lo = min + reserva;
+  const hi = max - reserva;
+  if (lo > hi) {
+    throw new RangeError(
+      `reparto-de-spawns: el grupo necesita ${reserva} m a cada lado en ${eje} y el tile [${min}, ${max}) no los tiene`,
+    );
+  }
+  return Math.min(hi, Math.max(lo, v));
+}

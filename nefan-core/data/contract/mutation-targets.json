@@ -1038,10 +1038,11 @@
         "src/narrative/reparto-de-spawns.ts"
       ],
       "tests": [
+        "test/consequence-handler.test.ts",
         "test/reparto-de-spawns.test.ts"
       ],
       "break": 93,
-      "porque": "DÓNDE cae cada cosa que el motor pone en el mismo turno (#524). Entra con la PR 3 de la tanda B, que retira el `SEPARACION_M = 1.8` que no miraba el tamaño de lo que separaba: con las cajas sólidas (#489) dos edificios de un turno se solapaban 2,2 m y un `npc` caía dentro de la caja del edificio. Módulo propio y no dentro de `consequence-handler` (break 59) porque es aritmética con casos y merece batería y medida propias: su test afirma una PROPIEDAD sobre todos los pares del turno —entre dos cualesquiera cabe el jugador— y no tres números sueltos. Batería de un fichero, derivada del árbol de imports. Medido por primera vez en la corrida 34872537438 (2026-09-14): 29 mutantes, 2 vivos, score 93,10 % → suelo 93."
+      "porque": "DÓNDE cae cada cosa que el motor pone en el mismo turno (#524). Entra con la PR 3 de la tanda B, que retira el `SEPARACION_M = 1.8` que no miraba el tamaño de lo que separaba: con las cajas sólidas (#489) dos edificios de un turno se solapaban 2,2 m y un `npc` caía dentro de la caja del edificio. Módulo propio y no dentro de `consequence-handler` (break 59) porque es aritmética con casos y merece batería y medida propias: su test afirma una PROPIEDAD sobre todos los pares del turno —entre dos cualesquiera cabe el jugador— y no tres números sueltos. Batería de un fichero, derivada del árbol de imports. Medido por primera vez en la corrida 34872537438 (2026-09-14): 29 mutantes, 2 vivos, score 93,10 % → suelo 93. La tanda CB (2026-09-30) le añade `anclaDentroDelTile` —el ancla de cada hint metida en el tile para que ningún spawn caiga sin suelo— y la batería gana `consequence-handler.test.ts`: importa `mediaAnchura` y `HOLGURA_ENTRE_SPAWNS_M` para afirmar el margen de cada cuerpo hasta el borde, y es el único test que ejerce la función a través del despacho real (los cuatro bordes × tres hints)."
     },
     {
       "id": "entrega-de-la-replica",
