@@ -152,11 +152,12 @@ describe("escenaCargable — lo que no es Format D lanza nombrando qué", () => 
     );
   });
 
-  it("lo que `formatDToWorld` toleraba hasta #782 ahora lo rechaza la puerta: `h` ≤ 0 y `shape` inventada", () => {
+  it("lo que `formatDToWorld` toleraba hasta #782 ahora lo rechaza la puerta: `h` ≤ 0 o infinita y `shape` inventada", () => {
     for (const [campo, valor] of [
       ["h", 0],
       ["h", -2],
       ["h", "alta"],
+      ["h", JSON.parse("1e400")],
       ["shape", "dodecaedro"],
     ] as [string, unknown][]) {
       const d = cruda();

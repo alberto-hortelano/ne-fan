@@ -935,7 +935,7 @@ def validate_scene_response(data: dict) -> dict:
                     "las únicas son box | cylinder | sphere | cone"
                 )
             clean_ent["shape"] = ent["shape"]
-        # Altura en METROS. Espejo exacto del zod (`h: z.number().positive()`):
+        # Altura en METROS. Espejo exacto del zod (`h: z.number().finite().positive()`):
         # `h ≤ 0` o no numérica LANZA, y una altura grande se CONSERVA tal cual
         # — el recorte a 20 m lo hace `formatDToWorld` al normalizar, en las
         # dos vías por igual. Hasta la QA de #400 esto descartaba en silencio
@@ -945,6 +945,13 @@ def validate_scene_response(data: dict) -> dict:
             altura = ent["h"]
             if not isinstance(altura, (int, float)) or isinstance(altura, bool) or altura <= 0:
                 raise ValueError(f"entity '{eid}': `h` es la altura en metros y debe ser un número > 0 ({altura!r})")
+            # FINITA (#782, espejo del `.finite()` del zod): `1e400` se lee como
+            # `inf` y pasaba el `> 0`. La MISMA frase que MOTIVO_H_FINITA.
+            if not math.isfinite(altura):
+                raise ValueError(
+                    f"entity '{eid}': `h` es la altura en metros y debe ser un número FINITO > 0 "
+                    "(1e400 se lee como Infinity)"
+                )
             clean_ent["h"] = float(altura)
         # Ref de estilo del NPC ELEGIDA por el motor: `entities[].style_ref` la
         # declara generate_scene.json y de ella sale la clave de caché del skin

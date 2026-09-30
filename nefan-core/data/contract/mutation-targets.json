@@ -1155,8 +1155,8 @@
         "test/tile.test.ts",
         "test/world-snapshot.test.ts"
       ],
-      "break": 0,
-      "porque": "La puerta de lo CRUDO hacia `formatDToWorld` (#782): emitida → `EmittedSceneSchema` → `expandScenePrimitives` → `ExpandedSceneSchema`, o directa al segundo gate si ya trae la marca. Hasta #782 lo hacía `formatDToWorld` por dentro, con una validación a mano más laxa que el zod. Va en módulo PROPIO y no dentro de `scene-normalize` porque aquel no cabe en `tope_local` (300 mutantes) y este sí: el bucle se cierra en local. Nace sin suelo medido; el `break` se fija con `npm run mutacion -- local escena-cargable`. Batería DERIVADA del árbol de imports: `escena-cargable.test.ts` es la suya, y los otros ocho la usan para construir la escena que miden (por la misma puerta que una fixture, en vez de `expandScenePrimitives` + `as`); `tile.test.ts` también, pero por `import()` dinámico, que el derivador no ve: entra a mano."
+      "break": "sin medir",
+      "porque": "La puerta de lo CRUDO hacia `formatDToWorld` (#782): emitida → `EmittedSceneSchema` → `expandScenePrimitives` → `ExpandedSceneSchema`, o directa al segundo gate si ya trae la marca. Hasta #782 lo hacía `formatDToWorld` por dentro, con una validación a mano más laxa que el zod. Va en módulo PROPIO y no dentro de `scene-normalize` porque aquel no cabe en `tope_local` (300 mutantes) y este sí: el bucle se cierra en local. Nace `sin medir` como todo módulo nuevo: `local` rechaza el coste desconocido, así que la primera medida la trae la corrida pedida y el suelo se pone a lo medido. Batería DERIVADA del árbol de imports: `escena-cargable.test.ts` es la suya, y los otros ocho la usan para construir la escena que miden (por la misma puerta que una fixture, en vez de `expandScenePrimitives` + `as`); `tile.test.ts` también, pero por `import()` dinámico, que el derivador no ve: entra a mano."
     },
     {
       "id": "escena-servida",

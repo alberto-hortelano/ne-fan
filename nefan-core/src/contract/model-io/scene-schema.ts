@@ -91,6 +91,8 @@ const entityErrorMap: z.ZodErrorMap = (issue, ctx) => {
 /** El motivo de una `cell` no finita. El espejo Python (`validate_scene_response`)
  *  dice lo mismo; la ruta (`entities[i].cell[j]`) la pone `formatError`. */
 export const MOTIVO_CELL_FINITA = "`cell` son dos números FINITOS [col,row] (1e400 se lee como Infinity)";
+/** Ídem para `h`, la altura en metros. */
+export const MOTIVO_H_FINITA = "`h` es la altura en metros y debe ser un número FINITO > 0 (1e400 se lee como Infinity)";
 
 const EntityBase = z
   .object({
@@ -108,7 +110,9 @@ const EntityBase = z
     cell: z.tuple([z.number().finite(MOTIVO_CELL_FINITA), z.number().finite(MOTIVO_CELL_FINITA)]),
     footprint: z.tuple([z.number().int().min(1), z.number().int().min(1)]),
     shape: z.enum(["box", "cylinder", "sphere", "cone"]).optional(),
-    h: z.number().positive().optional(),
+    // Altura en metros, FINITA por el mismo motivo que `cell` (#782): `1e400`
+    // pasaba el `.positive()` y se recortaba a 20 m en silencio.
+    h: z.number().finite(MOTIVO_H_FINITA).positive().optional(),
     // ── NPCs: con qué se viste y cómo se comporta ────────────────────────
     // `role` NO es el oficio: es el preset de conducta que el sim implementa
     // (NPC_ROLES, la misma lista que el enum de `spawn_entity` — un NPC no

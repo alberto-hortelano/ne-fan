@@ -20,6 +20,7 @@ import {
   SCENE_FIELDS,
   RADIO_SIMULADO_POR_KIND,
   MOTIVO_CELL_FINITA,
+  MOTIVO_H_FINITA,
 } from "../src/contract/model-io/scene-schema.js";
 import {
   expandScenePrimitives,
@@ -93,6 +94,21 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
     }
     // Y la fracción FINITA sigue valiendo (colocación fina, media celda).
     assert.equal(accepts({ ...base, entities: [{ id: "p", kind: "player", name: "Tú", cell: [1.5, 2.25], footprint: [1, 1] }] }), true);
+  });
+
+  it("una `h` no finita se rechaza en la puerta con su motivo (#782); una grande y finita sigue valiendo", () => {
+    const conH = (h: number) =>
+      validateContract(EmittedSceneSchema, {
+        ...base,
+        entities: [...base.entities, { id: "torre", kind: "building", name: "Torre", cell: [4, 4], footprint: [2, 2], h }],
+      });
+    for (const h of [Infinity, JSON.parse("1e400") as number]) {
+      const res = conH(h);
+      assert.equal(res.ok, false, `h=${h} no puede pasar`);
+      if (!res.ok) assert.equal(res.error, `entities[1].h: ${MOTIVO_H_FINITA}`);
+    }
+    // El techo de 20 m es de la conversión, no del contrato: 999 m pasa.
+    assert.equal(conH(999).ok, true);
   });
 
   it("entity sin footprint (antes: clamp)", () => {

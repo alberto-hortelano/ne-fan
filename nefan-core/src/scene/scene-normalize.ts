@@ -247,8 +247,8 @@ export function formatDToWorld(escena: ExpandedScene): WorldScene {
       continue;
     }
     // building / prop / tree / item / decor. Altura en metros: la declarada
-    // (el zod ya exige que sea positiva), con el techo duro; sin ella, la del
-    // kind.
+    // (el zod ya exige que sea finita y positiva), con el techo duro; sin
+    // ella, la del kind.
     const entH = ent.h !== undefined ? Math.min(ent.h, MAX_ENTITY_HEIGHT_M) : KIND_DEFAULT_HEIGHT[ent.kind];
     // La huella en metros sale de la MISMA función que la de un spawn de
     // runtime: un cofre de 3 celdas mide 1,5 m lo ponga la escena o lo ponga el
