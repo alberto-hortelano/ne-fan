@@ -872,6 +872,52 @@ describe("NarrativeState.serializeForLlm", () => {
     assert.deepEqual(huido.suspended_goal, meta);
     assert.equal(ctx.entities.length, LLM_ENTITIES_MAX + 1, "el resto sigue al cap");
     assert.ok(ctx.entities.every((e) => e.id === "huido" || e.suspended_goal === undefined));
+    // Y viaja en su sitio cronológico, no pegado al final: es el más viejo.
+    assert.equal(ctx.entities[0].id, "huido", "la lista sigue en orden de spawn");
+  });
+
+  it("qué forma de suspended_goal viaja al motor y cuál se dice (#298 H2b, #618)", () => {
+    // Tabla escrita desde el contrato (`SuspendedGoal` en types.ts): las dos
+    // razones, los dos campos, y cada pieza que falta o no tiene su forma.
+    const valor = { type: "goto_place", target_place_id: "plaza" };
+    const viajan: Record<string, unknown> = {
+      huida_directiva: { field: "directive", value: valor, reason: "fled_combat", fight_at: [1, 2] },
+      huida_en_transito: { field: "in_transit", value: valor, reason: "fled_combat", fight_at: [1, 2] },
+      sin_camino: { field: "in_transit", value: valor, reason: "no_path", stuck_at: [3, 4], why: "sin ruta" },
+    };
+    const rotas: Record<string, unknown> = {
+      campo_ajeno: { field: "otra", value: valor, reason: "fled_combat", fight_at: [1, 2] },
+      huida_sin_sitio: { field: "directive", value: valor, reason: "fled_combat" },
+      huida_con_texto: { field: "directive", value: valor, reason: "fled_combat", fight_at: "ab" },
+      huida_de_tres: { field: "directive", value: valor, reason: "fled_combat", fight_at: [1, 2, 3] },
+      huida_con_sitio_ajeno: { field: "directive", value: valor, reason: "fled_combat", stuck_at: [1, 2] },
+      razon_ajena: { field: "directive", value: valor, reason: "otra", fight_at: [1, 2], stuck_at: [1, 2], why: "x" },
+      sin_camino_sin_porque: { field: "in_transit", value: valor, reason: "no_path", stuck_at: [3, 4] },
+      sin_camino_porque_no_texto: { field: "in_transit", value: valor, reason: "no_path", stuck_at: [3, 4], why: 7 },
+      sin_camino_sin_sitio: { field: "in_transit", value: valor, reason: "no_path", why: "sin ruta" },
+      sin_camino_campo_ajeno: { field: "otra", value: valor, reason: "no_path", stuck_at: [3, 4], why: "sin ruta" },
+    };
+    const s = makeState();
+    s.startNewSession("g");
+    for (const [id, g] of Object.entries({ ...viajan, ...rotas })) {
+      s.recordEntitySpawned(id, "npc", "tile_x", [0, 0, 0], { suspended_goal: g });
+    }
+    // Sin meta —ausente o `null`— no es una forma rota: ni viaja ni se avisa.
+    s.recordEntitySpawned("sin_meta", "npc", "tile_x", [0, 0, 0], {});
+    s.recordEntitySpawned("meta_nula", "npc", "tile_x", [0, 0, 0], { suspended_goal: null });
+    const avisos: string[] = [];
+    const warn = console.warn;
+    console.warn = (...a: unknown[]) => { avisos.push(a.map(String).join(" ")); };
+    let ctx;
+    try { ctx = s.serializeForLlm(); } finally { console.warn = warn; }
+    const de = (id: string) => ctx.entities.find((e) => e.id === id)?.suspended_goal;
+    for (const [id, g] of Object.entries(viajan)) assert.deepEqual(de(id), g, id);
+    for (const id of Object.keys(rotas)) assert.equal(de(id), undefined, id);
+    assert.equal(de("sin_meta"), undefined);
+    assert.equal(de("meta_nula"), undefined);
+    const avisados = Object.keys({ ...viajan, ...rotas, sin_meta: 1, meta_nula: 1 })
+      .filter((id) => avisos.some((a) => a.includes(`${id}:`)));
+    assert.deepEqual(avisados, Object.keys(rotas), "se avisa de cada forma rota y SOLO de ellas");
   });
 
   it("un suspended_goal con forma rota NO viaja y se dice", () => {
@@ -885,6 +931,20 @@ describe("NarrativeState.serializeForLlm", () => {
     try { ctx = s.serializeForLlm(); } finally { console.warn = warn; }
     assert.equal(ctx.entities.find((e) => e.id === "raro")?.suspended_goal, undefined);
     assert.ok(avisos.some((a) => a.includes("raro") && a.includes("suspended_goal")), JSON.stringify(avisos));
+  });
+
+  it("si la escena activa sola desborda el cap, viajan sus MÁS RECIENTES y en orden de spawn", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    s.recordSceneLoaded("tile_activo", escenaExpandidaDePrueba("tile_activo"));
+    s.recordEntitySpawned("ajeno", "npc", "tile_lejano", [0, 0, 0], {});
+    const n = LLM_ENTITIES_MAX + 3;
+    for (let i = 0; i < n; i++) {
+      s.recordEntitySpawned(`activo_${i}`, "npc", "tile_activo", [i, 0, 0], {});
+    }
+    const ids = s.serializeForLlm().entities.map((e) => e.id);
+    const esperado = Array.from({ length: n }, (_, i) => `activo_${i}`).slice(-LLM_ENTITIES_MAX);
+    assert.deepEqual(ids, esperado);
   });
 
   it("cota de entities: escena activa completa + spawns recientes, entities_total avisa", () => {
