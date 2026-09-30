@@ -155,8 +155,11 @@ const GOLDEN: Record<string, { layout: string; cells: string; celdas: number }> 
   // con piezas descritas, surface_desc por cara y por rol, surface_ref (de
   // volumen, por cara y de pieza) y un bloque de scatter (que NO debe aportar
   // ni una celda: las prims de scatter son `decor` → clay, coste 0).
+  // `layout` ROTADO a propósito en la tanda BY (QA H1): la esfera principal
+  // de la roca tiene alto fijo (`rocaAlturaCeldas`) para que la altura que se
+  // pinta sea la que decide el salto. `cells` NO rota: se rehace el ensamblado local con un resolve_only a $0.
   varied: {
-    layout: "7b38a56414952d09a07911cee9453c5b5d79ca54e61f3ef1ffb5c30e32a46f92",
+    layout: "88a26724749bcc26f08defa1be5719b59b02e8f65fd1d65513b388cd787abb51",
     cells: "23e82540af3acff1d8cbcbcc71863be07ab3f8d6711c6289c148a135d5b983a4",
     celdas: 26,
   },

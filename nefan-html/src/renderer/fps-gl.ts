@@ -1548,7 +1548,7 @@ export class FpsGl {
     const step = (dt / TURN_TIME_S) * Math.PI * 0.5;
     this.renderYaw = Math.abs(d) <= step ? targetYaw : this.renderYaw + Math.sign(d) * step;
     this.applyAmbienceAt(player.pos.x, player.pos.z);
-    this.cam.position.set(player.pos.x, this.reliefWorldAt(player.pos.x, player.pos.z) + PLAYER_EYE_M, player.pos.z);
+    this.cam.position.set(player.pos.x, this.reliefWorldAt(player.pos.x, player.pos.z) + PLAYER_EYE_M + player.elevacion, player.pos.z);
     // rotation.y = π + yaw: la cámara de three mira −z con rotación 0 y
     // yawOf tiene 0 = +z (R_y(π+yaw)·(0,0,−1) = (sin yaw, 0, cos yaw)).
     // rotation.x = pitch en orden YXZ: el giro vertical se aplica en el marco

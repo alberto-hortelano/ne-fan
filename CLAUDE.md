@@ -172,6 +172,7 @@ Teclado y ratón en `nefan-html/src/input/keyboard-input-provider.ts`, salvo don
 |-------|--------|
 | WASD | Movimiento relativo al facing |
 | Shift | Sprint |
+| Espacio | Saltar: en el aire se pasa por encima de lo bajo del plan (cercas, muretes, bancos); no con un panel abierto ni caído. Física en core (`simulation/salto-del-jugador.ts`) |
 | Raton (pointer lock) | Mirada: yaw continuo + pitch |
 | ←/→ · ↑/↓ | Orientar por pasos: 45° de yaw · 15° de pitch |
 | E | Interactuar con objeto/NPC |
@@ -238,7 +239,7 @@ Posiciones y escalas en METROS (anclaje por BASE: `position.y` es la base del ob
 
 Categorias: item (amarillo), prop (gris), building (marron), creature (rojo), terrain (verde), decor (gris apagado).
 
-**Altura**: cada entity admite `h` opcional en METROS (el footprint sigue en celdas); sin él, `formatDToWorld` aplica `KIND_DEFAULT_HEIGHT` (building 2.5, tree 4, prop 1, item/decor 0.5) y emite `scale.y` real. Ambos clientes la construyen tal cual, como volumen. La colisión NUNCA usa la altura (solo huella XZ).
+**Altura**: cada entity admite `h` opcional en METROS (el footprint sigue en celdas); sin él, `formatDToWorld` aplica `KIND_DEFAULT_HEIGHT` (building 2.5, tree 4, prop 1, item/decor 0.5) y emite `scale.y` real. Ambos clientes la construyen tal cual, como volumen. La colisión de NPCs, A* y validador es solo huella XZ y no usa la altura. El jugador EN EL AIRE (Espacio) consulta un segundo grid del plan sin los volúmenes saltables (`esSaltable`: altura ≤ `ALTURA_SALTABLE_M` = 1,2 m, la misma frontera que pinta un `wall` como valla), así que pasa cercas y muretes y no casas, árboles ni agua; las cajas de lo spawneado siguen macizas en el aire.
 
 ## Convenciones de codigo
 

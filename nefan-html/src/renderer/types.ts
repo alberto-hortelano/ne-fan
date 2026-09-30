@@ -88,6 +88,8 @@ export type Cuerpos = readonly Entity[];
 
 export interface PlayerView {
   pos: Vec3;
+  /** Metros que el salto sube los ojos (core: `elevacionDelSalto`). */
+  elevacion: number;
   forward: Vec3;
   hp: number;
   maxHp: number;

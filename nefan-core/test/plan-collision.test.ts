@@ -8,6 +8,8 @@ import {
   parseGround,
   parseVolumes,
   planCollisionGrid,
+  planCollisionGridDeLoBajo,
+  planCollisionGridEnElAire,
   unionCollisionGrids,
 } from "../src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "../src/scene/terrain-collision.js";
@@ -140,6 +142,98 @@ describe("planCollisionGrid", () => {
     assert.equal(plan.grid[41][45], "S", "el río bloquea por el plan");
     assert.equal(plan.grid[45][45], "g", "el puente lo abre por el plan");
     assert.equal(solidCount(plan), 144 - 36, "12×12 de río menos 12×3 de puente");
+  });
+});
+
+// ── En el aire (tanda BY) ──────────────────────────────────────────────────
+// El jugador saltando consulta un segundo grid: el mismo cálculo sin lo
+// saltable. Lo que se afirma es QUÉ desaparece y qué no, celda a celda.
+describe("planCollisionGridEnElAire", () => {
+  const rect = tileWorldRect(0, 0);
+  const aPieYAire = (rawVolumes: unknown[], rawGround?: unknown[]) => {
+    const g = rawGround ? groundOf(rawGround) : undefined;
+    const v = volumesOf(rawVolumes);
+    return { pie: planCollisionGrid(g, v, rect), aire: planCollisionGridEnElAire(g, v, rect) };
+  };
+  const tramo = (id: string, extra: Record<string, unknown>) => ({
+    id, label: "cerca", type: "wall", points: [[20, 60], [100, 60]], ...extra,
+  });
+
+  it("una valla (h 2) desaparece en el aire; un muro por defecto sigue entero", () => {
+    const valla = aPieYAire([tramo("v", { h: 2 })]);
+    assert.ok(solidCount(valla.pie) > 0, "a pie la valla es sólida");
+    assert.equal(valla.aire, null, "en el aire no queda nada");
+    const muro = aPieYAire([tramo("m", {})]);
+    assert.equal(solidCount(muro.aire), solidCount(muro.pie), "el muro de 2,5 m sigue igual");
+    assert.ok(solidCount(muro.pie) > 0);
+  });
+
+  it("la frontera es exacta: h 2,4 celdas (1,2 m) se salta, h 2,41 no", () => {
+    assert.equal(aPieYAire([tramo("a", { h: 2.4 })]).aire, null);
+    const b = aPieYAire([tramo("b", { h: 2.41 })]);
+    assert.equal(solidCount(b.aire), solidCount(b.pie));
+  });
+
+  it("la almena cuenta: un muro de 1,6 celdas almenado mide 1,3 m y no se salta", () => {
+    const liso = aPieYAire([tramo("l", { h: 1.6 })]);
+    assert.equal(liso.aire, null, "liso, 0,8 m: se salta");
+    const almenado = aPieYAire([tramo("a", { h: 1.6, crenellated: true })]);
+    assert.equal(solidCount(almenado.aire), solidCount(almenado.pie), "almenado, 1,3 m: no");
+  });
+
+  it("el agua va SIEMPRE: en el aire el río bloquea igual, con una valla encima o sin ella", () => {
+    const rio = [{ id: "rio", kind: "water", rect: [40, 50, 12, 20] }];
+    const conValla = aPieYAire([tramo("v", { h: 2 })], rio);
+    const soloRio = planCollisionGrid(groundOf(rio), undefined, rect);
+    assert.deepEqual(conValla.aire?.grid, soloRio?.grid, "en el aire queda exactamente el río");
+  });
+
+  it("sin volúmenes (solo suelo, o nada) contesta igual que a pie, no revienta", () => {
+    const rio = groundOf([{ id: "rio", kind: "water", rect: [40, 50, 12, 20] }]);
+    assert.deepEqual(planCollisionGridEnElAire(rio, undefined, rect)?.grid, planCollisionGrid(rio, undefined, rect)?.grid);
+    assert.equal(planCollisionGridEnElAire(undefined, undefined, rect), null);
+  });
+
+  it("un prop por defecto (1 m) se salta; uno `passable` es igual en los dos grids (vacío)", () => {
+    const barril = aPieYAire([{ id: "b", label: "barril", type: "prop", shape: "cylinder", at: [64, 64] }]);
+    assert.ok(solidCount(barril.pie) > 0);
+    assert.equal(barril.aire, null);
+    const alfombra = aPieYAire([{ id: "a", label: "alfombra", type: "prop", shape: "box", rect: [60, 60, 4, 4], passable: true }]);
+    assert.equal(alfombra.pie, null);
+    assert.equal(alfombra.aire, null);
+  });
+
+  it("lo alto no se salta: casa, torre, árbol y las jambas del gate siguen en el aire", () => {
+    const altos = aPieYAire([
+      { id: "casa", label: "casa", type: "building", rect: [10, 10, 8, 6] },
+      { id: "torre", label: "torre", type: "tower", at: [40, 40] },
+      { id: "roble", label: "roble", type: "tree", at: [100, 100] },
+      { id: "muralla", label: "muralla", type: "wall", points: [[0, 80], [128, 80]] },
+      { id: "puerta", label: "puerta", type: "gate", at: [64, 80], orient: "x" },
+    ]);
+    assert.deepEqual(altos.aire?.grid, altos.pie?.grid, "ni una celda de diferencia");
+  });
+
+  it("un gate en una valla: la valla se va, las jambas se quedan", () => {
+    const g = aPieYAire([
+      tramo("v", { h: 2 }),
+      { id: "puerta", label: "portón", type: "gate", at: [60, 60], orient: "x" },
+    ]);
+    const jambas = planCollisionGrid(undefined, volumesOf([{ id: "puerta", label: "portón", type: "gate", at: [60, 60], orient: "x" }]), rect);
+    assert.deepEqual(g.aire?.grid, jambas?.grid);
+    assert.ok(solidCount(g.pie) > solidCount(g.aire));
+  });
+});
+
+describe("planCollisionGridDeLoBajo", () => {
+  const rect = tileWorldRect(0, 0);
+  it("es exactamente lo saltable: la valla sí; el muro, lo alto y el agua no", () => {
+    const valla = { id: "v", label: "cerca", type: "wall", points: [[20, 60], [100, 60]], h: 2 };
+    const vols = volumesOf([valla, { id: "m", label: "muro", type: "wall", points: [[20, 90], [100, 90]] }]);
+    const bajo = planCollisionGridDeLoBajo(vols, rect);
+    assert.deepEqual(bajo?.grid, planCollisionGrid(undefined, volumesOf([valla]), rect)?.grid);
+    assert.equal(planCollisionGridDeLoBajo(volumesOf([{ id: "m", label: "muro", type: "wall", points: [[20, 90], [100, 90]] }]), rect), null);
+    assert.equal(planCollisionGridDeLoBajo(undefined, rect), null);
   });
 });
 

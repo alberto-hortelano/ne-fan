@@ -52,6 +52,7 @@ export interface IntentSink {
   queueRespawn(): void;
   queueTileConfirm(): void;
   queueTileDecline(): void;
+  queueJump(): void;
 }
 
 export interface InputProvider extends IntentSink {
@@ -74,6 +75,10 @@ export interface InputProvider extends IntentSink {
   consumeTileDecline(): boolean;
   /** Intención de respawn — el game loop decide si aplica (player muerto). */
   consumeRespawn(): boolean;
+  /** Intención de saltar (Espacio). El game loop la consume SIEMPRE y la
+   *  aplica solo si el jugador puede moverse: un Espacio encolado con el
+   *  diálogo abierto no salta al cerrarlo. */
+  consumeJump(): boolean;
   /** Quita listeners (swap de provider en dev). */
   dispose(): void;
 }

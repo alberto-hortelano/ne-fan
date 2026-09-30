@@ -16,9 +16,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  esSaltable,
   volumeFootprintCells,
   volumeHeightM,
 } from "../src/scene/blueprint/volume-metrics.js";
+import { ALTURA_SALTABLE_M } from "../src/scene/terrain-collision.js";
 import { rotatedRectCorners } from "../src/scene/blueprint/footprint.js";
 import {
   volumeCollisionGrid,
@@ -266,10 +268,13 @@ describe("altura del volumen", () => {
     assert.equal(volumeHeightM(chabola, mpc), 0.5 + 1);
   });
 
-  it("un muro almenado levanta 40 cm más que el mismo muro liso", () => {
+  it("un muro almenado levanta UNA celda más que el mismo muro liso: la almena que se pinta", () => {
+    // Decía +40 cm, una cifra propia que no era la de la almena pintada (una
+    // celda, 50 cm, `ALMENA_CELDAS`): la tanda BY la cambia porque de esta
+    // altura sale qué se salta, y lo que se salta tiene que ser lo que se ve.
     const liso: Volume = { id: "m", label: "muro", type: "wall", points: [[0, 0], [10, 0]], h: 5 };
     assert.equal(volumeHeightM(liso, mpc), 2.5);
-    assert.equal(volumeHeightM({ ...liso, crenellated: true } as Volume, mpc), 2.9);
+    assert.equal(volumeHeightM({ ...liso, crenellated: true } as Volume, mpc), 3);
   });
 
   it("los defaults en CELDAS escalan con mpc: torre, puerta, muro, prop", () => {
@@ -277,7 +282,9 @@ describe("altura del volumen", () => {
     assert.equal(volumeHeightM({ id: "t", label: "torre", type: "tower", at: [0, 0] }, 0.5), 12 * 0.5 + 0.5);
     assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x" }, 0.5), 8 * 0.5);
     assert.ok(dobles({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x" }) === 2, "la puerta es celdas puras");
-    assert.equal(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0] }, 0.5), 2 * 0.5);
+    // El cilindro mide también su tapa (0,06 celdas): lo que se pinta (tanda BY).
+    assert.ok(Math.abs(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0] }, 0.5) - 2.06 * 0.5) < 1e-12);
+    assert.equal(volumeHeightM({ id: "c", label: "caja", type: "prop", shape: "box", at: [0, 0] }, 0.5), 2 * 0.5);
     assert.equal(volumeHeightM({ id: "m", label: "arco", type: "prism", points: [[0, 0], [4, 0], [4, 4]], h: 6 }, 0.5), 3);
   });
 
@@ -319,7 +326,7 @@ describe("altura del volumen", () => {
   it("una altura declarada gana al default en todos los tipos que la admiten", () => {
     assert.equal(volumeHeightM({ id: "t", label: "torre", type: "tower", at: [0, 0], h: 20 }, 0.5), 20 * 0.5 + 0.5);
     assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x", h: 10 }, 0.5), 5);
-    assert.equal(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0], h: 3 }, 0.5), 1.5);
+    assert.ok(Math.abs(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0], h: 3 }, 0.5) - 1.53) < 1e-12);
     assert.equal(volumeHeightM({ id: "m", label: "muro", type: "wall", points: [[0, 0], [4, 0]], h: 9 }, 0.5), 4.5);
   });
 
@@ -327,9 +334,10 @@ describe("altura del volumen", () => {
     // `gateAlturaCeldas` sube el gate bajo hasta que su dintel deja pasar de
     // pie: el manifest mide esa altura pintada, no la `h` declarada.
     const bajo: Volume = { id: "g", label: "portillo", type: "gate", at: [0, 0], orient: "x", h: 4 };
-    // 3,1 m = paso libre (ojos 1,6 + plano cercano 0,3) + lo que cuelga bajo
-    // `h` (dintel 0,9 + dos corbeles de 0,75 celdas = 1,2 m).
-    assert.ok(Math.abs(volumeHeightM(bajo, 0.5) - 3.1) < 1e-9, `mide ${volumeHeightM(bajo, 0.5)}`);
+    // 3,9 m = paso libre (ojos 1,6 + apogeo del salto 0,8 + plano cercano
+    // 0,3) + lo que cuelga bajo `h` (dintel 0,9 + dos corbeles de 0,75
+    // celdas = 1,2 m). Era 3,1 hasta que se pudo saltar (tanda BY).
+    assert.ok(Math.abs(volumeHeightM(bajo, 0.5) - 3.9) < 1e-9, `mide ${volumeHeightM(bajo, 0.5)}`);
   });
 
   it("ningún tipo mide cero o menos: una altura nula es un volumen invisible", () => {
@@ -337,5 +345,46 @@ describe("altura del volumen", () => {
       const h = volumeHeightM(v, 0.5);
       assert.ok(h > 0 && Number.isFinite(h), `${nombre} mide ${h}`);
     }
+  });
+});
+
+describe("esSaltable: lo que el salto pasa por encima (tanda BY)", () => {
+  const muro = (extra: Record<string, unknown>): Volume =>
+    ({ id: "m", label: "cerca", type: "wall", points: [[0, 0], [10, 0]], ...extra }) as Volume;
+
+  it("es `volumeHeightM ≤ ALTURA_SALTABLE_M`, frontera incluida", () => {
+    assert.equal(esSaltable(muro({ h: 2.4 })), true, "1,2 m justos se saltan");
+    assert.equal(esSaltable(muro({ h: 2.41 })), false, "1,205 m ya no");
+    assert.equal(esSaltable(muro({})), false, "el muro por defecto (2,5 m) no");
+    assert.equal(volumeHeightM(muro({ h: 2.4 }), 0.5), ALTURA_SALTABLE_M, "la frontera es exacta en double");
+  });
+
+  it("la almena se cuenta: 1,4 celdas almenado (1,2 m) sí; 1,5 (1,25 m) no", () => {
+    assert.equal(esSaltable(muro({ h: 1.4, crenellated: true })), true);
+    assert.equal(esSaltable(muro({ h: 1.5, crenellated: true })), false);
+  });
+
+  it("mide en METROS con el mpc que se le da: la misma valla a 1 m/celda ya no se salta", () => {
+    assert.equal(esSaltable(muro({ h: 2 }), 0.5), true);
+    assert.equal(esSaltable(muro({ h: 2 }), 1), false);
+  });
+
+  it("por tipo, con sus defectos: prop, roca y arbusto pequeños sí; casa, torre, gate, árbol y fuente no", () => {
+    const si: Volume[] = [
+      { id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0] },
+      { id: "r", label: "piedra", type: "rock", at: [0, 0] },
+      { id: "b", label: "mata", type: "bush", at: [0, 0], s: 0.9 },
+      { id: "q", label: "banco", type: "prism", points: [[0, 0], [4, 0], [4, 2]], h: 1 },
+    ] as Volume[];
+    const no: Volume[] = [
+      { id: "c", label: "casa", type: "building", rect: [0, 0, 8, 6] },
+      { id: "t", label: "torre", type: "tower", at: [0, 0] },
+      { id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x" },
+      { id: "a", label: "roble", type: "tree", at: [0, 0] },
+      { id: "f", label: "fuente", type: "fountain", at: [0, 0] },
+      { id: "b", label: "mata", type: "bush", at: [0, 0] },
+    ] as Volume[];
+    for (const v of si) assert.equal(esSaltable(v), true, `${v.type} ${v.label}`);
+    for (const v of no) assert.equal(esSaltable(v), false, `${v.type} ${v.label}`);
   });
 });

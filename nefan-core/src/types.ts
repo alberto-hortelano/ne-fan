@@ -50,6 +50,11 @@ export interface PlayerConfig {
   /** Alcance de la tecla E en METROS: hasta dónde llega el jugador para hablar
    *  con alguien (`pickNearestTarget` lo usa como `maxDistanceM`). */
   interact_range_m: number;
+  /** Segundos en el aire de un salto (Espacio). Es feel, y por eso está aquí;
+   *  lo alto que sube es geometría (`SALTO_APOGEO_M`, core). Lo que cruza
+   *  sale de multiplicarla por la velocidad: por debajo de ~0,55 s andando ya
+   *  no se pasa una cerca por defecto, y hay test que lo mide. */
+  salto_duracion_s: number;
 }
 
 export interface CombatConfig {

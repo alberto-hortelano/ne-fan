@@ -64,6 +64,7 @@ const CAMPOS_DEL_JUGADOR = {
   sprint_speed: "esprintar no le movería",
   speed_scale: "andaría hacia atrás o se quedaría clavado",
   interact_range_m: "la tecla E no alcanzaría a nadie",
+  salto_duracion_s: "el jugador no despegaría del suelo",
 } as const;
 
 type CampoDelJugador = keyof typeof CAMPOS_DEL_JUGADOR;

@@ -41,6 +41,15 @@ export interface TileClientState {
    *  huellas de los `volumes`). Disponible en cuanto llega el tile. Se UNE al
    *  collider de terreno. */
   svgCollider: TerrainCollider | null;
+  /** La misma colisión del plan vista por el jugador EN EL AIRE: sin los
+   *  volúmenes saltables (`planCollisionGridEnElAire`, core). Se instala y se
+   *  restaura JUNTO a `svgCollider`: los dos son null a la vez si el plan no
+   *  se aplicó, y entonces rigen las cajas, sin saltar. */
+  svgColliderAire: TerrainCollider | null;
+  /** Solo lo saltable del plan (`planCollisionGridDeLoBajo`, core): contesta
+   *  si el jugador está metido en algo bajo, y entonces se mueve con el grid
+   *  del aire hasta salir. Mismo ciclo de vida que los otros dos. */
+  svgColliderBajo: TerrainCollider | null;
   /** ¿Se le instaló ya la colisión del plan a este tile? Gobierna dos cosas: si
    *  al re-emitir la misma escena hay que RESTAURARLA o volver a derivarla
    *  (`carga-de-tile.ts`), y si las cajas de los objetos que ESTE tile declara
@@ -104,16 +113,23 @@ export class TileStore {
     return { sceneChanged };
   }
 
-  /** Instala la colisión base derivada del plan del tile (null = plan sin
+  /** Instala la colisión base derivada del plan del tile, a pie y en el aire
+   *  (null = plan sin
    *  celdas sólidas, aplicado igualmente: las cajas de sus objetos se apagan,
    *  y no hay nada que volver a derivar). `como` dice si se acaba de DERIVAR o
    *  se RESTAURA la de antes
    *  (la huella no cambió): es el dato que #410 hace observable. Fail-loud si
    *  la clave no existe: se deriva justo tras registrar el tile. */
-  setSvgCollider(key: string, collider: TerrainCollider | null, como: "derivada" | "restaurada"): void {
+  setSvgCollider(
+    key: string,
+    colliders: { aPie: TerrainCollider | null; enElAire: TerrainCollider | null; bajo: TerrainCollider | null },
+    como: "derivada" | "restaurada",
+  ): void {
     const entry = this.entries.get(key);
     if (!entry) throw new Error(`TileStore.setSvgCollider: tile ${key} no registrado`);
-    entry.svgCollider = collider;
+    entry.svgCollider = colliders.aPie;
+    entry.svgColliderAire = colliders.enElAire;
+    entry.svgColliderBajo = colliders.bajo;
     entry.svgApplied = true;
     const e = this.episodios.get(key) ?? { derivaciones: 0, restauraciones: 0 };
     if (como === "derivada") e.derivaciones += 1;
