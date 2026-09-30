@@ -36,6 +36,10 @@ export interface Conversacion {
   /** ¿Hay una conversación en pantalla ahora mismo? Derivado del panel, que
    *  es la única representación (#314). */
   abierta(): boolean;
+  /** Si hay conversación en pantalla, la termina como el botón y Esc (el fin
+   *  queda en el historial); si no, nada. Lo usa quien se lleva al jugador
+   *  de ella: pedir un viaje (QA de BX, H1). */
+  terminar(): void;
 }
 
 /** ABRIR Y CERRAR UN DIÁLOGO SON DOS COSAS QUE TIENEN QUE IR JUNTAS (#311).
@@ -174,5 +178,8 @@ export function crearConversacion(deps: DepsDeConversacion): Conversacion {
     abrir,
     cerrar,
     abierta: () => panel.isVisible,
+    terminar: () => {
+      if (panel.isVisible) panel.terminar();
+    },
   };
 }

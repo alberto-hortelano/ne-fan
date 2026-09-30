@@ -737,47 +737,47 @@ pause_for_claude_code() {
     cat <<'EOF'
 
 ────────────────────────────────────────────────────────────────────────
-🤖 Claude Code as narrative engine (MCP)
+🤖 Claude Code como motor narrativo (MCP)
 
-  To enable:
-    1. Open ANOTHER terminal in this directory.
-    2. Run:    claude
-    3. When Claude Code is ready, paste this prompt:
+  Para activarlo:
+    1. Abre OTRA terminal en este directorio.
+    2. Lanza:  claude
+    3. Cuando Claude Code esté listo, pega este encargo:
 EOF
     imprimir_encargo_del_motor || exit 1
     cat <<'EOF'
-  If you skip:
-    · With ANTHROPIC_API_KEY set — ai_server falls back to direct API.
-    · Without API key — narrative requests fail with 503 (there is no
-      scripted fallback): the game says so and waits for the engine.
+  Si te lo saltas:
+    · Con ANTHROPIC_API_KEY — ai_server usa la API directa.
+    · Sin clave — las peticiones narrativas fallan con 503 (no hay
+      respaldo guionizado): el juego lo dice y espera al motor.
 
-  Tip: si el terminal del motor debe POSEER el puerto del MCP (flujo labs/narrative),
+  Truco: si el terminal del motor debe POSEER el puerto del MCP (flujo labs/narrative),
   relanza con NEFAN_EAGER_BIND=0 para que este launcher no arranque su
   placeholder de narrative-mcp.
 
 ────────────────────────────────────────────────────────────────────────
 EOF
     while true; do
-        read -rp "  [Enter] Claude Code is ready  |  [s] skip  |  [q] cancel: " ans
+        read -rp "  [Enter] Claude Code está listo  |  [s] saltar  |  [q] cancelar: " ans
         case "$ans" in
             "")
-                echo "▶ continuing with Claude Code"
+                echo "▶ seguimos con Claude Code"
                 return 0
                 ;;
             s|S)
                 if has_anthropic_key; then
-                    echo "▶ skipping MCP — ai_server will use direct ANTHROPIC_API_KEY"
+                    echo "▶ sin MCP — ai_server usará la ANTHROPIC_API_KEY directa"
                 else
-                    echo "⚠️  ANTHROPIC_API_KEY not detected — las peticiones narrativas fallarán con 503 hasta que el motor escuche."
+                    echo "⚠️  no hay ANTHROPIC_API_KEY — las peticiones narrativas fallarán con 503 hasta que el motor escuche."
                 fi
                 return 0
                 ;;
             q|Q)
-                echo "✋ cancelled by user"
+                echo "✋ cancelado"
                 exit 0
                 ;;
             *)
-                echo "  unrecognised option"
+                echo "  opción no reconocida"
                 ;;
         esac
     done
