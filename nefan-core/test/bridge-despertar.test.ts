@@ -139,6 +139,28 @@ describe("bridge: el despertar lo decide el motor (#613)", () => {
     assert.equal(b.ctx.despertar.enVuelo, null, "y se puede reintentar");
   });
 
+  it("CB QA H-2: si lo que el motor pone al despertar no cabe, el jugador SIGUE caído y R vale (no en pie sin frame)", async () => {
+    const b = await partidaConBandido(async () => ({
+      ok: true,
+      resolucion: {
+        wake: { type: "point", x: -20, z: 20 },
+        // 54 m de lado: no cabe alrededor de nadie en un tile de 64.
+        consequences: [
+          { type: "spawn_entity", entity_kind: "building", name: "Muralla", footprint: [108, 108] },
+        ],
+      },
+    }));
+    await morir(b);
+    await waitFor(() => statusDespertar(b.broadcasts, "error").length > 0);
+    const [err] = statusDespertar(b.broadcasts, "error");
+    assert.match(err.message ?? "", /pulsa R/);
+    assert.match(err.detalleTecnico ?? "", /no hay sitio en el tile/);
+    assert.equal(despertares(b.sent).length, 0, "nadie despierta");
+    assert.equal(b.sim.getCombatant("player")!.health, 0, "sigue caído: el sim no lo ha levantado");
+    assert.equal(b.ctx.despertar.enVuelo, null, "y R puede reintentar");
+    assert.ok(!b.narrative.entities.some((e) => e.data?.name === "Muralla"), "ni el ledger se ha tocado");
+  });
+
   it("un fallo del motor se dice; R reintenta, y con una petición en vuelo no lanza otra", async () => {
     let turno = 0;
     let soltar: (r: ReportPlayerDeathResult) => void = () => {};

@@ -15,6 +15,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  anclaDentroDelTile,
+  colocarGrupo,
+  separacionDelJugador,
   HOLGURA_ENTRE_SPAWNS_M,
   mediaAnchura,
   repartirEnElTurno,
@@ -146,5 +149,177 @@ describe("repartirEnElTurno — la separación mira la HUELLA, no un número fij
     // `huellaEnMetros` es fail-loud y aquí no se tapa. Inventar una anchura
     // sería volver al número fijo por otra puerta.
     assert.throws(() => repartirEnElTurno([{ kind: "object" }, { kind: "dragon" }]), /dragon/);
+  });
+});
+
+/** El ancla de un hint, metida en el tile (tanda CB). Cada caso afirma la
+ *  coordenada EXACTA y no solo «dentro»: «dentro» lo cumple también un ancla
+ *  pegada al centro, y eso no es lo que se pide. */
+describe("anclaDentroDelTile — el grupo entero cae en el tile", () => {
+  const TILE = { minX: -32, minZ: -32, maxX: 32, maxZ: 32 };
+  const NORTE = { x: 0, z: -1 };
+
+  it("un ancla ya dentro no se mueve", () => {
+    assert.deepEqual(anclaDentroDelTile({ x: 5, z: -7 }, TILE, NORTE, 0, 1.5), { x: 5, z: -7 });
+  });
+
+  for (const [lado, ancla, esperado] of [
+    ["norte", { x: 0, z: -40 }, { x: 0, z: -30.5 }],
+    ["sur", { x: 0, z: 40 }, { x: 0, z: 30.5 }],
+    ["este", { x: 40, z: 0 }, { x: 30.5, z: 0 }],
+    ["oeste", { x: -40, z: 0 }, { x: -30.5, z: 0 }],
+  ] as const) {
+    it(`fuera por el ${lado}: vuelve a margen del borde`, () => {
+      assert.deepEqual(anclaDentroDelTile(ancla, TILE, NORTE, 0, 1.5), esperado);
+    });
+  }
+
+  it("en la esquina con reparto lateral: el lateral solo reserva en el eje perpendicular al forward", () => {
+    // Mirando al norte el lateral va en X: X reserva 1,5 + 3; Z solo 1,5.
+    assert.deepEqual(anclaDentroDelTile({ x: 31, z: -31 }, TILE, NORTE, 3, 1.5), { x: 27.5, z: -30.5 });
+  });
+
+  it("forward en diagonal: cada eje reserva la PROYECCIÓN del lateral que le toca", () => {
+    // sep = [fwd.z·lat, 0, −fwd.x·lat] → X ocupa |fwd.z|·ext = 8, Z |fwd.x|·ext = 6.
+    // Con los ejes cambiados saldría (25, −23): distinto a propósito.
+    assert.deepEqual(
+      anclaDentroDelTile({ x: 40, z: -40 }, TILE, { x: 0.6, z: -0.8 }, 10, 1),
+      { x: 23, z: -25 },
+    );
+    assert.deepEqual(
+      anclaDentroDelTile({ x: -40, z: 40 }, TILE, { x: -0.6, z: 0.8 }, 10, 1),
+      { x: -23, z: 25 },
+    );
+  });
+
+  it("en un tile que no está en el origen", () => {
+    const t = { minX: 32, minZ: -96, maxX: 96, maxZ: -32 };
+    assert.deepEqual(anclaDentroDelTile({ x: 20, z: -100 }, t, NORTE, 0, 2), { x: 34, z: -94 });
+  });
+
+  it("un grupo que cabe JUSTO tiene ancla (el centro); uno que no cabe lanza, diciendo el eje", () => {
+    assert.deepEqual(anclaDentroDelTile({ x: 9, z: 0 }, TILE, NORTE, 0, 32), { x: 0, z: 0 });
+    assert.throws(() => anclaDentroDelTile({ x: 0, z: 0 }, TILE, NORTE, 40, 1.5), (e: unknown) =>
+      e instanceof RangeError && e.message === "reparto-de-spawns: el grupo necesita 41.5 m a cada lado en x y el tile [-32, 32) no los tiene");
+    assert.throws(() => anclaDentroDelTile({ x: 0, z: 0 }, TILE, { x: 1, z: 0 }, 40, 1.5), (e: unknown) =>
+      e instanceof RangeError && /en z/.test(e.message));
+  });
+});
+
+/** Dónde va el grupo de un hint SIN pisar al jugador (tanda CB, QA H-1): el
+ *  acotado al borde lo acercaba a él, y la forja caía en (0,−29) con el
+ *  jugador en (0,−29,5). Cada caso afirma la posición EXACTA y, además, que
+ *  ninguna cosa del grupo pisa al jugador. */
+describe("colocarGrupo — dentro del tile y sin pisar al jugador", () => {
+  const TILE = { minX: -32, minZ: -32, maxX: 32, maxZ: 32 };
+  const NORTE = { x: 0, z: -1 };
+  const CERCA = { x: 0, z: -5 }; // near_player con forward norte
+
+  function colocaSinPisar(
+    jugador: { x: number; z: number },
+    hacia: { x: number; z: number },
+    grupo: { laterales: number[]; mitades: number[] },
+    rect = TILE,
+  ) {
+    const r = colocarGrupo(jugador, hacia, NORTE, grupo, rect);
+    if (!r.ok) return assert.fail(r.motivo);
+    r.posiciones.forEach((p, i) => {
+      const d = Math.max(Math.abs(p.x - jugador.x), Math.abs(p.z - jugador.z));
+      assert.ok(d >= separacionDelJugador(grupo.mitades[i]) - 1e-9, `pisa: ${JSON.stringify(p)} a ${d} m`);
+      assert.ok(p.x - grupo.mitades[i] >= rect.minX && p.x + grupo.mitades[i] < rect.maxX, `fuera en x: ${p.x}`);
+      assert.ok(p.z - grupo.mitades[i] >= rect.minZ && p.z + grupo.mitades[i] < rect.maxZ, `fuera en z: ${p.z}`);
+    });
+    return r;
+  }
+
+  it("la separación sale del cuerpo del jugador, la media anchura y el hueco de paso", () => {
+    assert.ok(Math.abs(separacionDelJugador(2) - (2 + PLAYER_RADIUS_M + HOLGURA_ENTRE_SPAWNS_M)) < 1e-12);
+    assert.ok(Math.abs(separacionDelJugador(2) - 3.4) < 1e-12);
+  });
+
+  it("con sitio delante, va delante: donde pidió el hint", () => {
+    const r = colocaSinPisar({ x: 0, z: 0 }, CERCA, { laterales: [0], mitades: [2] });
+    assert.deepEqual(r.ancla, { x: 0, z: -5 });
+    assert.deepEqual(r.fwd, NORTE);
+  });
+
+  for (const [lado, jugador, ancla] of [
+    // Delante (norte) lo acotaría encima: se da la vuelta, 5 m al sur.
+    ["norte", { x: 0, z: -29.5 }, { x: 0, z: -24.5 }],
+    ["sur", { x: 0, z: 29.5 }, { x: 0, z: 24.5 }],
+    ["este", { x: 29.5, z: 0 }, { x: 29, z: -5 }],
+    ["oeste", { x: -29.5, z: 0 }, { x: -29, z: -5 }],
+  ] as const) {
+    it(`jugador a 2,5 m del borde ${lado}: el edificio cae dentro y sin pisarlo`, () => {
+      const r = colocaSinPisar(jugador, CERCA, { laterales: [0], mitades: [2] });
+      assert.deepEqual(r.ancla, ancla);
+    });
+  }
+
+  it("en la esquina NE el reparto de #524 se mantiene: huecos de una holgura, detrás del jugador", () => {
+    const r = colocaSinPisar({ x: 30, z: -30 }, CERCA, { laterales: [0, 5, -5], mitades: [2, 2, 2] });
+    assert.deepEqual(r.posiciones, [{ x: 24, z: -25 }, { x: 29, z: -25 }, { x: 19, z: -25 }]);
+  });
+
+  it("un granero [20,14] (media anchura 5 m) se aleja lo que haga falta, también junto al borde", () => {
+    const mitad = mediaAnchura({ kind: "building", footprint: [20, 14] });
+    assert.equal(mitad, 5);
+    assert.deepEqual(colocaSinPisar({ x: 0, z: 0 }, CERCA, { laterales: [0], mitades: [mitad] }).ancla, { x: 0, z: -6.4 });
+    assert.deepEqual(
+      colocaSinPisar({ x: 0, z: -29.5 }, CERCA, { laterales: [0], mitades: [mitad] }).ancla,
+      { x: 0, z: -23.1 },
+    );
+  });
+
+  it("si ni delante ni detrás, a un lado (y el reparto gira con la dirección)", () => {
+    const pasillo = { minX: -32, minZ: -4, maxX: 32, maxZ: 4 };
+    const r = colocaSinPisar({ x: 0, z: 0 }, CERCA, { laterales: [0], mitades: [1] }, pasillo);
+    assert.deepEqual(r.ancla, { x: 5, z: 0 });
+    assert.deepEqual(r.fwd, { x: 1, z: 0 });
+  });
+
+  it("si no cabe en ninguna dirección, lo dice en vez de pisarlo", () => {
+    const r = colocarGrupo({ x: 0, z: 0 }, CERCA, NORTE, { laterales: [0], mitades: [27] }, TILE);
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(
+        r.motivo,
+        "no hay sitio en el tile [-32, 32) × [-32, 32) para 1 cosa(s) (la mayor de 54 m) alrededor del " +
+          "jugador en (0, 0) sin pisarlo: ni delante, ni detrás, ni a los lados",
+      );
+    }
+  });
+
+  it("si ni delante, ni detrás, ni al primer lado, al OTRO lado", () => {
+    const pasillo = { minX: -32, minZ: -4, maxX: 32, maxZ: 4 };
+    // Al este lo acotaría a x = 30, a 1 m del jugador: vale el oeste.
+    const r = colocaSinPisar({ x: 29, z: 0 }, CERCA, { laterales: [0], mitades: [1] }, pasillo);
+    assert.deepEqual(r.ancla, { x: 24, z: 0 });
+    assert.deepEqual(r.fwd, { x: -1, z: 0 });
+  });
+
+  it("dar la vuelta a un forward sur da el norte limpio (sin −0)", () => {
+    const r = colocarGrupo({ x: 0, z: 29.5 }, { x: 0, z: 5 }, { x: 0, z: 1 }, { laterales: [0], mitades: [2] }, TILE);
+    if (!r.ok) return assert.fail(r.motivo);
+    assert.ok(Object.is(r.fwd.x, 0), `fwd.x = ${r.fwd.x}`);
+    assert.deepEqual(r.ancla, { x: 0, z: 24.5 });
+  });
+
+  it("con forward diagonal el reparto va perpendicular a él (sep = [fwd.z·lat, −fwd.x·lat])", () => {
+    const f = { x: 0.6, z: -0.8 };
+    const r = colocarGrupo({ x: 0, z: 0 }, { x: 3, z: -4 }, f, { laterales: [0, 5], mitades: [0.5, 0.5] }, TILE);
+    if (!r.ok) return assert.fail(r.motivo);
+    assert.deepEqual(r.posiciones, [{ x: 3, z: -4 }, { x: -1, z: -7 }]);
+  });
+
+  it("si el hint cae en el jugador manda el forward; si tampoco hay forward, lo dice", () => {
+    const r = colocarGrupo({ x: 0, z: 0 }, { x: 0, z: 0 }, NORTE, { laterales: [0], mitades: [2] }, TILE);
+    if (!r.ok) return assert.fail(r.motivo);
+    assert.ok(Math.abs(r.ancla.z + 3.4) < 1e-12 && r.ancla.x === 0, JSON.stringify(r.ancla));
+    const nada = colocarGrupo({ x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }, { laterales: [0], mitades: [2] }, TILE);
+    assert.deepEqual(nada, {
+      ok: false,
+      motivo: "ni el hint ni el forward del jugador dan una dirección hacia la que colocar",
+    });
   });
 });

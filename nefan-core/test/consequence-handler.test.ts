@@ -6,7 +6,16 @@ import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import type { Consequence } from "../src/narrative/types.js";
 import { combatForHostileRole } from "../src/combat/hostiles.js";
-import { spawnsDeRuntime } from "../src/session/mundo-persistido.js";
+import {
+  entidadesFueraDelMundo,
+  rectsDelMundo,
+  spawnsDeRuntime,
+} from "../src/session/mundo-persistido.js";
+import {
+  HOLGURA_ENTRE_SPAWNS_M,
+  mediaAnchura,
+  separacionDelJugador,
+} from "../src/narrative/reparto-de-spawns.js";
 import { escenaExpandidaDePrueba } from "./helpers.js";
 
 function makeState() {
@@ -536,5 +545,183 @@ describe("dispatchConsequences", () => {
     const s = makeState();
     const eventId = s.recordDialogueEvent("a", "b", [], -1);
     assert.deepEqual(dispatchConsequences(s, eventId, [{ type: "noop" }]).curaciones, []);
+  });
+});
+
+/** Tanda CB: lo que el motor manda aparecer cae DENTRO del tile donde está el
+ *  jugador. Antes, hablando a menos de ~10 m de un borde, «junto a la fuente»
+ *  (forward × 10) o `near_player` (× 5) caían sin suelo, y al reanudar salía
+ *  a pantalla completa «Tu partida vuelve incompleta». El forward es el norte
+ *  fijo, como lo pasan hoy las tres llamadas del bridge. */
+describe("dispatchConsequences — ningún spawn sale del tile", () => {
+  const NORTE = { x: 0, y: 0, z: -1 };
+  const BORDES = [
+    { lado: "north", jugador: { x: 0, y: 0, z: -30 } },
+    { lado: "south", jugador: { x: 0, y: 0, z: 30 } },
+    { lado: "east", jugador: { x: 30, y: 0, z: 0 } },
+    { lado: "west", jugador: { x: -30, y: 0, z: 0 } },
+  ] as const;
+
+  /** El cuerpo del jugador fuera de la caja de lo colocado, con su hueco de paso. */
+  function noPisaAlJugador(p: readonly number[], j: { x: number; y?: number; z: number }, kind: string, footprint?: [number, number]): boolean {
+    const d = Math.max(Math.abs(p[0] - j.x), Math.abs(p[2] - j.z));
+    return d >= separacionDelJugador(mediaAnchura({ kind, footprint: footprint ?? null })) - 1e-9;
+  }
+
+  /** Distancia del centro al borde más cercano del tile (0,0), por eje. */
+  function holguraAlBorde(p: readonly number[]): number {
+    return Math.min(32 - Math.abs(p[0]), 32 - Math.abs(p[2]));
+  }
+
+  for (const { lado, jugador } of BORDES) {
+    for (const hint of ["near_player", "junto a la fuente", `distant_${lado}`]) {
+      it(`jugador a 2 m del borde ${lado}, hint «${hint}»: cada cuerpo deja su margen hasta el borde`, () => {
+        const s = makeState();
+        let n = 0;
+        const cs: Consequence[] = [
+          { type: "spawn_entity", entity_kind: "building", name: "Forja", position_hint: hint },
+          { type: "spawn_entity", entity_kind: "npc", name: "Herrero", position_hint: hint },
+        ];
+        const r = dispatchConsequences(s, "evt_cb", cs, {
+          playerPosition: jugador,
+          playerForward: NORTE,
+          generateEntityId: (k) => `cb_${k}_${n++}`,
+        });
+        const fx = r.effects.filter((e) => e.kind === "spawn_entity");
+        assert.equal(fx.length, 2);
+        for (const [i, e] of fx.entries()) {
+          if (e.kind !== "spawn_entity") continue;
+          const margen = mediaAnchura({ kind: cs[i].type === "spawn_entity" ? cs[i].entity_kind : "" }) +
+            HOLGURA_ENTRE_SPAWNS_M;
+          const p = [e.position[0], e.position[1], e.position[2]];
+          assert.ok(holguraAlBorde(p) >= margen - 1e-9, `effect ${e.entityId} en ${p} (margen ${margen})`);
+          // …y sin pisar al jugador (QA H-1): la forja caía en (0,−29) con él en (0,−29,5).
+          assert.ok(
+            noPisaAlJugador(p, jugador, cs[i].type === "spawn_entity" ? cs[i].entity_kind : ""),
+            `effect ${e.entityId} en ${p} pisa al jugador en (${jugador.x}, ${jugador.z})`,
+          );
+          assert.deepEqual(s.entities[i].position, p, "el ledger guarda lo mismo que el effect");
+        }
+        // Lo que dispara el rótulo al reanudar, preguntado tal cual.
+        assert.deepEqual(entidadesFueraDelMundo(s.entities, rectsDelMundo(s.scenes_loaded)), []);
+      });
+    }
+  }
+
+  it("el reparto sobrevive a la esquina: tres edificios en el NE siguen a una holgura entre caras", () => {
+    const s = makeState();
+    let n = 0;
+    const cs: Consequence[] = [0, 1, 2].map((i) => ({
+      type: "spawn_entity" as const, entity_kind: "building", name: `Casa ${i}`,
+    }));
+    dispatchConsequences(s, "evt_cb", cs, {
+      playerPosition: { x: 30, y: 0, z: -30 },
+      playerForward: NORTE,
+      generateEntityId: (k) => `cb_${k}_${n++}`,
+    });
+    // Hacia el norte la casa del centro caería ENCIMA del jugador (29,−29 con
+    // él en 30,−30): se prueba detrás, al sur, y ahí caben las tres. El reparto
+    // sigue en X (perpendicular a la dirección elegida); los tres comparten Z.
+    const xs = s.entities.map((e) => e.position[0]).sort((a, b) => a - b);
+    assert.deepEqual(xs, [19, 24, 29]);
+    assert.deepEqual(s.entities.map((e) => e.position[2]), [-25, -25, -25]);
+    for (const e of s.entities) assert.ok(noPisaAlJugador(e.position, { x: 30, z: -30 }, "building"));
+    const ancho = 2 * mediaAnchura({ kind: "building" });
+    assert.equal(xs[1] - xs[0] - ancho, HOLGURA_ENTRE_SPAWNS_M);
+    assert.equal(xs[2] - xs[1] - ancho, HOLGURA_ENTRE_SPAWNS_M);
+  });
+
+  it("en el centro del tile nada cambia: near_player sigue siendo jugador + forward × 5", () => {
+    const s = makeState();
+    const r = dispatchConsequences(s, "evt_cb", [
+      { type: "spawn_entity", entity_kind: "npc", name: "Aldo" },
+    ], { playerPosition: { x: 0, y: 0, z: 0 }, playerForward: NORTE });
+    const e = r.effects[0];
+    assert.equal(e.kind, "spawn_entity");
+    if (e.kind === "spawn_entity") assert.deepEqual(e.position, [0, 0, -5]);
+  });
+
+  it("la entity se apunta en el tile donde CAE, no en el activo (el despertar activa después)", () => {
+    const s = makeState(); // scene_1 en tile (0,0)
+    s.recordSceneLoaded("scene_2", escenaExpandidaDePrueba("scene_2", { tile: { tx: 1, ty: 0 } }));
+    assert.ok(s.setActiveTile(0, 0));
+    assert.equal(s.world.active_scene_id, "scene_1");
+    // El jugador abre los ojos junto al borde este del tile (1,0), en x = 94.
+    dispatchConsequences(s, "despertar_x", [
+      { type: "spawn_entity", entity_kind: "npc", name: "Curandera" },
+    ], { playerPosition: { x: 94, y: 0, z: 0 }, playerForward: NORTE, generateEntityId: () => "cb_npc" });
+    const rec = s.entities.find((e) => e.id === "cb_npc")!;
+    assert.equal(rec.scene_id, "scene_2");
+    assert.deepEqual(rec.position, [94, 0, -5]);
+    // `distant_east` acotado al borde este caería en (94,5, 0), encima del
+    // jugador: se va al lado opuesto, 50 m al oeste, dentro del tile (1,0).
+    const r2 = dispatchConsequences(s, "despertar_y", [
+      { type: "spawn_entity", entity_kind: "npc", name: "Otro", position_hint: "distant_east" },
+    ], { playerPosition: { x: 94, y: 0, z: 0 }, playerForward: NORTE, generateEntityId: () => "cb_npc2" });
+    const e = r2.effects[0];
+    if (e.kind === "spawn_entity") assert.deepEqual(e.position, [44, 0, 0]);
+    else assert.fail("se esperaba un spawn_entity");
+  });
+
+  it("hablando a 2,5 m del borde norte, la forja va DETRÁS del jugador y no encima (QA H-1)", () => {
+    const s = makeState();
+    const jugador = { x: 0, y: 0, z: -29.5 };
+    const r = dispatchConsequences(s, "evt_cb", [
+      { type: "spawn_entity", entity_kind: "building", name: "Forja" },
+    ], { playerPosition: jugador, playerForward: NORTE, generateEntityId: () => "cb_forja" });
+    const e = r.effects[0];
+    if (e.kind !== "spawn_entity") return assert.fail("se esperaba un spawn_entity");
+    assert.deepEqual(e.position, [0, 0, -24.5]);
+    assert.ok(noPisaAlJugador(e.position, jugador, "building"));
+  });
+
+  it("un edificio de footprint [20,14] no pisa al jugador: en el centro se aleja, junto al borde se da la vuelta", () => {
+    const granero = (): Consequence[] => [
+      { type: "spawn_entity", entity_kind: "building", name: "Granero", footprint: [20, 14] },
+    ];
+    for (const [jugador, esperado] of [
+      // Media anchura 5 m: el centro a 5 + 0,4 + 1 = 6,4 m, no a los 5 del hint.
+      [{ x: 0, y: 0, z: 0 }, [0, 0, -6.4]],
+      // A 4 m del borde norte no cabe delante: detrás, a 6,4 m.
+      [{ x: 0, y: 0, z: -28 }, [0, 0, -21.6]],
+    ] as const) {
+      const s = makeState();
+      const r = dispatchConsequences(s, "evt_cb", granero(), {
+        playerPosition: jugador, playerForward: NORTE, generateEntityId: () => "cb_granero",
+      });
+      const e = r.effects[0];
+      if (e.kind !== "spawn_entity") return assert.fail("se esperaba un spawn_entity");
+      assert.deepEqual(e.position, esperado);
+      assert.ok(noPisaAlJugador(e.position, jugador, "building", [20, 14]));
+      assert.deepEqual(entidadesFueraDelMundo(s.entities, rectsDelMundo(s.scenes_loaded)), []);
+    }
+  });
+
+  it("si no cabe en ninguna dirección alrededor del jugador, lanza diciéndolo y no toca el ledger", () => {
+    const s = makeState();
+    assert.throws(
+      () => dispatchConsequences(s, "evt_cb", [
+        // 54 m de lado: cabe en el tile de 64, pero no sin pisar a nadie en el centro.
+        { type: "spawn_entity", entity_kind: "building", name: "Muralla", footprint: [108, 108] },
+      ], { playerPosition: { x: 0, y: 0, z: 0 }, playerForward: NORTE }),
+      /near_player.*no hay sitio en el tile.*ni delante, ni detrás, ni a los lados/,
+    );
+    assert.equal(s.entities.length, 0);
+  });
+
+  it("con el jugador fuera de todo tile realizado lanza nombrando la coordenada, sin tocar el ledger", () => {
+    const s = makeState();
+    const antes = s.entities.length;
+    assert.throws(
+      () => dispatchConsequences(s, "evt_cb", [
+        { type: "spawn_entity", entity_kind: "npc", name: "Fantasma" },
+      ], { playerPosition: { x: 200, y: 0, z: 0 }, playerForward: NORTE }),
+      /\(200, 0\).*tile_3_0/,
+    );
+    assert.equal(s.entities.length, antes);
+    // Sin spawns en el turno no hace falta suelo: un diálogo pasa.
+    const r = dispatchConsequences(s, "evt_cb", [{ type: "dialogue", speaker: "Voz", text: "…" }],
+      { playerPosition: { x: 200, y: 0, z: 0 } });
+    assert.equal(r.effects[0].kind, "show_dialogue");
   });
 });
