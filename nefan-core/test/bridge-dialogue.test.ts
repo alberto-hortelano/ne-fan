@@ -12,6 +12,8 @@ import type {
 import type { Consequence } from "../src/narrative/types.js";
 import type { EnemyPersonality } from "../src/types.js";
 import { createCombatant } from "../src/combat/combatant.js";
+import { FIN_DE_CONVERSACION } from "../bridge/handlers/dialogue.js";
+import { jugadorCaido } from "../bridge/handlers/despertar.js";
 import {
   capturarLogDelBridge,
   entrarEnLaPartida,
@@ -305,13 +307,13 @@ describe("bridge: la réplica tardía no abre el panel (tanda BW)", () => {
   };
 
   async function replicaCon(
-    mientrasPiensa: (b: ReturnType<typeof makeCtx>) => void,
+    mientrasPiensa: (b: ReturnType<typeof makeCtx>) => void | Promise<void>,
     mensaje: "dialogue_choice" | "interact_entity" = "dialogue_choice",
   ) {
     const bundle: ReturnType<typeof makeCtx> = makeCtx({
       ai: {
         reportPlayerChoice: async () => {
-          mientrasPiensa(bundle);
+          await mientrasPiensa(bundle);
           return {
             ok: true,
             consequences: [{ type: "dialogue", speaker: "Orio", text: TEXTO, choices: ["Voy"] }] as Consequence[],
@@ -428,10 +430,84 @@ describe("bridge: la réplica tardía no abre el panel (tanda BW)", () => {
     assert.equal(effects[0]?.kind, "show_dialogue");
   });
 
+  it("el jugador TERMINA otra conversación mientras el motor piensa → replica_diferida «terminada» (tanda BX)", async () => {
+    const effects = await replicaCon(async ({ ctx }) => {
+      await porElBorde({ type: "dialogue_end", speaker: "Maela", speakerId: "maela" }, makeSocket().socket, ctx);
+    });
+    assert.deepEqual(effects, [
+      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "terminada", hayPelea: false },
+    ]);
+  });
+
   it("el saludo con E (interact_entity) recibe el mismo trato", async () => {
     const effects = await replicaCon(({ store }) => store.dispatch("player_moved", { pos: [0, 0, 40] }), "interact_entity");
     assert.equal(effects[0]?.kind, "replica_diferida");
     const normal = await replicaCon(() => {}, "interact_entity");
     assert.equal(normal[0]?.kind, "show_dialogue");
+  });
+});
+
+/** Terminar una conversación (tanda BX, opción B): queda en el historial, el
+ *  motor lo lee la próxima vez, y NO se le llama por despedirse. */
+describe("bridge dialogue_end", () => {
+  async function conPartida() {
+    const bundle = makeCtx();
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, bundle.ctx);
+    await entrarEnLaPartida(bundle.ctx, socket, (sent[0] as SessionStartedMessage).sessionId!);
+    return { ...bundle, socket };
+  }
+
+  it("apunta la acotación de fin en dialogue_history, cuenta el fin y NO llama al motor", async () => {
+    const { ctx, narrative, aiCalls, socket } = await conPartida();
+    const antes = aiCalls.choice.length;
+    const historial = narrative.dialogue_history.length;
+    await porElBorde({ type: "dialogue_end", speaker: "Orio", speakerId: "orio" }, socket, ctx);
+    assert.equal(aiCalls.choice.length, antes, "despedirse no cuesta una ida y vuelta al motor");
+    assert.equal(narrative.dialogue_history.length, historial + 1);
+    const fin = narrative.dialogue_history.at(-1)!;
+    assert.equal(fin.speaker, "Orio");
+    assert.equal(fin.text, FIN_DE_CONVERSACION);
+    assert.equal(fin.chosen_index, -1);
+    assert.equal(ctx.conversacion.terminadas, 1);
+  });
+
+  it("el motor lo ve en recent_dialogues la próxima vez que le hablen", async () => {
+    const { ctx, narrative, aiCalls, socket } = await conPartida();
+    await porElBorde({ type: "dialogue_end", speaker: "Orio" }, socket, ctx);
+    await porElBorde({ type: "interact_entity", entityId: "orio", entityName: "Orio" }, socket, ctx);
+    const payload = aiCalls.choice.at(-1) as { context: { recent_dialogues: { speaker: string; chosen: string }[] } };
+    const recientes = payload.context.recent_dialogues;
+    assert.ok(
+      recientes.some((d) => d.speaker === "Orio" && d.chosen === FIN_DE_CONVERSACION),
+      `el fin viaja en el contexto: ${JSON.stringify(recientes)}`,
+    );
+    assert.ok(narrative.dialogue_history.length >= 2);
+  });
+
+  it("un caído también puede cerrar el panel (no pasa por rechazarSiEstaCaido)", async () => {
+    const { ctx, sim } = await conPartida();
+    const { socket, sent } = makeSocket();
+    sim.getCombatant("player")!.health = 0;
+    assert.equal(jugadorCaido(ctx), true, "premisa: caído");
+    await porElBorde({ type: "dialogue_end", speaker: "Orio" }, socket, ctx);
+    assert.equal(ctx.conversacion.terminadas, 1);
+    assert.equal(sent.length, 0, "sin rechazo «Estás caído»");
+  });
+
+  it("si el guardado falla, difunde narrative_status error kind save (fail-loud)", async () => {
+    const { ctx, narrative, broadcasts, socket } = await conPartida();
+    narrative.save = () => Promise.reject(new Error("ENOSPC"));
+    const log = capturarLogDelBridge();
+    try {
+      await porElBorde({ type: "dialogue_end", speaker: "Orio" }, socket, ctx);
+    } finally {
+      log.soltar();
+    }
+    assert.ok(log.lineas.some((l) => l.includes("ENOSPC")), "el crudo queda en el log");
+    const st = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error" && m.kind === "save",
+    );
+    assert.ok(st, "el fallo del save se dice");
   });
 });

@@ -362,6 +362,11 @@ export class NarrativeClient {
     this.bridge.sendDialogueChoice(payload);
   }
 
+  /** El jugador dio por terminada la conversación (tanda BX). */
+  sendDialogueEnd(payload: { speaker: string; speakerId?: string }): void {
+    this.bridge.sendDialogueEnd(payload);
+  }
+
   /** Trigger lazy realize of a world-map place. The realized scene arrives via
    *  the onNarrativeEvent callback as a `scene_loaded` effect (eventId
    *  `scene_init`). */

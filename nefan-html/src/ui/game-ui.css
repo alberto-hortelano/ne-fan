@@ -328,6 +328,26 @@
 }
 #dialogue-choices { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; align-items: flex-start; }
 #dialogue-choices .nf-action { width: 100%; }
+/* Terminar: arriba a la derecha del panel, en la fila del hablante, visible
+   en todos los estados (también durante el typewriter y con el texto libre
+   abierto). */
+#dialogue-panel { position: relative; }
+#dialogue-end {
+  position: absolute;
+  /* Las dos mitades de --nf-pad (10px 14px): el botón se alinea con el
+     borde interior del panel. */
+  top: 10px;
+  right: 14px;
+}
+/* La fila del hablante mide lo que el botón y le deja su hueco a la derecha:
+   así la regla de debajo (el borde de #dialogue-text) pasa POR DEBAJO del
+   botón y no le toca el borde (QA de BX, H3). */
+#dialogue-speaker {
+  padding-right: 7.5em;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
 #dialogue-input {
   display: none;
   width: 100%;

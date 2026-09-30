@@ -42,7 +42,7 @@ import {
   handleGetWorldSnapshot,
   handleRecordStyleApplication,
 } from "./handlers/style-apply.js";
-import { handleDialogueChoice, handleInteractEntity } from "./handlers/dialogue.js";
+import { handleDialogueChoice, handleDialogueEnd, handleInteractEntity } from "./handlers/dialogue.js";
 import { handlePlayerEnteredPlace } from "./handlers/scene.js";
 import { handleRequestTile } from "./handlers/tile.js";
 
@@ -123,6 +123,11 @@ async function despachar(
     case "dialogue_choice":
       if (rechazarSiEstaCaido(ctx, ws, "hablar")) break;
       await handleDialogueChoice(msg, ctx);
+      break;
+    case "dialogue_end":
+      // Sin `rechazarSiEstaCaido`: cerrar un panel no gasta nada ni debe
+      // pedir estar vivo.
+      await handleDialogueEnd(msg, ctx);
       break;
     case "player_entered_place":
       if (rechazarSiEstaCaido(ctx, ws, "viajar", msg.placeId)) break;
@@ -278,6 +283,7 @@ export function respuestaAlFalloDeHandler(msg: ClientMessage, err: unknown): Res
         },
       };
     case "dialogue_choice":
+    case "dialogue_end":
     case "interact_entity":
     case "input":
     case "load_room":

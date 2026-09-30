@@ -1,5 +1,5 @@
-/** Handlers de interacción narrativa: dialogue_choice e interact_entity.
- *  Ambos comparten el mismo ciclo: registrar el evento en NarrativeState,
+/** Handlers de interacción narrativa: dialogue_choice, interact_entity y
+ *  dialogue_end. Los dos primeros comparten el mismo ciclo: registrar el evento en NarrativeState,
  *  reportarlo al motor narrativo, aplicar las consequences y hacer broadcast. */
 
 import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
@@ -8,6 +8,7 @@ import { falloDeReaccionParaElJugador } from "../../src/protocol/status-motivo.j
 import { aplicarCuraciones, npcSync, runPluginTick, sessionChangedError, type BridgeContext } from "../context.js";
 import type {
   DialogueChoiceMessage,
+  DialogueEndMessage,
   InteractEntityMessage,
 } from "../../src/protocol/messages.js";
 
@@ -30,6 +31,7 @@ async function reportAndDispatch(
   // si la réplica sigue siendo la conversación actual (tanda BW, H1).
   const escenaAlPedir = ctx.narrative.world.active_scene_id;
   const ataquesAlPedir = ctx.sim.ataquesDelJugador;
+  const terminadasAlPedir = ctx.conversacion.terminadas;
   const llmCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
   const result = await ctx.aiClient.reportPlayerChoice({
     eventId,
@@ -125,6 +127,7 @@ async function reportAndDispatch(
       // conversación dejó de ser lo que estaba haciendo (decisión 2026-09-30).
       atacoDesdeQuePidio: ctx.sim.ataquesDelJugador > ataquesAlPedir,
       viajeEnCurso: ctx.sceneGen.viajeEnCurso,
+      terminoUnaConversacionDesdeQuePidio: ctx.conversacion.terminadas > terminadasAlPedir,
       hayPelea: ctx.sim.jugadorEnCombate,
       jugador: { x: ahora[0], z: ahora[2] },
     },
@@ -192,4 +195,31 @@ export async function handleInteractEntity(
     `interact_entity ${msg.entityName}`,
     msg.entityId,
   );
+}
+
+/** La acotación con la que queda en el historial que el jugador cortó la
+ *  conversación. Misma convención que el saludo de `handleInteractEntity`:
+ *  entre paréntesis y en tercera persona, porque es lo que HACE el jugador y
+ *  no algo que diga. `serialize-llm` la proyecta como `chosen`. */
+export const FIN_DE_CONVERSACION = "(el jugador da por terminada la conversación y se aparta)";
+
+/** El jugador terminó la conversación sin contestar (tanda BX, opción B).
+ *
+ *  NO llama al motor: despedirse no merece una ida y vuelta (el propio motor
+ *  lo marcó como coste en el playtest). Queda en `dialogue_history` y el motor
+ *  lo ve en `recent_dialogues` la próxima vez que le hablen —«el motor
+ *  decide», pero sabiendo que le dejaron con la palabra en la boca—. Y cuenta
+ *  para la réplica tardía: la que llegue después de esto no abre el panel. */
+export async function handleDialogueEnd(msg: DialogueEndMessage, ctx: BridgeContext): Promise<void> {
+  ctx.narrative.recordDialogueEvent(msg.speaker, FIN_DE_CONVERSACION, [], -1, "");
+  ctx.conversacion.terminadas++;
+  await ctx.narrative.save().catch((err: unknown) => {
+    console.error("Bridge: no se pudo guardar tras terminar la conversación:", err);
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "save",
+      message: "Que diste por terminada esta conversación podría faltar si reanudas.",
+    });
+  });
 }

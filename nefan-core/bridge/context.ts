@@ -111,6 +111,11 @@ export interface BridgeContext {
    *  socket que conduce el mundo (a él va el frame con el punto). `null` sin
    *  petición. Lo escribe solo `bridge/handlers/despertar.ts`. */
   despertar: { enVuelo: { id: string; ws: ClientSocket } | null };
+  /** Cuántas conversaciones ha dado por terminadas el jugador (botón o Esc,
+   *  tanda BX). En memoria: la réplica tardía hace una foto al pedir y otra al
+   *  llegar, como con `sim.ataquesDelJugador`. Lo escribe solo
+   *  `handleDialogueEnd` (`bridge/handlers/dialogue.ts`). */
+  conversacion: { terminadas: number };
   posTracking: {
     cellKey: string | null;
     tileKey: string | null;

@@ -381,6 +381,8 @@ export function instalarNefanHook(deps: DepsDelHook): void {
         deps.dialoguePanel.finishTypewriter();
         deps.dialoguePanel.advance();
       },
+      /** Termina la conversación por el mismo método que el botón y Esc. */
+      terminarDialogo: () => deps.dialoguePanel.terminar(),
       /** Cierra el título por el MISMO camino que el jugador (botón #ts-close),
        *  no ocultando el overlay a mano. */
       closeTitle: () => {

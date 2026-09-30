@@ -34,6 +34,7 @@ const QUIETO: ContextoDeLaReplica = {
   escenaAhora: "tile_0_0",
   atacoDesdeQuePidio: false,
   viajeEnCurso: false,
+  terminoUnaConversacionDesdeQuePidio: false,
   hayPelea: false,
   jugador: { x: 0, z: 0 },
 };
@@ -57,6 +58,21 @@ describe("vigencia de la réplica", () => {
       vigente: false,
       motivo: "viaje",
     });
+  });
+
+  it("el jugador terminó una conversación mientras el motor pensaba → no vigente por terminada (tanda BX)", () => {
+    assert.deepEqual(
+      vigenciaDeLaReplica({ ...QUIETO, terminoUnaConversacionDesdeQuePidio: true }, { x: 1, z: 0 }),
+      { vigente: false, motivo: "terminada" },
+    );
+    // Control: lo mismo sin el fin, vigente.
+    assert.deepEqual(vigenciaDeLaReplica(QUIETO, { x: 1, z: 0 }), { vigente: true });
+  });
+
+  it("el orden: viaje > terminada > tile > lejos", () => {
+    const fin = { ...QUIETO, terminoUnaConversacionDesdeQuePidio: true, escenaAhora: "tile_1_0" };
+    assert.deepEqual(vigenciaDeLaReplica({ ...fin, viajeEnCurso: true }), { vigente: false, motivo: "viaje" });
+    assert.deepEqual(vigenciaDeLaReplica(fin, { x: 40, z: 0 }), { vigente: false, motivo: "terminada" });
   });
 
   it("el orden: atacar > viaje > tile", () => {
@@ -113,6 +129,7 @@ describe("entregarReplica", () => {
   for (const [nombre, ctx, pos, motivo] of [
     ["atacó", { ...QUIETO, atacoDesdeQuePidio: true }, aTres, "combate"],
     ["viaje", { ...QUIETO, viajeEnCurso: true }, aTres, "viaje"],
+    ["terminada", { ...QUIETO, terminoUnaConversacionDesdeQuePidio: true }, aTres, "terminada"],
     ["otro tile", { ...QUIETO, escenaAhora: "tile_0_-1" }, aTres, "otro_tile"],
     ["lejos", QUIETO, () => ({ x: 0, z: 40 }), "lejos"],
   ] as const) {

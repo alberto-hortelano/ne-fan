@@ -29,13 +29,11 @@ hacer `curl` directo a `ai_server`).
 
 Orden recomendado (para que el motor tome `:3737` antes de que `ai_server` intente conectar):
 
-1. **Terminal A — motor narrativo.** Abre Claude Code en `~/code/ne-fan` y dale este encargo:
-
-   > Eres el motor narrativo del juego. Entra en bucle: llama `narrative_listen`; cada petición
-   > trae su tipo, sus instrucciones y su schema. Genera la respuesta que pide, usa las tools
-   > `map_*` / `npc_*` / `entity_*` / `inventory_*` / `plugin_*` cuando proceda, y responde con
-   > `narrative_respond`. Repite indefinidamente; si `narrative_listen` expira o falla, vuelve a
-   > llamarlo.
+1. **Terminal A — motor narrativo.** Abre Claude Code en `~/code/ne-fan` y pégale el encargo de
+   [`nefan-core/data/contract/encargo-del-motor.txt`](../../nefan-core/data/contract/encargo-del-motor.txt)
+   (es el que imprime `./start.sh --preset playtest-motor`; aquí no se copia para que no haya dos
+   que diverjan). Las tools `map_*` / `npc_*` / `entity_*` / `inventory_*` / `plugin_*` se
+   explican solas en su descripción.
 
    Al primer `narrative_listen` toma `:3737` y queda bloqueado esperando.
 

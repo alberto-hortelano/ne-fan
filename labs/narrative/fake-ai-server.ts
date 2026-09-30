@@ -241,6 +241,11 @@ const MARCA_MOTOR_CAIDO = "MOTOR CAIDO";
 const MARCA_REPLICA_TARDIA = "REPLICA TARDIA";
 /** La réplica retenida, si la hay: soltarla la manda. `/dev/reset` la suelta. */
 let replicaRetenida: (() => void) | null = null;
+/** El `recent_dialogues` del contexto de la ÚLTIMA `/report_player_choice`
+ *  (tanda BX): es como un guion mira que el motor se entera de que el jugador
+ *  terminó una conversación —queda en el historial y viaja la próxima vez— sin
+ *  que terminarla le cueste una petición. `/dev/reset` lo vacía. */
+let ultimosDialogosRecientes: unknown[] | null = null;
 /** Tope de la retención: un guion que se muere sin soltarla no deja la
  *  petición colgada para siempre — el motor contesta 504 y se dice. */
 const RETENCION_MAX_MS = 120_000;
@@ -646,6 +651,9 @@ const server = http.createServer((req, res) => {
       ultimaPeticionDeEscena,
       // ¿Hay una réplica retenida esperando a que la suelten? (tanda BW)
       replicaRetenida: replicaRetenida !== null,
+      // Lo que el motor vio de las conversaciones recientes la última vez
+      // (tanda BX): el fin de una conversación viaja aquí, no como petición.
+      ultimosDialogosRecientes,
     });
   }
   // Cómo se conforma el motor ante un tile (#516): mirar sin tocar. El POST
@@ -786,6 +794,7 @@ const server = http.createServer((req, res) => {
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         const speaker = String(body.speaker || "Aldeano");
         fakeDialogueTurn += 1;
+        ultimosDialogosRecientes = body.context?.recent_dialogues ?? null;
         // #481: pérdida de conexión real, distinta de una respuesta HTTP 500.
         if (String(body.free_text ?? "").includes("CONEXION INTERRUMPIDA")) {
           res.destroy();
@@ -1018,6 +1027,7 @@ const server = http.createServer((req, res) => {
         fakeDevCacheEnabled = false;
         motorConducidoPorMarcas = false;
         ultimaPeticionDeEscena = null;
+        ultimosDialogosRecientes = null;
         // Una réplica retenida por el guion anterior se suelta: no se hereda.
         replicaRetenida?.();
         replicaRetenida = null;

@@ -109,11 +109,6 @@
       "crap": 132
     },
     {
-      "fichero": "src/ui/dialogue-panel.ts",
-      "funcion": "DialoguePanel.constructor>(anónima)@alPulsarTecla()",
-      "crap": 462
-    },
-    {
       "fichero": "src/ui/eco-del-combate.ts",
       "funcion": "procesar",
       "crap": 240

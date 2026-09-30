@@ -159,6 +159,12 @@ const DialogueChoiceMessageSchema = z.object({
   chosenText: z.string(),
 });
 
+const DialogueEndMessageSchema = z.object({
+  type: z.literal("dialogue_end"),
+  speaker: z.string(),
+  speakerId: z.string().optional(),
+});
+
 const CreateGameMessageSchema = z.object({
   type: z.literal("create_game"),
   requestId: z.string(),
@@ -235,6 +241,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SessionEnteredMessageSchema,
   SetRenderModeMessageSchema,
   DialogueChoiceMessageSchema,
+  DialogueEndMessageSchema,
   CreateGameMessageSchema,
   ListGamesMessageSchema,
   GenerateGameMessageSchema,

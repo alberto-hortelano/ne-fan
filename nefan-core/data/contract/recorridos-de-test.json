@@ -24,6 +24,13 @@
       "porque": "el corpus donde tiene que existir cada término snake_case de los prompts: todos los procesos, a cualquier profundidad"
     },
     {
+      "fichero": "el-prompt-del-motor-no-enumera-kinds.test.ts",
+      "sitios": 1,
+      "lecturas": 1,
+      "recorre": "labs (los .md, sin runs/ ni node_modules) y docs/arquitectura",
+      "porque": "que no quede COPIA del encargo al motor en la prosa de la que alguien lo copiaría (tanda BX): la fuente única es data/contract/encargo-del-motor.txt, y una copia puede vivir en un README a cualquier profundidad"
+    },
+    {
       "fichero": "mutation-config.test.ts",
       "sitios": 2,
       "lecturas": 2,

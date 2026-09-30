@@ -710,55 +710,74 @@ has_anthropic_key() {
     return 1
 }
 
+# El encargo que se pega en el terminal del motor: UNA fuente, que también lee
+# el candado de BW (test/el-prompt-del-motor-no-enumera-kinds.test.ts). Sin el
+# fichero no se inventa otro: se dice y se sale con 1.
+ENCARGO_DEL_MOTOR="$PROJECT_DIR/nefan-core/data/contract/encargo-del-motor.txt"
+imprimir_encargo_del_motor() {
+    if [[ ! -r "$ENCARGO_DEL_MOTOR" ]]; then
+        echo "❌ falta el encargo del motor: $ENCARGO_DEL_MOTOR" >&2
+        return 1
+    fi
+    echo ""
+    sed 's/^/       /' "$ENCARGO_DEL_MOTOR"
+    echo ""
+}
+
+# ¿Hay motor narrativo en juego? narrative-mcp seleccionado (placeholder con
+# takeover) O ai_server sin él (flujo playtest: el terminal del motor posee el
+# puerto MCP). Es el ÚNICO sitio que lo decide, para la TUI y para --preset:
+# hasta la tanda BX la regla vivía solo en la rama de la TUI y `--preset play`
+# no decía qué pegar.
+hay_motor_en_juego() {
+    on narrative-mcp || on ai_server
+}
+
 pause_for_claude_code() {
     cat <<'EOF'
 
 ────────────────────────────────────────────────────────────────────────
-🤖 Claude Code as narrative engine (MCP)
+🤖 Claude Code como motor narrativo (MCP)
 
-  To enable:
-    1. Open ANOTHER terminal in this directory.
-    2. Run:    claude
-    3. When Claude Code is ready, paste this prompt:
+  Para activarlo:
+    1. Abre OTRA terminal en este directorio.
+    2. Lanza:  claude
+    3. Cuando Claude Code esté listo, pega este encargo:
+EOF
+    imprimir_encargo_del_motor || exit 1
+    cat <<'EOF'
+  Si te lo saltas:
+    · Con ANTHROPIC_API_KEY — ai_server usa la API directa.
+    · Sin clave — las peticiones narrativas fallan con 503 (no hay
+      respaldo guionizado): el juego lo dice y espera al motor.
 
-       "Eres el motor narrativo del juego. Llama a narrative_listen
-        en bucle: cada petición trae su tipo, sus instrucciones y su
-        schema. Respóndela con narrative_respond y vuelve a escuchar.
-        Si narrative_listen expira o falla, vuelve a llamarlo: no
-        pares el bucle."
-
-  If you skip:
-    · With ANTHROPIC_API_KEY set — ai_server falls back to direct API.
-    · Without API key — narrative requests fail with 503 (there is no
-      scripted fallback): the game says so and waits for the engine.
-
-  Tip: si el terminal del motor debe POSEER el puerto del MCP (flujo labs/narrative),
+  Truco: si el terminal del motor debe POSEER el puerto del MCP (flujo labs/narrative),
   relanza con NEFAN_EAGER_BIND=0 para que este launcher no arranque su
   placeholder de narrative-mcp.
 
 ────────────────────────────────────────────────────────────────────────
 EOF
     while true; do
-        read -rp "  [Enter] Claude Code is ready  |  [s] skip  |  [q] cancel: " ans
+        read -rp "  [Enter] Claude Code está listo  |  [s] saltar  |  [q] cancelar: " ans
         case "$ans" in
             "")
-                echo "▶ continuing with Claude Code"
+                echo "▶ seguimos con Claude Code"
                 return 0
                 ;;
             s|S)
                 if has_anthropic_key; then
-                    echo "▶ skipping MCP — ai_server will use direct ANTHROPIC_API_KEY"
+                    echo "▶ sin MCP — ai_server usará la ANTHROPIC_API_KEY directa"
                 else
-                    echo "⚠️  ANTHROPIC_API_KEY not detected — ai_server will use hardcoded fallback rooms."
+                    echo "⚠️  no hay ANTHROPIC_API_KEY — las peticiones narrativas fallarán con 503 hasta que el motor escuche."
                 fi
                 return 0
                 ;;
             q|Q)
-                echo "✋ cancelled by user"
+                echo "✋ cancelado"
                 exit 0
                 ;;
             *)
-                echo "  unrecognised option"
+                echo "  opción no reconocida"
                 ;;
         esac
     done
@@ -1097,8 +1116,7 @@ tui_leave() {
     fi
 }
 
-# Returns via globals: ACTIVE[] (which services to start) and TUI_NEEDS_PAUSE.
-TUI_NEEDS_PAUSE=0
+# Returns via globals: ACTIVE[] (which services to start).
 TUI_RESULT=""   # "launch" or "quit"
 run_tui() {
     if [[ ! -t 0 || ! -t 1 ]]; then
@@ -1227,14 +1245,6 @@ run_tui() {
     done
 
     tui_leave
-    # Pausa de Claude Code: siempre que haya motor narrativo en juego —
-    # narrative-mcp seleccionado (placeholder con takeover) O ai_server sin
-    # narrative-mcp (flujo playtest: el terminal del motor posee el puerto MCP, y el
-    # diálogo de la pausa ofrece [s] saltar con detección de API key).
-    TUI_NEEDS_PAUSE=0
-    if on narrative-mcp || on ai_server; then
-        TUI_NEEDS_PAUSE=1
-    fi
 }
 
 # ─── Launch in topological order ───────────────────────────────
@@ -1278,30 +1288,32 @@ run_selection() {
     # y el gateway puede pedir assetExists temprano; remote-gen antes que
     # ai_server para que /segment ya lo vea al primer uso; el fake antes
     # que el bridge (que arranca apuntándole).
-    on asset-store  && { start_asset_store   || return 1; }
-    on sprite-forge && { start_sprite_forge  || return 1; }
-    on remote-gen   && { start_remote_gen    || return 1; }
-    on fake-ai      && { start_fake_ai       || return 1; }
-    on replay-server && { start_replay       || return 1; }
-    on bridge       && { start_bridge        || return 1; }
-    on narrative-mcp && { start_narrative_mcp || return 1; }
+    on asset-store   && { arrancar start_asset_store   || return 1; }
+    on sprite-forge  && { arrancar start_sprite_forge  || return 1; }
+    on remote-gen    && { arrancar start_remote_gen    || return 1; }
+    on fake-ai       && { arrancar start_fake_ai       || return 1; }
+    on replay-server && { arrancar start_replay        || return 1; }
+    on bridge        && { arrancar start_bridge        || return 1; }
+    on narrative-mcp && { arrancar start_narrative_mcp || return 1; }
 
     # Pausa de Claude Code SIN placeholder de narrative-mcp (flujo playtest,
     # labs/narrative/README): el terminal del motor debe POSEER el puerto MCP antes
     # de que ai_server intente conectar — pausar ANTES de arrancarlo.
-    if (( TUI_NEEDS_PAUSE == 1 )) && ! on narrative-mcp; then
+    # Sin terminal (`--preset`) no hay a quién pausar: el encargo se imprime al
+    # final, que es lo último que se lee.
+    if (( NO_INTERACTIVO == 0 )) && hay_motor_en_juego && ! on narrative-mcp; then
         pause_for_claude_code
     fi
 
-    on ai_server && { start_ai || return 1; }
+    on ai_server && { arrancar start_ai || return 1; }
 
     # Con placeholder, la pausa va tras ai_server (el terminal del motor hace
     # takeover del placeholder al primer narrative_listen).
-    if (( TUI_NEEDS_PAUSE == 1 )) && on narrative-mcp; then
+    if (( NO_INTERACTIVO == 0 )) && hay_motor_en_juego && on narrative-mcp; then
         pause_for_claude_code
     fi
 
-    on html && { start_html || return 1; }
+    on html && { arrancar start_html || return 1; }
 
     # URL del cliente: con el fake activo hay que abrirlo con ?ai= para que
     # TODOS los servicios del cliente (skins, atlas, estilos) resuelvan al fake.
@@ -1344,7 +1356,38 @@ EOF
      y condúcelo con curl (ver labs/narrative/README.md).
 EOF
     fi
+    # `--preset` no pausa (no hay terminal que pulse Enter), pero el encargo
+    # SÍ se imprime: sin él, quien arranca por slug —como recomienda
+    # CLAUDE.md— no sabe qué pegar en el terminal del motor.
+    if (( NO_INTERACTIVO == 1 )) && hay_motor_en_juego; then
+        echo ""
+        echo "  🤖 Motor narrativo: abre OTRA terminal en este directorio, lanza claude y pega:"
+        imprimir_encargo_del_motor || return 1
+        if on narrative-mcp; then
+            echo "     El motor se engancha solo al primer narrative_listen: le quita :$PORT_NARR al placeholder que ha arrancado este launcher."
+        else
+            echo "     El motor se engancha solo al primer narrative_listen: toma :$PORT_NARR y ai_server se conecta solo (reintenta cada 5 s)."
+        fi
+    fi
+    if (( SECO == 1 )); then
+        echo ""
+        echo "  (--seco: no se ha arrancado nada)"
+        return 0
+    fi
     follow_logs
+}
+
+# `--seco` (solo con --preset): recorre el MISMO run_selection sin arrancar
+# nada ni tocar puertos, para poder mirar qué imprime un preset con el stack de
+# otro arriba. Se bifurca solo aquí, en el preflight de servicios y antes de
+# follow_logs: una rama con SECO en otro sitio es un arranque en seco que ya
+# no es el real.
+arrancar() {
+    if (( SECO == 1 )); then
+        echo "   (seco) $1"
+        return 0
+    fi
+    "$1" || return 1
 }
 
 # ─── Status / Stop ─────────────────────────────────────────────
@@ -1667,11 +1710,13 @@ trap cleanup EXIT INT TERM
 # Un runner que cite el número acaba levantando otro stack y fallando por
 # timeout, sin decir por qué. El slug no se desplaza.
 usage() {
-    echo "Uso: ./start.sh [--preset <slug|N>] [--list] [--parar] [--parar-todo]"
+    echo "Uso: ./start.sh [--preset <slug|N> [--seco]] [--list] [--parar] [--parar-todo]"
     echo "  sin argumentos      menú interactivo"
     echo "  --preset <slug>     arranca ese preset sin TUI (referencia estable — recomendado)"
     echo "  --preset N          idem por número (1-based, como en el menú; se renumera)"
     echo "  --list              lista los presets y sale"
+    echo "  --seco              con --preset: recorre el arranque SIN arrancar nada ni"
+    echo "                      tocar puertos (qué imprime el preset, encargo incluido)"
     echo "  --parar             para el stack de ESTE worktree (lo mismo que la tecla k)"
     echo "  --parar-todo        BARRIDO: mata lo que ocupe los puertos del catálogo,"
     echo "                      sea de quien sea. Enumera a cada dueño antes de matarlo."
@@ -1714,6 +1759,12 @@ run_preset_noninteractive() {
     # Sin apply_exclusivity: las máscaras de PRESET_PROFILES ya son coherentes
     # por construcción (esa función resuelve conflictos del toggle de la TUI).
     apply_preset "$idx"
+    NO_INTERACTIVO=1
+    if (( SECO == 1 )); then
+        echo "▶ Preset $((idx + 1)) · ${PRESET_SLUGS[$idx]} · ${PRESET_NAMES[$idx]} (no interactivo, EN SECO)"
+        run_selection
+        return
+    fi
     echo "▶ Preset $((idx + 1)) · ${PRESET_SLUGS[$idx]} · ${PRESET_NAMES[$idx]} (no interactivo)"
     preflight_services && run_selection
 }
@@ -1721,9 +1772,14 @@ run_preset_noninteractive() {
 # ─── Entry point ───────────────────────────────────────────────
 
 NONINTERACTIVE_PRESET=""
+# Sin terminal que pulse Enter: lo pone run_preset_noninteractive.
+NO_INTERACTIVO=0
+# `--seco`: recorrer el arranque sin arrancar nada (ver `arrancar`).
+SECO=0
 while (( $# )); do
     case "$1" in
         --preset) NONINTERACTIVE_PRESET="${2:-}"; shift 2 ;;
+        --seco) SECO=1; shift ;;
         --preset=*) NONINTERACTIVE_PRESET="${1#*=}"; shift ;;
         --list) list_presets; exit 0 ;;
         # Parar sin abrir la TUI. La distinción es la misma que la de las
@@ -1734,6 +1790,12 @@ while (( $# )); do
         *) echo "❌ opción desconocida: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
+
+if (( SECO == 1 )) && [[ -z "$NONINTERACTIVE_PRESET" ]]; then
+    echo "❌ --seco solo tiene sentido con --preset <slug>" >&2
+    usage >&2
+    exit 2
+fi
 
 preflight_tools
 

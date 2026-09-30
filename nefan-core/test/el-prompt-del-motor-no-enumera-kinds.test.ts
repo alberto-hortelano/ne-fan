@@ -9,9 +9,10 @@
  *  `narrative_listen`, así que el encargo no tiene por qué nombrarlos: un kind
  *  escrito en prosa es un rastro que se pudre el día que el contrato cambia.
  *
- *  Qué se mira: el heredoc ENTERO de `pause_for_claude_code` en `start.sh` y
- *  la cita `>` de `labs/narrative/README.md` que lleva el encargo (la que
- *  nombra `narrative_respond`). Qué se busca: cada literal de `type`, `kind` y
+ *  Qué se mira: el encargo, que desde la tanda BX vive en UN fichero
+ *  (`data/contract/encargo-del-motor.txt`) del que `start.sh` hace `cat`; y
+ *  que no quede copia en prosa en los sitios de los que alguien lo copiaba
+ *  (`start.sh`, `labs/**.md`, `docs/arquitectura/**`, `CLAUDE.md`). Qué se busca: cada literal de `type`, `kind` y
  *  `format` de los mensajes de `AiToMcpMsg`, derivados POR EL ÁRBOL DE
  *  SINTAXIS de `src/contracts/narrative-mcp-ws.ts` —la fuente del protocolo—,
  *  más los kinds retirados que el contrato ya no nombra. Como palabra (un
@@ -24,19 +25,27 @@
  *   · un kind retirado que no esté en `RETIRADOS`: `room` está porque es el
  *     que se pudrió aquí, y los dos `weapon_*` porque salieron del contrato
  *     en #790; el siguiente hay que añadirlo al retirarlo;
- *   · otras prosas que hablen al motor (docs/, CLAUDE.md, comentarios): solo
- *     se miran los dos sitios de los que alguien COPIA el encargo;
+ *   · otras prosas que hablen al motor: solo se miran el fichero del encargo
+ *     y, por la frase con la que empieza («Eres el motor narrativo»), que no
+ *     haya copia en `start.sh`, `labs/**.md`, `docs/arquitectura/**` ni
+ *     `CLAUDE.md`. Una copia REESCRITA (otra frase de arranque) o fuera de esos
+ *     sitios no se ve: también es censo de grafía;
  *   · el kind escrito de otra forma (con espacios, traducido: «petición de
  *     sala»). Es un censo de grafía, y un censo de grafía es ciego a la
  *     escritura — lo que sujeta es la regresión literal que salió jugando. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const CONTRATO = fileURLToPath(new URL("../src/contracts/narrative-mcp-ws.ts", import.meta.url));
+/** La fuente ÚNICA del encargo (tanda BX). */
+const ENCARGO = fileURLToPath(new URL("../data/contract/encargo-del-motor.txt", import.meta.url));
+/** La frase con la que arranca el encargo: su presencia fuera del fichero es
+ *  una copia. */
+const ARRANQUE_DEL_ENCARGO = "Eres el motor narrativo";
 
 /** Kinds que el contrato YA NO nombra y que alguna prosa sí nombró. */
 const RETIRADOS: Record<string, string> = {
@@ -72,30 +81,21 @@ function kindsDelContrato(fuente: string): string[] {
   return [...out].sort();
 }
 
-/** El heredoc de `pause_for_claude_code`: de `cat <<'EOF'` a `EOF`. */
-function encargoDeStartSh(sh: string): string {
-  const m = /pause_for_claude_code\(\)\s*\{\s*\n\s*cat <<'EOF'\n([\s\S]*?)\nEOF\n/.exec(sh);
-  if (!m) throw new Error("start.sh: no encuentro el heredoc de pause_for_claude_code");
-  return m[1]!;
-}
-
-/** Las citas `>` del README que llevan el encargo (las que nombran
- *  `narrative_respond`). */
-function encargoDelReadme(md: string): string {
-  const bloques: string[] = [];
-  let actual: string[] = [];
-  for (const linea of md.split("\n")) {
-    const m = /^\s*>\s?(.*)$/.exec(linea);
-    if (m) actual.push(m[1]!);
-    else if (actual.length) {
-      bloques.push(actual.join("\n"));
-      actual = [];
+/** Los ficheros de prosa donde una copia del encargo se pudriría: los sitios
+ *  de los que alguien lo copiaba o lo leería. */
+function prosaQuePodriaCopiarlo(): string[] {
+  const out = [`${REPO}start.sh`, `${REPO}CLAUDE.md`];
+  const recorrer = (dir: string, filtro: (f: string) => boolean): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name === "runs") continue;
+      const ruta = `${dir}/${e.name}`;
+      if (e.isDirectory()) recorrer(ruta, filtro);
+      else if (filtro(e.name)) out.push(ruta);
     }
-  }
-  if (actual.length) bloques.push(actual.join("\n"));
-  const encargo = bloques.filter((b) => b.includes("narrative_respond"));
-  if (encargo.length === 0) throw new Error("labs/narrative/README.md: no encuentro la cita del encargo al motor");
-  return encargo.join("\n");
+  };
+  recorrer(`${REPO}labs`, (f) => f.endsWith(".md"));
+  recorrer(`${REPO}docs/arquitectura`, () => true);
+  return out;
 }
 
 /** Los kinds que aparecen como PALABRA en el texto (plural incluido). */
@@ -117,8 +117,9 @@ describe("el encargo al motor no enumera kinds", () => {
     }
   });
 
-  it("start.sh: el heredoc de pause_for_claude_code no nombra ningún kind", () => {
-    const texto = encargoDeStartSh(readFileSync(`${REPO}start.sh`, "utf8"));
+  it("el encargo (fuente única) no nombra ningún kind", () => {
+    const texto = readFileSync(ENCARGO, "utf8");
+    assert.ok(texto.startsWith(ARRANQUE_DEL_ENCARGO), "premisa del censo de copias: el encargo empieza por su frase");
     assert.ok(texto.includes("narrative_listen"), "el encargo sigue diciendo a qué tool llamar");
     // Y qué hacer cuando la llamada expira o falla (QA de la tanda): un
     // Claude recién abierto puede parar el bucle ante el primer error.
@@ -126,9 +127,12 @@ describe("el encargo al motor no enumera kinds", () => {
     assert.deepEqual(kindsNombrados(texto, kinds), []);
   });
 
-  it("labs/narrative/README.md: la cita del encargo no nombra ningún kind", () => {
-    const texto = encargoDelReadme(readFileSync(`${REPO}labs/narrative/README.md`, "utf8"));
-    assert.deepEqual(kindsNombrados(texto, kinds), []);
+  it("no hay copia del encargo en prosa: start.sh lo lee del fichero, el README apunta a él", () => {
+    const ficheros = prosaQuePodriaCopiarlo();
+    assert.ok(ficheros.some((f) => f.endsWith("labs/narrative/README.md")), "el censo mira el README del bench");
+    const conCopia = ficheros.filter((f) => readFileSync(f, "utf8").includes(ARRANQUE_DEL_ENCARGO));
+    assert.deepEqual(conCopia, []);
+    assert.match(readFileSync(`${REPO}start.sh`, "utf8"), /encargo-del-motor\.txt/, "start.sh lee la fuente única");
   });
 
   it("el detector ve lo que salió jugando: el encargo viejo da cuatro kinds", () => {

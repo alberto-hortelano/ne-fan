@@ -56,6 +56,7 @@ import { crearChipDeConexion } from "./ui/chip-de-conexion.js";
 import { atarLaOfertaDeEntrar } from "./ui/la-partida-llego-tarde.js";
 import { crearRegistroDeLaPartida } from "./ui/registro-de-la-partida.js";
 import { crearConversacion } from "./ui/conversacion.js";
+import { pedirUnViaje } from "./ui/pedir-un-viaje.js";
 import { EcoDelCombate } from "./ui/eco-del-combate.js";
 import { paso } from "./ui/async-ui.js";
 import { ActionBar } from "./ui/action-bar.js";
@@ -268,7 +269,7 @@ const chip = crearChipDeConexion();
 const conversacion = crearConversacion({
   lienzo: () => fpsRenderer.element,
   session,
-  enviarEleccion: (eleccion) => narrativeClient.sendDialogueChoice(eleccion),
+  red: () => narrativeClient,
 });
 const travelPanel = new TravelPanel();
 /** Lo que el juego recuerda del último viaje pedido por «Salidas», paso a
@@ -836,12 +837,7 @@ instalarNefanHook({
   cargarFixture: fixtures.cargarFixture,
 });
 
-travelPanel.onTravel = (placeId) => {
-  if (!session.active) return;
-  muro.mostrar("Viajando...", "El motor narrativo está preparando el lugar.");
-  travelLedger.pedido(placeId);
-  narrativeClient.enterPlace(placeId);
-};
+travelPanel.onTravel = pedirUnViaje({ session, conversacion, muro, libro: travelLedger, red: () => narrativeClient });
 
 narrativeClient.onStatusDeLaPartida((status) => {
   if (atendidoAntesQueNada(status)) return;

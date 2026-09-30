@@ -169,6 +169,18 @@ export interface DialogueChoiceMessage {
   chosenText: string;
 }
 
+/** El jugador da por terminada la conversación sin contestar (tanda BX): el
+ *  botón «terminar» del panel, o Esc. NO pide nada al motor —despedirse no
+ *  cuesta una ida y vuelta—: el bridge lo apunta en `dialogue_history` y el
+ *  motor lo lee en `recent_dialogues` la próxima vez que le hablen. */
+export interface DialogueEndMessage {
+  type: "dialogue_end";
+  /** Con quién se hablaba (el nombre de la línea visible). */
+  speaker: string;
+  /** La entidad, si el bridge la resolvió al mandar la línea. */
+  speakerId?: string;
+}
+
 /** Crear un mundo de usuario: el borrador (textarea o archivo .md/.txt) se
  *  desarrolla con el motor narrativo contra la plantilla y el bridge escribe
  *  data/games/user_{slug}/. Respuesta: game_created. */
@@ -311,6 +323,7 @@ export type ClientMessage =
   | SessionEnteredMessage
   | SetRenderModeMessage
   | DialogueChoiceMessage
+  | DialogueEndMessage
   | CreateGameMessage
   | ListGamesMessage
   | GenerateGameMessage
