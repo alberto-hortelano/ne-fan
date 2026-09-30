@@ -340,7 +340,12 @@ export interface LlmContext {
   /** Plugins declarativos activos, resumidos por sus derived_views (F6, §7.6).
    *  Sólo presente si hay plugins activos. El detalle se pide con plugin_inspect. */
   plugins?: PluginLlmView[];
-  available_assets?: AssetEntry[];
+  /** Descripciones de superficies YA pintadas en el estilo de ESTA partida
+   *  (el `style` de la clave de caché): la librería que el motor puede reusar
+   *  verbatim en un `surface_desc`. La rellena ai_server
+   *  (`_inject_available_assets`), no el bridge. Solo el texto: el motor reusa
+   *  por descripción, nunca por hash. */
+  available_assets?: string[];
   /** Set on the first scene request of a fresh session WITHOUT a world yet:
    *  the narrative engine should bootstrap the world map (3-5 places + their
    *  sites + links) via the map tools before generating the starting scene.
@@ -354,8 +359,9 @@ export interface LlmContext {
   generate_world_vocabulary?: boolean;
   /** Vocabulario canónico del mundo (data/games/{id}/world/vocabulary.json),
    *  adjuntado en turnos de tile/realize. Reusar una desc verbatim en
-   *  surface_desc o como prompt de skin es un cache-hit del asset estilizado
-   *  ya pintado; el reuso es opcional (mismo contrato que available_assets). */
+   *  surface_desc o como prompt de skin reusa el asset estilizado si ya se
+   *  pintó en el estilo de la partida (la clave lleva descripción Y estilo);
+   *  el reuso es opcional (mismo contrato que available_assets). */
   world_vocabulary?: Array<{
     id: string;
     kind: "surface" | "character";

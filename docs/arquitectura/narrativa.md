@@ -12,7 +12,7 @@ Cómo viaja una escena desde Claude hasta el cliente, y cómo una elección de d
 
 **Generación de escena inicial open-world**:
 1. El cliente envía `start_session` al bridge; el bridge crea la sesión, activa plugins shipped y hace POST `/generate_scene` a ai_server (`AiClient.generateScene` en nefan-core)
-2. ai_server envía request vía WebSocket a narrative-mcp (:3737), añadiendo `available_assets` (lista del manifest) y `session` info
+2. ai_server envía request vía WebSocket a narrative-mcp (:3737), añadiendo `available_assets` (descripciones de superficies pintadas en el estilo de la partida, filtradas por el asset-store) y `session` info
 3. Claude Code (en otra terminal) llama `narrative_listen()` → recibe el world_state
 4. Claude genera la escena JSON completa, opcionalmente referenciando assets cacheados por hash → llama `narrative_respond(scene_json)`
 5. ai_server la devuelve al bridge, que la registra en su NarrativeState (Format D crudo), la **normaliza con `formatDToWorld`** y la difunde como `narrative_event` (effect `scene_loaded` con `scene` = world scene, `eventId: "scene_init"`; el resume normaliza igual vía `sessionDataForClient`)

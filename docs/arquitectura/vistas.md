@@ -182,9 +182,9 @@ string = celda hero para las caras del CUERPO (tejado/puerta conservan su
 material), u objeto por cara/rol `{n|s|e|w|side|roof|door|caps|top}` = celda
 propia por cara con su descripción (imagen distinta por cara;
 `SurfaceAssign.faces` asigna por slot de BoxGeometry y el renderer crea
-material por slot). `available_assets` muestra al motor la librería
-reutilizable (texture/model/sprite/surface, round-robin) — el reuso es
-opcional, nunca forzado.
+material por slot). `available_assets` muestra al motor las descripciones
+de celdas `unique` ya pintadas en el estilo de la partida (el `style` de la
+clave de caché) — el reuso es opcional, nunca forzado.
 
 E2E sin créditos: el fake-ai-server sirve `/generate_surface_atlas` con
 dameros (bootstrap con cartel per-face + casa hero + scatter).

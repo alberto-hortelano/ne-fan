@@ -8,6 +8,7 @@ import { TILE_CELLS } from '@nefan/core/contracts/world-map-schema';
 import { validateDeathResolution, validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateFormatDScene, validateAnchor } from './validators.js';
 import { ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
+import { FICHEROS_DE_PROMPTS, textoDeEscena, textoDeEvento, textoDeMundo, textoDeMuerte, type PromptsDeListen } from './texto-de-listen.js';
 import { rechazo, vigilarErroresDeTool } from './rechazo.js';
 import { bridgeGet, bridgePost, postProgress, setActiveSession, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 // Tipos de consequence, derivados del SoT zod (contract/model-io/schemas.ts):
@@ -46,18 +47,12 @@ function findPromptsDir(): string {
 const PROMPTS_DIR = findPromptsDir();
 const loadPrompt = (file: string): string => readFileSync(resolve(PROMPTS_DIR, file), 'utf-8');
 
-const WORLD_RULES = loadPrompt('world_rules.md');
-
-const TILE_INSTRUCTIONS = loadPrompt('tile_instructions.md');
-
-
-const SCENE_INSTRUCTIONS = loadPrompt('scene_instructions.md');
-
-const DEVELOP_WORLD_INSTRUCTIONS = loadPrompt('develop_world.md');
-
-const NARRATIVE_EVENT_INSTRUCTIONS = loadPrompt('narrative_event.md');
-
-const PLAYER_DEATH_INSTRUCTIONS = loadPrompt('player_death.md');
+// Las instrucciones de cada kind de `narrative_listen`. El texto que las
+// envuelve lo compone `texto-de-listen.ts` (puro), que es lo que mide el
+// candado de tamaño.
+const PROMPTS = Object.fromEntries(
+  Object.entries(FICHEROS_DE_PROMPTS).map(([k, f]) => [k, loadPrompt(f)]),
+) as unknown as PromptsDeListen;
 
 
 /** Mensajes humanos para el latido de progreso según la ruta del State API
@@ -173,51 +168,17 @@ into context:
         if (msg.type === 'narrative_event' && msg.kind === 'develop_world') {
           currentKind = 'develop_world';
           const ctx = msg.context as { draft_text?: string; available_styles?: unknown } | undefined;
-          const payload = JSON.stringify({
-            kind: 'develop_world',
-            draft_text: ctx?.draft_text ?? '',
-            available_styles: ctx?.available_styles ?? [],
-          }, null, 2);
-          return {
-            content: [{
-              type: 'text',
-              text: `World draft to develop:\n${payload}\n\n${DEVELOP_WORLD_INSTRUCTIONS}`,
-            }],
-          };
+          return { content: [{ type: 'text', text: textoDeMundo(ctx, PROMPTS) }] };
         }
 
         if (msg.type === 'narrative_event' && msg.kind === 'player_death') {
           currentKind = 'player_death';
-          const payload = JSON.stringify({
-            kind: 'player_death',
-            event_id: msg.event_id,
-            context: msg.context,
-          }, null, 2);
-          return {
-            content: [{
-              type: 'text',
-              text: `The player has died:\n${payload}\n\n${PLAYER_DEATH_INSTRUCTIONS}\n\n${WORLD_RULES}`,
-            }],
-          };
+          return { content: [{ type: 'text', text: textoDeMuerte(msg, PROMPTS) }] };
         }
 
         if (msg.type === 'narrative_event') {
           currentKind = 'narrative_event';
-          const payload = JSON.stringify({
-            kind: 'narrative_event',
-            event_kind: msg.kind,
-            event_id: msg.event_id,
-            speaker: msg.speaker,
-            chosen_text: msg.chosen_text,
-            free_text: msg.free_text,
-            context: msg.context,
-          }, null, 2);
-          return {
-            content: [{
-              type: 'text',
-              text: `Narrative event:\n${payload}\n\n${NARRATIVE_EVENT_INSTRUCTIONS}\n\n${WORLD_RULES}`,
-            }],
-          };
+          return { content: [{ type: 'text', text: textoDeEvento(msg, PROMPTS) }] };
         }
 
         // room_request — siempre open-world ('scene'; el formato legacy 'room'
@@ -265,14 +226,7 @@ into context:
             isError: true,
           };
         }
-        const sceneVariant = TILE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS;
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({ kind: 'scene', world_state: msg.world_state }, null, 2) +
-              '\n\n' + sceneVariant + '\n\n' + WORLD_RULES,
-          }],
-        };
+        return { content: [{ type: 'text', text: textoDeEscena(msg.world_state, PROMPTS) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: (e as Error).message }], isError: true };
       }

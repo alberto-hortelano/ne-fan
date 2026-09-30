@@ -92,8 +92,8 @@ their ground.
 MAP PLAN — the tile's semantic blueprint. You declare WHAT exists in flat
 world cells as PURE DATA — never draw anything yourself. The engine builds a
 deterministic 3D scene from your plan (the base plate of the repaint),
-derives the walk collision from the declared FOOTPRINTS (water blocks, decks
-punch it open) and guides the vision classifier with the projected boxes.
+and derives the walk collision from the declared FOOTPRINTS (water blocks,
+decks punch it open).
 What you build and how you compose it is entirely your call — the sections
 below only document the tools and their contracts.
 
@@ -148,8 +148,8 @@ points) | "ellipse": { "center": [c,r], "rx", "ry" }. Kinds:
 - Anything BUILT with height is a volume; `hill` is the only ground relief.
 
 2) "volumes" — everything with HEIGHT, as typed objects (max 160):
-Common fields: "id" (unique slug), "label" (Spanish noun — it feeds the
-vision classifier later), "type". Coordinates in cells (0..128); heights in
+Common fields: "id" (unique slug), "label" (Spanish noun naming the
+object), "type". Coordinates in cells (0..128); heights in
 cells too (a character is ~3.6 cells tall). The preset types are shortcuts
 with built-in detail; `prism` (free outline + height) and `custom` (free 3D
 composition of solid pieces) declare ANY geometry directly — you are never
@@ -244,8 +244,7 @@ where an NPC is unreachable, or is born on a solid cell (inside a prop,
 under a roofed building) — from there it could never move.
 
 Engine facts: `ground` paths follow their declared points exactly and
-volumes keep their footprints (plan = truth for collision and the vision
-classifier). Nothing fills vegetation for you: what you do not declare
+volumes keep their footprints (plan = truth for collision). Nothing fills vegetation for you: what you do not declare
 (as tree/bush volumes, `vegetation_zones` or scatter) does not exist.
 
 3) OPTIONAL "vegetation_zones" — mass vegetation planted BY THE ENGINE,

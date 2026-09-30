@@ -59,6 +59,13 @@ async def lifespan(app: FastAPI):
         f"({deps.asset_manifest.total_count()} entries)"
     )
 
+    # Packs de estilo: /develop_world los LISTA para el motor narrativo
+    # (narrative.py) y el cliente LLM calcula con ellos el estilo de la
+    # librería que ve el motor (`surface_style_key`). Lector FS sin claves —
+    # coexiste con la instancia de remote-gen sin conflicto (cache por mtime).
+    # Va ANTES del cliente LLM, que lo recibe inyectado.
+    deps.style_packs = StylePackResolver()
+
     # El backend se ELIGE, no se descubre (#235): `NEFAN_LLM_MCP_URL=off` deja
     # solo la API directa (con `ANTHROPIC_BASE_URL` apuntando al stub del banco,
     # eso es el ai_server real sin un céntimo). Sin la variable, el canal MCP de
@@ -68,16 +75,12 @@ async def lifespan(app: FastAPI):
         mcp_ws_url=mcp_ws_url_desde_entorno(),
         timeout=float(deps.config["llm_timeout_s"]),
         asset_manifest=deps.asset_manifest,
+        style_packs=deps.style_packs,
     )
 
     # F4: los pipelines de APIs de pago viven en remote-gen (:8768). Este
     # proceso solo conserva lo narrativo — la generación local
     # con GPU se retiró entera con el gpu-worker (#199).
-    #
-    # Packs de estilo por juego: /develop_world los LISTA para el motor
-    # narrativo (narrative.py). Lector FS sin claves — coexiste con la
-    # instancia de remote-gen sin conflicto (cache por mtime).
-    deps.style_packs = StylePackResolver()
 
     # Techo de tamaño del cache: el prune corre en el asset-store (LRU con
     # keep-list de world-state). Best-effort aquí — el arranque de ai_server

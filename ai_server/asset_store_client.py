@@ -11,7 +11,7 @@ AssetManifest (duck typing: AssetCache.put() y llm_client no se tocan):
 - register_character() → POST /assets/character  (el arte de UN personaje,
                     hero y sheets en una transacción; el ref de pin lo deriva
                     el store de `hero_key`)
-- list_assets()   → GET /assets        (available_assets del LLM)
+- list_assets()   → GET /assets        (available_assets del LLM, filtrado por estilo)
 - total_count()   → GET /health        (log de arranque)
 - total_bytes()   → GET /health        (health de ai_server; best-effort → 0)
 - prune()         → POST /cache/prune  (arranque; best-effort)
@@ -114,10 +114,24 @@ class AssetStoreClient:
 
     # ── Lectura ──
 
-    def list_assets(self, asset_type: str | None = None, limit: int = 50) -> list[dict]:
+    def list_assets(
+        self,
+        asset_type: str | None = None,
+        limit: int = 50,
+        style: str | None = None,
+        surface_kind: str | None = None,
+    ) -> list[dict]:
+        """`style` casa EXACTO con `extra.style` de la fila (el estilo de la
+        clave de caché, `surface_style_key`), no con el `style_id`;
+        `surface_kind` con `extra.kind` (tile | unique). El store filtra antes
+        de aplicar `limit`."""
         params: dict = {"limit": limit}
         if asset_type:
             params["asset_type"] = asset_type
+        if style:
+            params["style"] = style
+        if surface_kind:
+            params["surface_kind"] = surface_kind
         res = self._client.get("/assets", params=params)
         res.raise_for_status()
         return res.json().get("assets", [])

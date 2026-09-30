@@ -57,8 +57,9 @@ fix, so match the type rather than guessing field names.
 
 Semantic notes the type cannot express:
 - Max 4 consequences. available_assets is a growing library of painted
-  surfaces with short descriptions: reusing one is a matter of describing the
-  same thing the same way (a verbatim description is a cache hit), never a
+  surfaces with short descriptions, all painted in this game's style: reusing
+  one is a matter of describing the same thing the same way (a verbatim
+  description usually loads the painted surface — not guaranteed), never a
   hash you copy. If nothing fits, describe freely — anything new gets
   generated once and joins the library. Never force a reuse that doesn't fit
   the fiction.

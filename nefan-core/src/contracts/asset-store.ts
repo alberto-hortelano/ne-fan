@@ -6,7 +6,9 @@
  * `POST /assets`. Clave: sha256(prompt normalizado + context ordenado)[:16];
  * los contexts llevan versiones de pipeline que invalidan a propósito
  * (pipeline=, schema=, algo=, model=, devcache=). El REUSO que ve el motor
- * narrativo (`available_assets`) es por DESCRIPCIÓN verbatim, no por hash.
+ * narrativo (`available_assets`) es por DESCRIPCIÓN verbatim, no por hash, y
+ * solo dentro del estilo de la partida (`GET /assets?style=`): el estilo va en
+ * la clave, así que la misma descripción en otro estilo es otro asset.
  *
  * También sirve los style packs binarios (movidos desde world-state :9878 en
  * F2). El prune es LRU con techo cache_max_bytes; los saves referencian
@@ -114,8 +116,7 @@ export function refDeArteDePersonaje(heroKey: string): string {
   return `character:${heroKey}`;
 }
 
-/** Entrada del manifest — mismo shape que AssetEntry (la librería del motor,
- *  `available_assets`) más el touch LRU. */
+/** Entrada del manifest — mismo shape que AssetEntry más el touch LRU. */
 export interface ManifestEntry extends AssetEntry {
   /** ISO-8601; lo estampa el touch de los GET (debounce 60 s). */
   last_used?: string;
@@ -131,11 +132,24 @@ export interface CachePruneResponse {
 export interface AssetSummary {
   hash: string;
   type: string;
-  /** Subtipo de la fila ganadora del collapse por (hash,type); viaja al motor
-   *  narrativo en available_assets. */
+  /** Subtipo de la fila ganadora del collapse por (hash,type). */
   subtype: string;
   prompt: string;
   created_at: string;
+}
+
+/** Tipos de celda de superficie (`extra.kind` de su fila): `tile` es la
+ *  librería por defecto del engine, `unique` la que crea un `surface_desc` del
+ *  motor — la única que el motor puede reusar por descripción. */
+export const SURFACE_KINDS = ["tile", "unique"] as const;
+export type SurfaceKind = (typeof SURFACE_KINDS)[number];
+
+/** Query de `GET /assets`. */
+export interface ConsultaDeListado {
+  asset_type?: string;
+  limit?: number;
+  style?: string;
+  surface_kind?: SurfaceKind;
 }
 
 export interface AssetListResponse {
@@ -292,7 +306,13 @@ export const AssetStoreApi = {
    *  fila del índice y el `character_ref` con el que se pina. */
   getSpriteHero: endpoint<void, BinaryResponse, "key">("GET", "/cache/sprite_hero/{key}"),
   prune: endpoint<void, CachePruneResponse>("POST", "/cache/prune"),
-  listAssets: endpoint<void, AssetListResponse, never, { asset_type?: string; limit?: number }>(
+  /** `style` casa EXACTO con `extra.style` de la fila —el estilo que entra en
+   *  la clave de caché de la celda (`"{style_id}:{style_token}"`, ver
+   *  `surface_style_key` en ai_server)—, NO con el `style_id` a secas: una
+   *  descripción pintada con otro token ya no es un acierto. `surface_kind`
+   *  casa con `extra.kind`. Los dos filtran ANTES de `limit`, así que las
+   *  filas recientes de otro estilo no expulsan a las del pedido. */
+  listAssets: endpoint<void, AssetListResponse, never, ConsultaDeListado>(
     "GET",
     "/assets",
   ),

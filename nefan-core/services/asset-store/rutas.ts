@@ -35,6 +35,7 @@ import type {
 } from "../../src/contracts/asset-store.js";
 import {
   AssetStoreApi,
+  SURFACE_KINDS,
   esKindDePersonaje,
   KIND_BLOB_PLANO,
   refDeArteDePersonaje,
@@ -45,7 +46,7 @@ import {
   AssetRegisterRequestSchema,
 } from "../../src/contracts/request-schemas.js";
 import { formatZodError } from "../../src/contract/model-io/validate.js";
-import type { ManifestDb, RegistroDeAsset } from "./manifest-db.js";
+import type { FiltroDeListado, ManifestDb, RegistroDeAsset } from "./manifest-db.js";
 import { readBlob, readSpriteHero, readSpriteSheetFrame, readStyleFile } from "./blob-store.js";
 import { ficheroDeEstilo, type WireBlob } from "./http-wire.js";
 import { fetchKeepList, prune } from "./prune.js";
@@ -84,6 +85,34 @@ export type AssetRouteHandler = (
   opts: AssetStoreServerOptions,
   req: AssetRouteRequest,
 ) => AssetRouteResult | Promise<AssetRouteResult>;
+
+/** La query de `GET /assets` ya leída, o por qué es un 400. Función pura y
+ *  fuera del handler para que el parseo tenga test propio. Un filtro presente
+ *  pero vacío es un error, no «sin filtro»: `?style=` sin valor devolvería la
+ *  librería de TODOS los estilos, que es justo lo que el filtro impide. */
+export type ConsultaLeida =
+  | { ok: true; assetType: string | undefined; limit: number; filtro: FiltroDeListado }
+  | { ok: false; error: string };
+
+export function leerConsultaDeListado(query: URLSearchParams): ConsultaLeida {
+  const rawLimit = query.get("limit");
+  const limit = rawLimit === null ? 50 : Number(rawLimit);
+  if (!Number.isFinite(limit) || limit < 0) return { ok: false, error: `invalid limit "${rawLimit}"` };
+  const filtro: FiltroDeListado = {};
+  const style = query.get("style");
+  if (style !== null) {
+    if (style.trim() === "") return { ok: false, error: "invalid style \"\": omit it or give the cache-key style" };
+    filtro.style = style;
+  }
+  const kind = query.get("surface_kind");
+  if (kind !== null) {
+    if (!(SURFACE_KINDS as readonly string[]).includes(kind)) {
+      return { ok: false, error: `invalid surface_kind "${kind}" (expected ${SURFACE_KINDS.join(" | ")})` };
+    }
+    filtro.surfaceKind = kind;
+  }
+  return { ok: true, assetType: query.get("asset_type") ?? undefined, limit, filtro };
+}
 
 const json = (status: number, body: unknown): AssetRouteResult => ({ kind: "json", status, body });
 const blob = (b: WireBlob): AssetRouteResult => ({ kind: "blob", blob: b });
@@ -139,14 +168,13 @@ export const RUTAS: Record<AssetStoreRouteKey, AssetRouteHandler> = {
   },
 
   listAssets: ({ db }, { query }) => {
-    const assetType = query.get("asset_type") ?? undefined;
-    const rawLimit = query.get("limit");
-    const limit = rawLimit === null ? 50 : Number(rawLimit);
-    if (!Number.isFinite(limit) || limit < 0) {
-      return json(400, { ok: false, error: `invalid limit "${rawLimit}"` } satisfies ErrorResponse);
+    const consulta = leerConsultaDeListado(query);
+    if (!consulta.ok) {
+      return json(400, { ok: false, error: consulta.error } satisfies ErrorResponse);
     }
+    const { assetType, limit, filtro } = consulta;
     return json(200, {
-      assets: db.listAssets(assetType, limit),
+      assets: db.listAssets(assetType, limit, filtro),
       total: db.totalCount(),
     } satisfies AssetListResponse);
   },

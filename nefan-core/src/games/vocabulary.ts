@@ -6,7 +6,7 @@
  *  DESCRIPCIÓN (+estilo) — celdas hero del atlas de superficies, skins de
  *  personaje. Si el mundo fija sus fachadas/props/arquetipos canónicos una
  *  vez, cada tile que los reutilice verbatim es un cache-hit en vez de una
- *  imagen nueva. El reuso es OPCIONAL para el motor (mismo contrato que
+ *  imagen nueva — una vez pintados en ESE estilo: otro estilo es otra clave. El reuso es OPCIONAL para el motor (mismo contrato que
  *  available_assets), nunca forzado.
  *
  *  Vive en `data/games/{id}/world/vocabulary.json`, hermano de los snapshots

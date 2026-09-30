@@ -136,12 +136,13 @@ GLYPH RULES
 - Single printable ASCII char.
 - Glyphs CAN repeat across entities (all trees can be "T") — ids disambiguate.
 
-ASSET REUSE — available_assets is a GROWING LIBRARY of already-painted
-surfaces, each with a short description. Reuse is OPTIONAL, never forced,
-and it works by DESCRIPTION, not by hash:
+ASSET REUSE — available_assets lists descriptions of surfaces already
+painted in THIS game's art style (surfaces painted in other styles are not
+listed: reusing their text would paint a new image). Reuse is OPTIONAL,
+never forced, and it works by DESCRIPTION, not by hash:
 - If an entry matches a face you're describing, reuse its description
-  VERBATIM in that volume's surface_desc — an identical description is a
-  cache hit and the engine loads the painted surface for free.
+  VERBATIM in that volume's surface_desc — the engine usually loads the
+  painted surface instead of painting a new one (likely, not guaranteed).
 - If nothing fits, just describe what you want: it gets painted once and
   JOINS the library for future scenes. Never bend your scene to fit an
   existing asset.
@@ -187,8 +188,9 @@ map_* tools for everything map-related — do not invent a different map
 representation in the scene JSON.
 
 Two world_state fields carry the world's canonical VOCABULARY (reusable
-descriptions; styled image assets are cached by description+style, so a
-verbatim reuse is a cache hit instead of a new image):
+descriptions; styled image assets are cached by description AND style, so
+a verbatim reuse is a cache hit only once it has been painted in this
+game's style):
 - generate_world_vocabulary: true  → game-genesis request. The
   vocabulary_set tool is honored on this turn: you may declare the world's
   canonical surface/facade/prop descriptions and character archetypes (see

@@ -1,0 +1,28 @@
+{
+  "_comment": "Techo en BYTES (UTF-8) del texto COMPLETO que devuelve la tool `narrative_listen` de narrative-mcp, por kind. Lo mide `test/el-texto-de-listen-tiene-techo.test.ts` sobre el texto que compone `narrative-mcp/texto-de-listen.ts` (el mismo que usa server.ts), con los .md reales del contrato y una petición construida por el camino del bridge desde un save real de alta_fantasia (test/fixtures/listen/state.json) más lo que añade ai_server (30 descripciones en available_assets, la ventana llena, y session). Nace en la tanda BZ: un playtest vio ~65 KB por petición y dos veces el resultado pasó del tope de la tool MCP. Cada techo es lo MEDIDO el día que se escribió, sin margen: crecer exige subirlo aquí con el motivo, para que la petición no engorde a ciegas.",
+  "tope_mcp": {
+    "motivo": "El tope de la tool MCP que hizo al motor leer desde fichero no está medido en esta casa: Claude Code lo expresa en tokens y aquí se mide en bytes, y la relación bytes→tokens de este texto no se ha medido. Por eso los techos NO se derivan de él: son la medida de hoy y sirven de trinquete. Medir el tope (y decidir si las instrucciones fijas viajan una vez por sesión) es backlog de la tanda BZ."
+  },
+  "por_kind": {
+    "scene_bootstrap": {
+      "techo_bytes": 62035,
+      "medido_el": "2026-09-30",
+      "motivo": "La PRIMERA petición de cada partida: `start_session` alta_fantasia/acuarela_luminosa por el borde WS con los datos reales de data/games y data/styles, capturada cuando el bootstrap del tile (0,0) llama al motor. Es la más pesada de todas porque lleva el `world_document` entero (world.md de alta_fantasia, 13.296 B en disco) y `bootstrap_world_map`; con la ventana llena de descripciones (30). QA de BZ la midió en vivo en 60.481 B con 25 descripciones, por encima del techo de `scene`: el candado no la cubría (I1). Un world.md más largo en otro juego la sube; aquí mide el de alta_fantasia."
+    },
+    "scene": {
+      "techo_bytes": 57951,
+      "medido_el": "2026-09-30",
+      "motivo": "Petición de tile (1,0) junto a los dos tiles del save. Medido tras la tanda BZ (57.992 B; −41 al quitar del prompt «on the same kind of face», QA de BZ M2): 16.672 B de JSON compacto (4.209 de ellos las 30 descripciones) + 41.314 B de instrucciones fijas (tile_instructions 23.878 + scene_instructions 12.589 + world_rules 4.847), el 71 %. Antes de BZ la misma petición medía 66.741 B: la indentación del JSON y los campos hash/type/subtype/created_at de cada asset, que el motor no leía. Las instrucciones NO se recortaron en BZ (decisión del coordinador: son la calidad del motor)."
+    },
+    "narrative_event": {
+      "techo_bytes": 31238,
+      "medido_el": "2026-09-30",
+      "motivo": "Una respuesta de diálogo con el mismo save (serializeForLlm + available_assets + session) más narrative_event.md y world_rules.md. Medido tras la tanda BZ (JSON compacto)."
+    },
+    "player_death": {
+      "techo_bytes": 26972,
+      "medido_el": "2026-09-30",
+      "motivo": "La petición del despertar (contexto del bridge con `muerte`) con el mismo save, más player_death.md y world_rules.md. Medido tras la tanda BZ (JSON compacto)."
+    }
+  }
+}
