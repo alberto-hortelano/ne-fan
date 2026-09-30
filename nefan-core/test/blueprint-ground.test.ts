@@ -145,8 +145,7 @@ describe("groundCollisionGrid", () => {
 
 
 describe("presupuesto de primitivas de suelo (#264)", () => {
-  const opciones = { toXZ: (x: number, z: number): [number, number] => [x, z], scale: 1,
-    layers: { area: 0, path: 0, water: 0, deck: 0 }, layerT: 0.01 };
+  const opciones = { layers: { area: 0, path: 0, water: 0, deck: 0 }, layerT: 0.01 };
   const camino = (i: number, n = 16) => ({ id: `c_${i}`, kind: "path", points: Array.from({ length: n }, (_, j) => [j, i]) });
 
   it("acepta el límite exacto y rechaza una prim más por ambas puertas del contrato", () => {
@@ -176,6 +175,13 @@ describe("presupuesto de primitivas de suelo (#264)", () => {
     assert.equal(groundPrimCount(g), 10);
     assert.equal(groundPrimCount(g), groundFeaturePrims(g, opciones).length);
     assert.equal(groundPrimCount([]), 0);
+  });
+
+  it("un rasgo plano sin forma, colado sin pasar por el zod, lanza en vez de desaparecer", () => {
+    // El zod exige una de rect|polygon|ellipse; construido a mano, no hay zod
+    // que lo pare, y antes el builder lo borraba en silencio (`return []`).
+    const sinForma = [{ id: "charca", kind: "water" }] as unknown as GroundFeature[];
+    assert.throws(() => groundFeaturePrims(sinForma, opciones), /charca.*sin rect, polygon ni ellipse/);
   });
 
   it("las escenas reales medidas caben sin recortar y el contador casa con sus mallas", () => {

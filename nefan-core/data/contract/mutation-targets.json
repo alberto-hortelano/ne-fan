@@ -317,6 +317,7 @@
         "test/fps-atlas-golden.test.ts",
         "test/fps-detail.test.ts",
         "test/fps-riqueza.test.ts",
+        "test/lo-que-se-pinta-es-por-donde-se-pasa.test.ts",
         "test/plan-collision.test.ts",
         "test/prism-volume.test.ts",
         "test/scatter.test.ts",
@@ -340,6 +341,7 @@
         "test/blueprint-collision.test.ts",
         "test/custom-volume.test.ts",
         "test/fps-ambience.test.ts",
+        "test/lo-que-se-pinta-es-por-donde-se-pasa.test.ts",
         "test/prism-volume.test.ts",
         "test/vegetation-density.test.ts",
         "test/volume-metrics.test.ts"
@@ -392,6 +394,7 @@
         "src/scene/blueprint/scatter.ts"
       ],
       "tests": [
+        "test/lo-que-se-pinta-es-por-donde-se-pasa.test.ts",
         "test/scatter.test.ts"
       ],
       "break": 43,
@@ -470,6 +473,7 @@
         "test/custom-volume.test.ts",
         "test/fps-detail.test.ts",
         "test/ground-overlay.test.ts",
+        "test/lo-que-se-pinta-es-por-donde-se-pasa.test.ts",
         "test/prism-volume.test.ts",
         "test/tile-greybox.test.ts"
       ],

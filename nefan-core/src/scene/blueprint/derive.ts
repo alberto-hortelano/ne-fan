@@ -107,7 +107,7 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): D
   const out: Volume[] = [];
   const representedBy: Record<string, string> = {};
   const blockers: Blocker[] = declared.map((v) => {
-    const [u0, v0, u1, v1] = volumeFootprint(v).cells;
+    const [u0, v0, u1, v1] = volumeFootprint(v);
     return { id: v.id, rect: [u0, v0, u1 - u0, v1 - v0] as [number, number, number, number] };
   });
 

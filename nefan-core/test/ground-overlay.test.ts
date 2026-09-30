@@ -169,8 +169,6 @@ describe("techo del suelo y cota de los calcos", () => {
     assert.ok(g.ok, `la pasarela es legal: ${g.ok ? "" : g.error}`);
     const yAlta = GROUND_STACK_TOP_CELLS + 0.5;
     const prims = groundFeaturePrims(g.features, {
-      toXZ: (u, v) => [u, v],
-      scale: 1,
       layers: { ...GROUND_LAYERS_CELLS, deck: yAlta },
       layerT: GROUND_LAYER_T_CELLS,
     });

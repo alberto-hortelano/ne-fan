@@ -458,7 +458,7 @@ export function buildScatterExclusions(
   opts?: { areas?: boolean },
 ): (x: number, z: number) => boolean {
   const rects = volumes.map((v) => {
-    const [x0, z0, x1, z1] = volumeFootprint(v).cells;
+    const [x0, z0, x1, z1] = volumeFootprint(v);
     return [x0 - 0.5, z0 - 0.5, x1 + 0.5, z1 + 0.5] as [number, number, number, number];
   });
   // `hill` es relieve, no ocupación: el scatter puede poblar una loma y el

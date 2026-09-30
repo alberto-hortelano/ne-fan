@@ -406,7 +406,7 @@ function propPrims(v: PropVolume): GreyboxPrimitive[] {
     const color = v.color ?? PALETTE.woodTop;
     // Con `angle` (solo rect): geometría con las dimensiones REALES del
     // rect + rotY, centrada en el AABB rotado (volumeFootprint).
-    const fp: [number, number, number, number] = volumeFootprint(v).cells;
+    const fp: [number, number, number, number] = volumeFootprint(v);
     const cx = (fp[0] + fp[2]) / 2;
     const cz = (fp[1] + fp[3]) / 2;
     const w = v.rect && v.angle ? v.rect[2] : fp[2] - fp[0];

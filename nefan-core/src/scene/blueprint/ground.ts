@@ -179,6 +179,7 @@ export type GroundArea = z.infer<typeof GroundAreaSchema>;
 export type GroundWater = z.infer<typeof GroundWaterSchema>;
 export type GroundDeck = z.infer<typeof GroundDeckSchema>;
 export type GroundHill = z.infer<typeof GroundHillSchema>;
+export type GroundMaterial = z.infer<typeof GroundMaterialSchema>;
 
 export type ParseGroundResult =
   | { ok: true; features: GroundFeature[] }
