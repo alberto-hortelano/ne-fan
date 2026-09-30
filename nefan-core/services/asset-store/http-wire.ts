@@ -64,16 +64,28 @@ export function rutaDePartes(parts: string[]): string {
  *  interior se colapsa en las rutas con parámetros —que leían segmentos— y NO
  *  en las literales —que comparaban el path entero—. `POST /cache//prune` es
  *  404, `/cache//surface/x` es el blob. Unificarlo es una decisión de wire, no
- *  de este refactor. */
+ *  de este refactor.
+ *
+ *  Por eso una URL con `//` interior se casa SOLO contra las plantillas con
+ *  `{param}`: las literales se retiran de la tabla ANTES de elegir, no se
+ *  descartan después. Descartar después perdería la siguiente candidata —si
+ *  una literal y una con parámetros casaran la misma URL colapsada, ganaría la
+ *  literal por especificidad, se tiraría, y la URL daría 404 en vez de ir a la
+ *  otra—. Con `AssetStoreApi` de hoy no hay ese par; el test sintético de
+ *  test/asset-store.test.ts lo fija para cuando lo haya. */
 export function casarRuta<T extends EndpointTable>(
   table: T,
   method: string,
   pedido: RequestPath,
 ): RouteMatch<Extract<keyof T, string>> | null {
-  const match = matchRoute(table, method, rutaDePartes(pedido.parts));
-  const literal = match !== null && Object.keys(match.params).length === 0;
-  if (literal && pedido.path !== table[match.key].path) return null;
-  return match;
+  const colapsada = rutaDePartes(pedido.parts);
+  const candidatas = colapsada === pedido.path ? table : soloConParametros(table);
+  return matchRoute(candidatas, method, colapsada) as RouteMatch<Extract<keyof T, string>> | null;
+}
+
+/** Las entradas de la tabla con algún `{param}` en su plantilla. */
+function soloConParametros(table: EndpointTable): EndpointTable {
+  return Object.fromEntries(Object.entries(table).filter(([, ep]) => ep.path.includes("{")));
 }
 
 /** Las dos rutas de estilos del contrato, y solo esas: es la tabla con la que

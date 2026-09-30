@@ -177,6 +177,26 @@ describe("cable exacto de blobs (cache_assets.py)", () => {
     assert.equal(miss.body.toString(), "Not found");
   });
 
+  it("servir un blob de superficie refresca su last_used: es lo que lo aleja del LRU del prune", async () => {
+    // El prune evicta por `max(last_used, created_at)` más antiguo: un blob
+    // que se sirve sin `touch` envejece como si nadie lo usara, y el arte
+    // pagado que está en pantalla sería el primero en caer. Hash propio: el
+    // `touch` tiene debounce por hash en memoria.
+    const hash = "70c70c70c70c70c7";
+    writeSurface(root, hash);
+    db.importEntry({
+      hash, type: "surface", subtype: "surface", prompt: "losas",
+      created_at: "2026-01-01T00:00:00.000Z", size_bytes: 4, extra: {},
+    });
+    assert.equal(db.findByHash(hash)[0].last_used, undefined, "recién plantado, sin uso");
+    const antes = new Date().toISOString();
+    assert.equal((await getRaw(`/cache/surface/${hash}`)).status, 200);
+    const usado = db.findByHash(hash)[0].last_used;
+    assert.ok(usado !== undefined && usado >= antes, `last_used = ${usado}`);
+    // Un miss no toca nada: no hay fila que refrescar ni blob que servir.
+    assert.equal((await getRaw("/cache/surface/70c70c70c70c70c8")).status, 404);
+  });
+
   it("sprite_sheet: regex del filename → 400 'Invalid filename'; frame válido se sirve", async () => {
     const bad = await getRaw("/cache/sprite_sheet/h1/evil.png");
     assert.equal(bad.status, 400);
@@ -407,6 +427,21 @@ describe("el router del store es AssetStoreApi", () => {
       params: { kind: "surface", hash: "h" },
     });
     assert.equal(casarRuta(AssetStoreApi, "GET", parseRequestPath("/")), null);
+  });
+
+  it("con `//` interior las literales no compiten: si otra con {param} casa, contesta ésa", () => {
+    // `AssetStoreApi` no tiene hoy una literal y una con parámetros que casen
+    // la misma URL; esta tabla sintética sí. Con `/a/b` limpia gana la
+    // literal (especificidad); con `/a//b` la literal no puede ser (compara el
+    // path entero), y la URL va a la siguiente candidata, no a un 404.
+    const tabla = {
+      literal: { method: "GET", path: "/a/b" },
+      conParam: { method: "GET", path: "/a/{x}" },
+    } as const;
+    assert.deepEqual(casarRuta(tabla, "GET", parseRequestPath("/a/b")), { key: "literal", params: {} });
+    assert.deepEqual(casarRuta(tabla, "GET", parseRequestPath("/a//b")), { key: "conParam", params: { x: "b" } });
+    // Y sin candidata con parámetros, el 404 de siempre.
+    assert.equal(casarRuta({ literal: tabla.literal }, "GET", parseRequestPath("/a//b")), null);
   });
 
   it("matchStylesRoute (el que usa el motor falso) sale de la misma tabla: 3 o 4 segmentos", () => {

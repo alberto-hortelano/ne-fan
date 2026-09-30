@@ -119,9 +119,13 @@ export interface RouteMatch<K extends string> {
  *  - Las barras FINALES se recortan (`/health/` ≡ `/health`), que es lo que
  *    hacía el router y lo que emiten los clientes despistados.
  *  - Precedencia por ESPECIFICIDAD, no por orden: si una URL casa con varias
- *    plantillas, gana la de más segmentos literales (`/npcs/in_transit` antes
- *    que `/npcs/{id}`; `/cache/sprite_hero/{key}` antes que
- *    `/cache/{kind}/{hash}`). Solo un empate lo decide el orden de la tabla:
+ *    plantillas, gana la de más segmentos literales: en `AssetStoreApi`,
+ *    `GET /cache/sprite_hero/k` casa `/cache/sprite_hero/{key}` (dos
+ *    literales) y `/cache/{kind}/{hash}` (uno), y gana la primera. Una
+ *    plantilla toda literal gana, por tanto, a cualquiera con `{param}` de su
+ *    misma longitud (`WorldStateApi` no tiene hoy ningún par así: la regla la
+ *    fija una tabla sintética en test/state-http-dispatch.test.ts). Solo un
+ *    empate lo decide el orden de la tabla:
  *    la primera. Hasta la tanda BR la regla era «la literal entera gana; si
  *    no, la PRIMERA con parámetros», y el asset-store —que sí tiene dos
  *    plantillas con parámetros que casan la misma URL— dependía de que nadie
