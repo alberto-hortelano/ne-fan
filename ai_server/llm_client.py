@@ -333,10 +333,17 @@ class LLMClient:
                         style=style_key,
                         surface_kind=self.REUSABLE_SURFACE_KIND,
                     )
+                except httpx.HTTPStatusError as e:
+                    # Un 4xx es NUESTRO: la consulta no casa con el contrato de
+                    # GET /assets (filtro vacío, kind fuera del enum…). Eso no es
+                    # un store caído y no se degrada: se lanza.
+                    if e.response.status_code < 500:
+                        raise
+                    print(f"LLM WARNING: asset-store falló sirviendo la librería del motor: {e}")
                 except httpx.HTTPError as e:
-                    # Degradar SIN librería es legítimo (el motor describe libre y
-                    # se pinta); lo que no se traga es un bug de código, que por
-                    # eso no se captura aquí.
+                    # Store caído o inalcanzable: degradar SIN librería es
+                    # legítimo (el motor describe libre y se pinta), con aviso.
+                    # Un bug de código no se captura aquí.
                     print(f"LLM WARNING: asset-store no respondió la librería del motor: {e}")
                 else:
                     reusable = _descripciones_reusables(assets, limit)

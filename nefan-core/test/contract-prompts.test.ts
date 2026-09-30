@@ -427,6 +427,10 @@ describe("lo que el prompt le dice al motor del reuso y de la visión (tanda BZ)
       assert.doesNotMatch(txt, /\(a verbatim description is a cache hit\)/, `${f} vende el reuso como acierto seguro`);
       assert.match(txt, /this game's (art )?style/i, `${f} no dice que la librería es del estilo de la partida`);
       assert.match(txt, /not guaranteed/i, `${f} no avisa de que el reuso no está garantizado`);
+      // La lista son descripciones sueltas, sin tipo de cara: pedir que el
+      // reuso sea «on the same kind of face» es una condición que el motor no
+      // puede comprobar (QA de BZ, M2).
+      assert.doesNotMatch(txt, /same kind of face/i, `${f} pide comprobar un tipo de cara que el motor no recibe`);
     }
   });
 

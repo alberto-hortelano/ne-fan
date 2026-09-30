@@ -73,6 +73,13 @@ class ManifestCaido:
         raise self.exc
 
 
+def respuesta_http(status):
+    req = httpx.Request("GET", "http://store/assets")
+    return httpx.HTTPStatusError(
+        f"HTTP {status}", request=req, response=httpx.Response(status, request=req)
+    )
+
+
 def asset(hash_, prompt, style=ACUARELA, kind="unique", type_="surface"):
     return {
         "hash": hash_,
@@ -188,6 +195,21 @@ class TestAvailableAssets(unittest.TestCase):
         """El store caído (httpx.HTTPError) deja la petición sin librería y
         con aviso: el motor describe libre."""
         client = make_client(ManifestCaido(httpx.ConnectError("sin store")))
+        payload = client._inject_available_assets(peticion())
+        self.assertNotIn("available_assets", payload)
+
+    def test_un_4xx_del_store_es_un_bug_nuestro_y_se_lanza(self):
+        """Un 400 dice que la consulta no casa con el contrato de GET /assets:
+        es un bug de este lado, no un store caído, y no se degrada en silencio
+        a «sin librería» (QA de BZ, M3)."""
+        for status in (400, 404, 422):
+            with self.subTest(status=status):
+                client = make_client(ManifestCaido(respuesta_http(status)))
+                with self.assertRaises(httpx.HTTPStatusError):
+                    client._inject_available_assets(peticion())
+
+    def test_un_5xx_del_store_degrada_sin_libreria(self):
+        client = make_client(ManifestCaido(respuesta_http(503)))
         payload = client._inject_available_assets(peticion())
         self.assertNotIn("available_assets", payload)
 

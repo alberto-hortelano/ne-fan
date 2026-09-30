@@ -141,9 +141,8 @@ painted in THIS game's art style (surfaces painted in other styles are not
 listed: reusing their text would paint a new image). Reuse is OPTIONAL,
 never forced, and it works by DESCRIPTION, not by hash:
 - If an entry matches a face you're describing, reuse its description
-  VERBATIM in that volume's surface_desc, on the same kind of face it
-  describes — the engine usually loads the painted surface instead of
-  painting a new one (likely, not guaranteed).
+  VERBATIM in that volume's surface_desc — the engine usually loads the
+  painted surface instead of painting a new one (likely, not guaranteed).
 - If nothing fits, just describe what you want: it gets painted once and
   JOINS the library for future scenes. Never bend your scene to fit an
   existing asset.
