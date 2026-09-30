@@ -8,6 +8,7 @@ import {
   parseGround,
   parseVolumes,
   planCollisionGrid,
+  planCollisionGridDeLoBajo,
   planCollisionGridEnElAire,
   unionCollisionGrids,
 } from "../src/scene/blueprint/index.js";
@@ -221,6 +222,18 @@ describe("planCollisionGridEnElAire", () => {
     const jambas = planCollisionGrid(undefined, volumesOf([{ id: "puerta", label: "portón", type: "gate", at: [60, 60], orient: "x" }]), rect);
     assert.deepEqual(g.aire?.grid, jambas?.grid);
     assert.ok(solidCount(g.pie) > solidCount(g.aire));
+  });
+});
+
+describe("planCollisionGridDeLoBajo", () => {
+  const rect = tileWorldRect(0, 0);
+  it("es exactamente lo saltable: la valla sí; el muro, lo alto y el agua no", () => {
+    const valla = { id: "v", label: "cerca", type: "wall", points: [[20, 60], [100, 60]], h: 2 };
+    const vols = volumesOf([valla, { id: "m", label: "muro", type: "wall", points: [[20, 90], [100, 90]] }]);
+    const bajo = planCollisionGridDeLoBajo(vols, rect);
+    assert.deepEqual(bajo?.grid, planCollisionGrid(undefined, volumesOf([valla]), rect)?.grid);
+    assert.equal(planCollisionGridDeLoBajo(volumesOf([{ id: "m", label: "muro", type: "wall", points: [[20, 90], [100, 90]] }]), rect), null);
+    assert.equal(planCollisionGridDeLoBajo(undefined, rect), null);
   });
 });
 

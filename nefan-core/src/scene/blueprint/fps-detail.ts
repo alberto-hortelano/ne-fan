@@ -23,7 +23,12 @@ import { seededRng, uniform, type SeededRng } from "../../rng.js";
 import { darken, roofColors } from "./palette.js";
 import type { Volume } from "./volumes.js";
 import type { SurfacePrim } from "../greybox/surfaces.js";
-import { gateAlturaCeldas } from "../greybox/volume-prims.js";
+import {
+  gateAlturaCeldas,
+  ROCA_ACHATADO,
+  ROCA_HUNDIDO,
+  ROCA_RADIO_PRINCIPAL,
+} from "../greybox/volume-prims.js";
 import { esSaltable } from "./volume-metrics.js";
 
 /** Especies que se quedan con la copa cónica clásica. */
@@ -142,18 +147,23 @@ function rockSpheres(p: SurfacePrim, ctx: Ctx): SurfacePrim[] {
   const out: SurfacePrim[] = [];
   for (let i = 0; i < n; i++) {
     const main = i === 0;
-    const r = (main ? uniform(rng, 1.2, 1.5) : uniform(rng, 0.6, 1.0)) * s;
+    // La principal tiene alto FIJO (`rocaAlturaCeldas`: de él sale si la roca
+    // se salta); las secundarias sortean, y su cima —como mucho
+    // 1,0·s·(2·0,7 − 0,35) = 1,05·s— queda bajo la de la principal (1,215·s).
+    const r = (main ? ROCA_RADIO_PRINCIPAL : uniform(rng, 0.6, 1.0)) * s;
     const a = uniform(rng, 0, Math.PI * 2);
     const off = main ? 0 : uniform(rng, 0.7, 1.2) * s;
+    const hundido = main ? ROCA_HUNDIDO : uniform(rng, 0.35, 0.55);
+    const achatado = main ? ROCA_ACHATADO : uniform(rng, 0.5, 0.7);
     out.push(
       sphere(
         r,
         6,
-        [p.pos[0] + Math.cos(a) * off, p.pos[1] - r * uniform(rng, 0.35, 0.55), p.pos[2] + Math.sin(a) * off],
+        [p.pos[0] + Math.cos(a) * off, p.pos[1] - r * hundido, p.pos[2] + Math.sin(a) * off],
         p.color,
         p,
         {
-          scale: [uniform(rng, 1.1, 1.4), uniform(rng, 0.5, 0.7), uniform(rng, 0.85, 1.1)],
+          scale: [uniform(rng, 1.1, 1.4), achatado, uniform(rng, 0.85, 1.1)],
           rotY: uniform(rng, 0, Math.PI * 2),
           mat: "rock_stone",
         },

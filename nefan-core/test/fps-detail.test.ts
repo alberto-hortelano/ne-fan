@@ -192,35 +192,56 @@ describe("lo que se ve saltable es lo que se salta", () => {
     assert.equal(esSaltable(vols([murete])[0]), true);
   });
 
-  /** LA DIVERGENCIA DECLARADA de los demás tipos, MEDIDA. `volumeHeightM` es
-   *  una aproximación de lo que pinta el greybox, y aquí se fija cuánto se
-   *  equivoca donde el salto lo nota. Si alguien la arregla (la altura
-   *  publicada saliendo de las prims), este test se pone rojo y hay que
-   *  borrar la línea de la divergencia que ya no existe. */
-  it("resto de tipos: la divergencia pintado↔publicado es la declarada y ninguna más", () => {
+  it("ROCA: pintado ⇔ publicado (5 semillas) y ≤ 1,2 m ⇔ esSaltable — la que se ve de rodilla se salta (QA H1)", () => {
+    let saltables = 0;
+    let altas = 0;
+    for (const sz of [0.5, 0.8, 1, 1.1, 1.3, 1.5, 1.6, 1.9, 1.98, 2, 2.5, 3]) {
+      const raw = { id: "r", label: "peña", type: "rock", at: [40, 40], s: sz };
+      const v = vols([raw])[0];
+      const pintada = alturaPintada(raw);
+      assert.ok(Math.abs(pintada - volumeHeightM(v, 0.5)) < 1e-9, `s ${sz}: pinta ${pintada} y publica ${volumeHeightM(v, 0.5)}`);
+      assert.equal(esSaltable(v), pintada <= ALTURA_SALTABLE_M + 1e-9, `s ${sz}: pinta ${pintada}`);
+      if (esSaltable(v)) saltables++;
+      else altas++;
+    }
+    assert.ok(saltables >= 5 && altas >= 3, `cubre los dos lados (${saltables}/${altas})`);
+    // El caso del censo: s 1,1–1,6 (publicaban 1,21–1,76 m) se ven de rodilla
+    // y ahora SE SALTAN.
+    for (const sz of [1.1, 1.3, 1.6]) assert.equal(esSaltable(vols([{ id: "r", label: "roca", type: "rock", at: [0, 0], s: sz }])[0]), true);
+  });
+
+  it("PROP: pintado ⇔ publicado, tapa del cilindro incluida, y ≤ 1,2 m ⇔ esSaltable", () => {
+    for (const shape of ["cylinder", "box"]) {
+      for (const h of [1, 2, 2.3, 2.34, 2.35, 2.4, 2.41, 3]) {
+        const raw = { id: "p", label: "barril", type: "prop", shape, at: [40, 40], h };
+        const v = vols([raw])[0];
+        const pintada = alturaPintada(raw, ["a"]);
+        assert.ok(Math.abs(pintada - volumeHeightM(v, 0.5)) < 1e-9, `${shape} h ${h}: pinta ${pintada} y publica ${volumeHeightM(v, 0.5)}`);
+        assert.equal(esSaltable(v), pintada <= ALTURA_SALTABLE_M + 1e-9, `${shape} h ${h}`);
+      }
+    }
+  });
+
+  /** LA DIVERGENCIA DECLARADA de los tipos que quedan, MEDIDA: ninguna en la
+   *  dirección mala (algo que se salte y se vea más alto que 1,2 m, o que se
+   *  vea bajo y no se salte). Si una aparece, este test la dice. */
+  it("resto de tipos: sin divergencia que el salto note", () => {
     const caso = (raw: Record<string, unknown>) => {
       const v = vols([raw])[0];
       return { pintada: alturaPintada(raw), publicada: volumeHeightM(v, 0.5), salta: esSaltable(v) };
     };
-    // ROCA: se pinta a ~0,6·s y se publica a 1,1·s. Una roca de s 1,5 se ve
-    // de rodilla (≈ 0,9 m) y NO se salta. Dirección segura (nunca se salta
-    // algo que se vea alto), pero es una roca que parece saltable y no lo es.
-    const roca = caso({ id: "r", label: "peña", type: "rock", at: [40, 40], s: 1.5 });
-    assert.ok(roca.pintada < ALTURA_SALTABLE_M && !roca.salta, JSON.stringify(roca));
-    assert.ok(roca.pintada < 0.65 * roca.publicada, `la roca pinta ${roca.pintada} de ${roca.publicada}`);
-    // PROP CILINDRO: la tapa sobresale 0,06 celdas (3 cm) sobre `h`. En la
-    // frontera, un barril de 1,23 m pintados se salta. Es el único caso en la
-    // dirección mala, y son tres centímetros.
-    const barril = caso({ id: "b", label: "barril", type: "prop", shape: "cylinder", at: [40, 40], h: 2.4 });
-    assert.ok(barril.salta && Math.abs(barril.pintada - barril.publicada - 0.03) < 1e-9, JSON.stringify(barril));
-    // FUENTE: pinta 1,3 m y publica 1,4: las dos por encima, no se salta y no
-    // se ve saltable. Sin divergencia que el jugador note.
+    // FUENTE: pinta 1,3 m (la columna) y publica 1,4: las dos por encima.
     const fuente = caso({ id: "f", label: "fuente", type: "fountain", at: [40, 40] });
     assert.ok(!fuente.salta && fuente.pintada > ALTURA_SALTABLE_M, JSON.stringify(fuente));
+    // PRISM: pinta exactamente `h`.
+    for (const h of [1, 2.4, 2.41, 4]) {
+      const pr = caso({ id: "q", label: "grada", type: "prism", points: [[30, 30], [40, 30], [40, 36]], h });
+      assert.ok(Math.abs(pr.pintada - pr.publicada) < 1e-9 && pr.salta === pr.pintada <= ALTURA_SALTABLE_M + 1e-9, JSON.stringify(pr));
+    }
     // MATORRAL: pinta ~0,7·s y publica 1,3·s, pero NO bloquea ni a pie
-    // (`volumeCollisionGrid` lo trata como decorado): la divergencia no llega
-    // al salto. Casa, torre, gate y árbol: publicada y pintada muy por encima
-    // de 1,2 m. `custom` no se mide (piezas giradas).
+    // (`volumeCollisionGrid` lo trata como decorado): el salto no lo nota.
+    // Casa, torre, gate y árbol: muy por encima de 1,2 m en los dos. `custom`
+    // no se mide (piezas giradas).
     for (const raw of [
       { id: "c", label: "casa", type: "building", rect: [30, 30, 8, 6] },
       { id: "t", label: "torre", type: "tower", at: [40, 40] },

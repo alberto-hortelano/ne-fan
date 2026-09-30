@@ -295,6 +295,33 @@ function buildingPrims(v: BuildingVolume): GreyboxPrimitive[] {
     return prims;
 }
 
+/** La ROCA que pinta la vista fps (`fps-detail.ts`, `rockSpheres`): su
+ *  esfera PRINCIPAL mide `ROCA_RADIO_PRINCIPAL·s` celdas de radio, achatada a
+ *  `ROCA_ACHATADO` y hundida `ROCA_HUNDIDO` radios en el suelo. Son fijas —la
+ *  variedad va en el ancho, el giro y las secundarias, que no pasan de su
+ *  cima— para que la altura de una roca sea UNA función de `s` y no una
+ *  tirada: de ella sale si se salta (`volumeHeightM` → `esSaltable`, QA de la
+ *  tanda BY, H1: 24 de 32 rocas reales se veían de rodilla y no se saltaban,
+ *  porque la altura publicada era 1,1·s m y la pintada ~0,6·s). */
+export const ROCA_RADIO_PRINCIPAL = 1.35;
+export const ROCA_ACHATADO = 0.65;
+export const ROCA_HUNDIDO = 0.4;
+
+/** Cima PINTADA de una roca, en celdas: la de su esfera principal. */
+export function rocaAlturaCeldas(s: number): number {
+  return ROCA_RADIO_PRINCIPAL * s * (2 * ROCA_ACHATADO - ROCA_HUNDIDO);
+}
+
+/** La tapa del cilindro de un prop, en celdas: se pinta ENCIMA de `h`. */
+export const PROP_TAPA_CELDAS = 0.06;
+
+/** Altura PINTADA de un prop, en celdas: `h` (2 por defecto) y, si es
+ *  cilindro, su tapa. De aquí sale si se salta: un barril de `h` 2,4 medía
+ *  1,23 m pintado y se saltaba por 3 cm (QA de BY). */
+export function propAlturaCeldas(v: PropVolume): number {
+  return (v.h ?? 2) + (v.shape === "cylinder" ? PROP_TAPA_CELDAS : 0);
+}
+
 /** Lo que sube una almena sobre el muro, en celdas: la pieza de `wallPrims`
  *  arranca en `h` y mide esto. */
 export const ALMENA_CELDAS = 1;
@@ -445,7 +472,7 @@ function propPrims(v: PropVolume): GreyboxPrimitive[] {
       v.shape === "cylinder"
         ? [
             { shape: "cylinder", size: [Math.min(w, d) / 2, h], pos: [cx, 0, cz], color, cat: "prop", volId: `vol_${v.id}` },
-            { shape: "cylinder", size: [Math.min(w, d) / 2, 0.06], pos: [cx, h, cz], color: lighten(color, 0.15), cat: "prop", volId: `vol_${v.id}`, noShadow: true },
+            { shape: "cylinder", size: [Math.min(w, d) / 2, PROP_TAPA_CELDAS], pos: [cx, h, cz], color: lighten(color, 0.15), cat: "prop", volId: `vol_${v.id}`, noShadow: true },
           ]
         : [box(w, h, d, cx, 0, cz, color, "prop", { volId: `vol_${v.id}`, rotY: propRotY })];
     return prims;

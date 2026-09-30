@@ -316,6 +316,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
       // escena no cambió).
       svgCollider: null,
       svgColliderAire: null,
+      svgColliderBajo: null,
       svgApplied: false,
     });
     // Mundo 3D: spec fps del tile + layout de superficies (la clave del atlas).
@@ -337,7 +338,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     if (prevEntry?.svgApplied && !sceneChanged) {
       tileStore.setSvgCollider(
         key,
-        { aPie: prevEntry.svgCollider, enElAire: prevEntry.svgColliderAire },
+        { aPie: prevEntry.svgCollider, enElAire: prevEntry.svgColliderAire, bajo: prevEntry.svgColliderBajo },
         "restaurada",
       );
     } else if (planInfo) {

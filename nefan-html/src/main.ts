@@ -592,8 +592,9 @@ function gameLoop(now: number): void {
       delta,
       solido: collidesAt,
     });
-    playerPos.x += dx;
-    playerPos.z += dz;
+    const fuera = collision.salidaDeLoBajo(delta); // aterrizado dentro de lo bajo: resbala fuera (core)
+    playerPos.x += dx + fuera.dx;
+    playerPos.z += dz + fuera.dz;
 
     // La frontera del plano: el muro de niebla, la pregunta de sí/no y las
     // peticiones al motor. Es el único sitio del juego donde una tecla GASTA,

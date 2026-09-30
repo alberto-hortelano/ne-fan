@@ -10,11 +10,19 @@
  *  el mismo verde. Y va antes de abrir el diálogo porque el motor falso contesta
  *  a cada elección con otra línea: el estado «cerrado» es una carrera.
  *
- *  DOS GATES, como el andar del 37: el del proveedor de teclado (con el panel
- *  abierto no llega a pedir el salto) y el del bucle (`saltoDelFrame` solo
- *  despega con `puedeMoverse`). Medido en la tanda (implementacion.md): este
- *  guion es el BACKSTOP del hecho del jugador — sale ROJO solo con los dos
- *  quitados a la vez; cada uno por separado lo tapa el otro. El del bucle lo
+ *  ESPACIO SOLO ES DEL JUEGO EN PARTIDA (vuelta de QA, H4): con el ratón
+ *  capturado y sin panel ni título. Sin ratón capturado ni salta ni le quita a
+ *  la tecla su efecto de siempre (activar el botón con el foco); el bloque 1 lo
+ *  afirma leyendo `defaultPrevented` desde un oyente puesto después de los del
+ *  juego. Probado en negativo: sin la guarda del ratón, ese bloque sale ROJO
+ *  (`{"aire":true,"consumida":true,"raton":false}`).
+ *
+ *  EL BLOQUE DEL DIÁLOGO ES UN BACKSTOP DE TRES GATES, no el candado de
+ *  ninguno: la conversación SUELTA el ratón (guion 83) y el click para
+ *  recapturarlo no lo recupera con el panel delante, así que además del gate
+ *  del proveedor (conversación abierta) y del bucle (`saltoDelFrame` con
+ *  `puedeMoverse`) frena el del ratón. Antes de la guarda del ratón se midió
+ *  que salía ROJO solo con los otros dos quitados a la vez; el del bucle lo
  *  aísla `test/salto-del-jugador.test.ts` («con el panel abierto… no despega»).
  *
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
@@ -29,11 +37,26 @@ const A_UN_PASO = 1.2;
 
 const frames = esperaDeFotogramas("mundo");
 
+/** Captura el ratón como el jugador: un click sobre el mundo. */
+async function capturarRaton(ctx, desc) {
+  const caja = await (await ctx.page.$("canvas")).boundingBox();
+  await ctx.page.mouse.click(caja.x + caja.width / 2, caja.y + caja.height / 3);
+  return ctx.expectEspera(desc, true, () => (document.pointerLockElement !== null ? true : null), { ms: 10_000 });
+}
+
 /** Pulsa Espacio con el teclado REAL, lo mantiene unos fotogramas y mira si
- *  el jugador llegó a estar en el aire en alguno de ellos. */
+ *  el jugador llegó a estar en el aire en alguno de ellos, y si alguien le
+ *  quitó a Espacio su efecto por defecto (`defaultPrevented`, leído por un
+ *  oyente puesto DESPUÉS de los del juego). */
 async function pulsaEspacio(ctx) {
   await ctx.page.evaluate(() => {
-    window.__saltoVisto = { aire: false, elevMax: 0 };
+    window.__saltoVisto = { aire: false, elevMax: 0, consumida: null };
+    if (!window.__oyeEspacio) {
+      window.__oyeEspacio = true;
+      window.addEventListener("keydown", (e) => {
+        if (e.key === " " && !e.repeat && window.__saltoVisto) window.__saltoVisto.consumida = e.defaultPrevented;
+      });
+    }
     const mira = () => {
       const s = window.__nefan.state().salto;
       if (s.fase === "aire") window.__saltoVisto.aire = true;
@@ -53,7 +76,8 @@ async function pulsaEspacio(ctx) {
   await frames(ctx, 60);
   return ctx.page.evaluate(() => {
     window.__saltoVisto.vivo = false;
-    return { aire: window.__saltoVisto.aire, elevMax: window.__saltoVisto.elevMax, ahora: window.__nefan.state().salto };
+    const v = window.__saltoVisto;
+    return { aire: v.aire, elevMax: v.elevMax, consumida: v.consumida, raton: document.pointerLockElement !== null, ahora: window.__nefan.state().salto };
   });
 }
 
@@ -72,16 +96,28 @@ export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "vector" });
   await comenzar(ctx);
 
-  // ── 1 · CONTROL: sin diálogo, Espacio salta ─────────────────────────────
+  // ── 1 · Sin el ratón capturado Espacio NO es del juego (QA de BY, H4) ───
+  // Ni salta ni le quita a la tecla su efecto de siempre (activar el botón
+  // con el foco): el juego solo se la queda EN PARTIDA, como el LMB.
+  const sinRaton = await pulsaEspacio(ctx);
+  ctx.log(`sin ratón capturado: ${JSON.stringify(sinRaton)}`);
+  ctx.expect(
+    "sin el ratón capturado, Espacio ni salta ni se consume (la página conserva su efecto por defecto)",
+    !sinRaton.raton && !sinRaton.aire && sinRaton.consumida === false,
+    JSON.stringify(sinRaton),
+  );
+
+  // ── 2 · CONTROL: en partida (ratón capturado), Espacio salta ────────────
+  await capturarRaton(ctx, "el click sobre el mundo captura el ratón");
   const libre = await pulsaEspacio(ctx);
   ctx.log(`sin diálogo: ${JSON.stringify(libre)}`);
   ctx.expect(
-    "CONTROL: sin diálogo delante, Espacio hace saltar (sube y vuelve al suelo)",
-    libre.aire && libre.elevMax > 0.5 && libre.ahora.fase === "suelo",
+    "CONTROL: en partida, Espacio hace saltar (sube y vuelve al suelo) y se lo queda el juego",
+    libre.raton && libre.aire && libre.elevMax > 0.5 && libre.ahora.fase === "suelo" && libre.consumida === true,
     JSON.stringify(libre),
   );
 
-  // ── 2 · Se abre la conversación por el camino del jugador (E) ───────────
+  // ── 3 · Se abre la conversación por el camino del jugador (E) ───────────
   const npc = await ctx.waitFor(
     "hay algún NPC en la escena con quien hablar",
     () => {
@@ -114,7 +150,12 @@ export default async function (ctx) {
     30_000,
   );
 
-  // ── 3 · Con el panel delante, Espacio NO salta ──────────────────────────
+  // ── 4 · Con el panel delante, Espacio NO salta ──────────────────────────
+  // La conversación suelta el ratón (83). Se intenta recapturarlo con un click
+  // sobre el mundo para que lo que frene el salto sean los gates del diálogo
+  // y no el del ratón; si no se deja, se dice en el log.
+  await ctx.page.mouse.click(10, 300);
+  await frames(ctx, 5);
   const hablando = await pulsaEspacio(ctx);
   ctx.log(`con el diálogo delante: ${JSON.stringify(hablando)}`);
   ctx.expect(

@@ -79,3 +79,18 @@ export function planCollisionGridEnElAire(
   const noSaltables = volumes?.filter((v) => !esSaltable(v, dims?.mpc));
   return planCollisionGrid(ground, noSaltables, rect, dims);
 }
+
+/** El grid de SOLO lo saltable: lo que `planCollisionGrid` tiene y el del aire
+ *  no. Sin agua ni lo alto. Contesta «¿el cuerpo está metido en algo bajo?»
+ *  (`dentroDeLoBajo`, core): quien aterriza dentro de una valla se mueve con
+ *  el grid del aire hasta salir. No se deriva restando los otros dos porque en
+ *  una esquina valla+muro el cuerpo solapa los dos a la vez, y ahí la resta
+ *  diría «no está en lo bajo» (QA de BY, esquina). */
+export function planCollisionGridDeLoBajo(
+  volumes: Volume[] | undefined,
+  rect: WorldRect,
+  dims?: CollisionGridDims,
+): TerrainGridData | null {
+  const saltables = volumes?.filter((v) => esSaltable(v, dims?.mpc));
+  return planCollisionGrid(undefined, saltables, rect, dims);
+}

@@ -17,6 +17,7 @@
  */
 
 import { SALTO_APOGEO_M } from "../scene/terrain-collision.js";
+import { salidaDelSolido, solidoBloquea, type SueloSolido } from "./salida-del-solido.js";
 
 /** En el suelo, o en el aire desde hace `t` segundos. Sin un tercer estado:
  *  un salto que ha aterrizado ES el suelo, y así no hay nada que olvidar
@@ -68,4 +69,67 @@ export function saltoDelFrame(
 ): Salto {
   const avanzado = avanzarSalto(s, p.delta, p.duracion);
   return p.pide && p.puedeMoverse ? saltar(avanzado) : avanzado;
+}
+
+// ── Dentro de lo bajo (QA de la tanda BY, H2 y H3) ──────────────────────────
+//
+// La colisión en el aire es binaria: un salto que se queda corto aterriza con
+// el cuerpo DENTRO de una valla o de una tarima. Con el grid a pie, «salir sí,
+// entrar no» solo dejaba avanzar hacia la salida más corta, así que quien
+// despegaba pronto y seguía con W se quedaba clavado dentro de una valla que
+// no ve (está por debajo de la cámara). Dos reglas lo cierran:
+//
+//  1. Mientras el cuerpo solape algo SALTABLE (el grid de solo lo bajo,
+//     `planCollisionGridDeLoBajo`), el paso se resuelve con el grid del aire:
+//     lo bajo no frena a quien ya está dentro, y se sale andando en cualquier
+//     dirección. Lo alto y el agua siguen en ese grid, así que por dentro de
+//     una valla no se entra en un muro ni en el río — tampoco en la esquina
+//     donde la valla muere contra el muro, que es por lo que la pregunta es
+//     «¿solapa lo bajo?» y no «¿solapa el grid a pie y no el del aire?».
+//  2. En el suelo y dentro de lo bajo, el cuerpo además resbala hacia la salida
+//     más corta a `EMPUJE_FUERA_DE_LO_BAJO_M_S`: no hay dónde quedarse de pie
+//     dentro de una cerca. Más lento que andar, para que quien sigue con W
+//     hacia delante cruce aunque la salida corta sea la de atrás.
+
+/** Metros por segundo a los que lo bajo expulsa a quien está dentro. Menos
+ *  que el paso andando (1,9 · 2,2 = 4,18 m/s en el config): así seguir hacia
+ *  delante gana siempre al resbalón. */
+export const EMPUJE_FUERA_DE_LO_BAJO_M_S = 2.5;
+
+/** Los suelos que miran estas reglas: el del aire (lo alto y el agua) y el
+ *  de solo lo bajo (lo saltable). */
+export interface SuelosDelSalto {
+  enElAire: SueloSolido;
+  bajo: SueloSolido;
+}
+
+/** ¿El cuerpo solapa algo saltable? */
+export function dentroDeLoBajo(p: { x: number; z: number }, radio: number, suelos: SuelosDelSalto): boolean {
+  return suelos.bajo.ocupado(p.x, p.z, radio);
+}
+
+/** Qué grid del plan frena el paso de este frame: el del aire saltando o
+ *  metido en lo bajo; el completo en cualquier otro caso. */
+export function sueloDelPaso(enAire: boolean, dentro: boolean): "aire" | "pie" {
+  return enAire || dentro ? "aire" : "pie";
+}
+
+/** El resbalón de este frame hacia fuera de lo bajo, o cero. Solo en el
+ *  suelo, solo dentro de lo saltable, nunca más allá de su borde (la
+ *  penetración en lo bajo) y nunca hacia algo que el grid del aire frene. */
+export function empujeFueraDeLoBajo(
+  p: { x: number; z: number },
+  radio: number,
+  suelos: SuelosDelSalto,
+  enAire: boolean,
+  delta: number,
+): { dx: number; dz: number } {
+  // Sin salida es que no se está metido en lo bajo: `salidaDelSolido` sobre
+  // el grid de solo lo saltable contesta las dos preguntas a la vez.
+  const salida = enAire ? null : salidaDelSolido(p.x, p.z, radio, suelos.bajo);
+  if (!salida) return { dx: 0, dz: 0 };
+  const paso = Math.min(salida.pen, EMPUJE_FUERA_DE_LO_BAJO_M_S * delta);
+  const hasta = { x: p.x + salida.dir.x * paso, z: p.z + salida.dir.z * paso };
+  if (solidoBloquea(p, hasta, radio, suelos.enElAire)) return { dx: 0, dz: 0 };
+  return { dx: salida.dir.x * paso, dz: salida.dir.z * paso };
 }

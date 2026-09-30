@@ -17,7 +17,13 @@
 import { volumeSolidDiscRadiusCells } from "./collision.js";
 import { volumeFootprint } from "./footprint.js";
 import type { Volume } from "./volumes.js";
-import { customPartTop, gateAlturaCeldas, wallAlturaCeldas } from "../greybox/volume-prims.js";
+import {
+  customPartTop,
+  gateAlturaCeldas,
+  propAlturaCeldas,
+  rocaAlturaCeldas,
+  wallAlturaCeldas,
+} from "../greybox/volume-prims.js";
 import { ALTURA_SALTABLE_M } from "../terrain-collision.js";
 import { TILE_MPC } from "../tile.js";
 
@@ -130,11 +136,13 @@ export function volumeHeightM(v: Volume, mpc: number): number {
     case "bush":
       return 1.3 * (v.s ?? 1);
     case "rock":
-      return 1.1 * (v.s ?? 1);
+      // La PINTADA (esfera principal de `rockSpheres`), en celdas del tile:
+      // en metros de verdad, así que no escala con `mpc`, como la vegetación.
+      return rocaAlturaCeldas(v.s ?? 1) * TILE_MPC;
     case "fountain":
       return 1.4;
     case "prop":
-      return (v.h ?? 2) * mpc;
+      return propAlturaCeldas(v) * mpc;
     case "prism":
       return v.h * mpc;
     case "custom":
@@ -150,10 +158,10 @@ export function volumeHeightM(v: Volume, mpc: number): number {
  *  render de las vallas (`fps-detail.ts` pinta estacas en un `wall` saltable).
  *  Si divergieran habría cercas que se ven saltables y no se saltan.
  *
- *  Para `wall` la altura publicada ES la pintada (`wallAlturaCeldas`, almena
- *  incluida) y hay candado que lo mide sobre las prims. Para los demás tipos
- *  `volumeHeightM` es una aproximación de lo que pinta el greybox, y la
- *  divergencia está medida y declarada en `test/salto-del-jugador.test.ts`. */
+ *  Para `wall`, `rock` y `prop` la altura publicada ES la pintada
+ *  (`wallAlturaCeldas`, `rocaAlturaCeldas`, `propAlturaCeldas`) y hay candado
+ *  que lo mide sobre las prims (`test/fps-detail.test.ts`). Para los demás
+ *  tipos es una aproximación, con la divergencia medida en ese mismo test. */
 export function esSaltable(v: Volume, mpc: number = TILE_MPC): boolean {
   return volumeHeightM(v, mpc) <= ALTURA_SALTABLE_M;
 }

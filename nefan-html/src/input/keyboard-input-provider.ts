@@ -139,12 +139,16 @@ export class KeyboardInputProvider implements InputProvider {
     // de una tecla dejaría al jugador andando solo al volver del título.
     // Espacio = saltar, en su propio manejador y no como un `case` más de
     // `onKeyDown`: ese switch está congelado en su foto de CRAP (client-crap.json)
-    // sin un test que lo cubra, y cada tecla nueva lo empuja por encima. Las
-    // dos guardas son las MISMAS de arriba (conversación abierta; tecla ya
-    // consumida por el panel, que puede cerrarse en este mismo evento). Sin
+    // sin un test que lo cubra, y cada tecla nueva lo empuja por encima. Solo
+    // EN PARTIDA —ratón capturado, como el LMB, y sin panel ni título (el
+    // título ya lo corta la puerta)—: fuera de eso Espacio no es del juego y
+    // conserva lo suyo (activar el botón con el foco, QA de BY H4). Las otras
+    // dos guardas son las de arriba (conversación abierta; tecla ya consumida
+    // por el panel, que puede cerrarse en este mismo evento). Sin
     // autorrepetición: mantener Espacio no encadena saltos. Y sin el scroll.
     const onJumpKey = (e: KeyboardEvent): void => {
-      if (e.key !== " " || this.deps.dialogoAbierto() || e.defaultPrevented) return;
+      if (e.key !== " " || document.pointerLockElement === null) return;
+      if (this.deps.dialogoAbierto() || e.defaultPrevented) return;
       if (!e.repeat) this.jumpRequested = true;
       e.preventDefault();
     };

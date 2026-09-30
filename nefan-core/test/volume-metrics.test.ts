@@ -282,7 +282,9 @@ describe("altura del volumen", () => {
     assert.equal(volumeHeightM({ id: "t", label: "torre", type: "tower", at: [0, 0] }, 0.5), 12 * 0.5 + 0.5);
     assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x" }, 0.5), 8 * 0.5);
     assert.ok(dobles({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x" }) === 2, "la puerta es celdas puras");
-    assert.equal(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0] }, 0.5), 2 * 0.5);
+    // El cilindro mide también su tapa (0,06 celdas): lo que se pinta (tanda BY).
+    assert.ok(Math.abs(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0] }, 0.5) - 2.06 * 0.5) < 1e-12);
+    assert.equal(volumeHeightM({ id: "c", label: "caja", type: "prop", shape: "box", at: [0, 0] }, 0.5), 2 * 0.5);
     assert.equal(volumeHeightM({ id: "m", label: "arco", type: "prism", points: [[0, 0], [4, 0], [4, 4]], h: 6 }, 0.5), 3);
   });
 
@@ -324,7 +326,7 @@ describe("altura del volumen", () => {
   it("una altura declarada gana al default en todos los tipos que la admiten", () => {
     assert.equal(volumeHeightM({ id: "t", label: "torre", type: "tower", at: [0, 0], h: 20 }, 0.5), 20 * 0.5 + 0.5);
     assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x", h: 10 }, 0.5), 5);
-    assert.equal(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0], h: 3 }, 0.5), 1.5);
+    assert.ok(Math.abs(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0], h: 3 }, 0.5) - 1.53) < 1e-12);
     assert.equal(volumeHeightM({ id: "m", label: "muro", type: "wall", points: [[0, 0], [4, 0]], h: 9 }, 0.5), 4.5);
   });
 
