@@ -16,9 +16,10 @@
  *  reanuda por la tarjeta del save, como quien juega.
  *
  *  Lo que se afirma, y por qué cada cosa:
- *   · que Nogala cayó JUNTO al borde norte (a menos de 5 m): sin esto el guion
- *     podría salir verde con un spawn en el centro del tile, que no prueba
- *     nada — es la precondición del resto, afirmada y no supuesta;
+ *   · que el jugador pidió a menos de 5 m del borde norte: sin esto el guion
+ *     podría salir verde con el jugador en el centro del tile, que no prueba
+ *     nada — es la precondición del resto, afirmada y no supuesta (dónde cae
+ *     lo pedido sin pisarle lo afirma el guion 357);
  *   · que todo lo del save está dentro de la unión de los tiles del save,
  *     preguntado con la MISMA función que dispara el muro
  *     (`entidadesFueraDelMundo` de `nefan-core/dist`, `⊘` si no está
@@ -145,10 +146,15 @@ export default async function (ctx) {
     PACIFICO,
   );
   await ctx.shot("spawns-junto-al-borde");
+  // La precondición es el JUGADOR junto al borde, no dónde cae Nogala: desde
+  // la vuelta de QA (H-1) lo que no cabe delante sin pisarle se va detrás, así
+  // que Nogala ya no tiene por qué quedar junto al borde. Lo que hace que esto
+  // pruebe algo es que, sin acotar, `near_player` (5 m) caería al otro lado.
+  const alPedir = await ctx.nefan("playerPos");
   ctx.expect(
-    `${PACIFICO} cayó junto al borde norte (a menos de ${JUNTO_AL_BORDE_M} m): si no, el resto no prueba nada`,
-    nogala.pos.z - rect.minZ < JUNTO_AL_BORDE_M,
-    `${PACIFICO} en ${JSON.stringify(nogala.pos)} · borde norte z=${rect.minZ}`,
+    `el jugador pidió a menos de ${JUNTO_AL_BORDE_M} m del borde norte: sin acotar, lo pedido caería fuera`,
+    alPedir.z - rect.minZ < JUNTO_AL_BORDE_M,
+    `jugador en ${JSON.stringify(alPedir)} · borde norte z=${rect.minZ}`,
   );
   ctx.expect(
     `…y DENTRO del tile, no al otro lado del borde`,

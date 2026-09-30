@@ -24,7 +24,7 @@ import { randomUUID } from "node:crypto";
 
 import { contextoDeLaMuerte, type ContextoDeLaMuerte } from "../../src/narrative/contexto-de-la-muerte.js";
 import type { LlmContext } from "../../src/narrative/types.js";
-import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
+import { colocacionDeLosSpawns, dispatchConsequences } from "../../src/narrative/consequence-handler.js";
 import { falloDelDespertarParaElJugador } from "../../src/protocol/status-motivo.js";
 import {
   MARGEN_DEL_DESPERTAR_M,
@@ -190,6 +190,10 @@ function fallo(ctx: BridgeContext, id: string, err: unknown): void {
 /** Lo que el jugador lee cuando el motor contestó y el juego no aceptó el
  *  sitio. El motivo técnico va a `detalleTecnico` y al log. */
 const NO_VALE = "El mundo eligió un sitio donde no se puede despertar; pulsa R para que lo intente otra vez.";
+/** Y cuando el sitio vale pero lo que el mundo quería poner a tu lado no cabe
+ *  sin pisarte ni salirse del suelo. */
+const NO_CABE =
+  "Lo que el mundo quería poner a tu alrededor al despertar no cabe ahí; pulsa R para que lo intente otra vez.";
 
 export async function alLlegarElDespertar(
   ctx: BridgeContext,
@@ -226,6 +230,27 @@ export async function alLlegarElDespertar(
       kind: "despertar",
       message: NO_VALE,
       detalleTecnico: v.motivo,
+    });
+    return;
+  }
+  // Lo que el motor manda aparecer se coloca ANTES de levantar al jugador
+  // (tanda CB, QA H-2): si no cabe alrededor del sitio elegido, el despacho
+  // lanzaría después de `sim.respawn` y el jugador quedaría en pie en el sim,
+  // sin `state_update` y con el velo pidiendo R. Así se queda caído y R vale.
+  // `respawn` pone al jugador EXACTAMENTE en `v.punto`, así que la cuenta es
+  // la misma que hará `dispatchConsequences`.
+  const colocacion = colocacionDeLosSpawns(ctx.narrative, res.resolucion.consequences, {
+    playerPosition: v.punto,
+    playerForward: { x: 0, y: 0, z: -1 },
+  });
+  if (!colocacion.ok) {
+    console.error(`Bridge: el despertar ${id.slice(0, 8)} no cabe: ${colocacion.error}`);
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "despertar",
+      message: NO_CABE,
+      detalleTecnico: colocacion.error,
     });
     return;
   }
