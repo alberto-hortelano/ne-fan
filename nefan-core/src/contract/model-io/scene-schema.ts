@@ -88,6 +88,10 @@ const entityErrorMap: z.ZodErrorMap = (issue, ctx) => {
   return { message: partes.join("; ") };
 };
 
+/** El motivo de una `cell` no finita. El espejo Python (`validate_scene_response`)
+ *  dice lo mismo; la ruta (`entities[i].cell[j]`) la pone `formatError`. */
+export const MOTIVO_CELL_FINITA = "`cell` son dos números FINITOS [col,row] (1e400 se lee como Infinity)";
+
 const EntityBase = z
   .object({
     id: z.string().min(1),
@@ -97,8 +101,11 @@ const EntityBase = z
     // opcional, el mismo objeto zod en las dos puertas (#397).
     name: VocabularioDeEntity.name,
     // Celda [col,row]: admite fracción (colocación fina — media celda importa
-    // en el z-order y en props pequeños), como los `at` de volumes.
-    cell: z.tuple([z.number(), z.number()]),
+    // en el z-order y en props pequeños), como los `at` de volumes. FINITA
+    // (#782): JSON no tiene `Infinity`, pero `1e400` se parsea como tal en los
+    // dos procesos, y hasta aquí pasaba el gate y lo cazaba un `throw` dentro
+    // de `formatDToWorld`, ya sin vuelta al modelo. Se rechaza en la puerta.
+    cell: z.tuple([z.number().finite(MOTIVO_CELL_FINITA), z.number().finite(MOTIVO_CELL_FINITA)]),
     footprint: z.tuple([z.number().int().min(1), z.number().int().min(1)]),
     shape: z.enum(["box", "cylinder", "sphere", "cone"]).optional(),
     h: z.number().positive().optional(),
@@ -371,3 +378,31 @@ export const ExpandedSceneSchema = z
   });
 
 export type ExpandedScene = z.infer<typeof ExpandedSceneSchema>;
+
+/** El gate de la población CARGABLE, y el ÚNICO sitio de la casa que estrecha
+ *  un `unknown` a `ExpandedScene` (#782). Lo usan los que PARSEAN
+ *  (`recordSceneLoaded`, la carga del save, `escenaCargable`): hasta aquí
+ *  validaban con el zod y se quedaban con el objeto sin tipo, y por eso
+ *  `formatDToWorld` volvía a validar a mano lo que el zod ya había dicho.
+ *
+ *  Devuelve `raw` y no `parsed.data` por la regla de `world-snapshot.ts`
+ *  («quien valida no se queda con el resultado»): la salida del parseo poda las
+ *  claves de los sub-objetos no estrictos. El `as` es honesto porque el schema
+ *  no transforma: su entrada y su salida son el mismo tipo, y lo sujeta el
+ *  candado de tipo de debajo. */
+export function gateEscenaExpandida(
+  raw: unknown,
+): { ok: true; escena: ExpandedScene } | { ok: false; error: z.ZodError } {
+  const parsed = ExpandedSceneSchema.safeParse(raw);
+  return parsed.success ? { ok: true, escena: raw as ExpandedScene } : { ok: false, error: parsed.error };
+}
+
+// CANDADO DE TIPO (#782): el `as` de `gateEscenaExpandida` solo es verdad si el
+// schema NO transforma — un `.transform`/`.default`/`.preprocess` haría que lo
+// que entra (`raw`) no fuera lo que el tipo promete. Si alguien mete uno, las
+// dos entradas dejan de ser iguales y `npm run build` se pone rojo.
+type Iguales<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Cierto<T extends true> = T;
+type _EntradaEsSalida = Cierto<Iguales<z.input<typeof ExpandedSceneSchema>, ExpandedScene>>;
+// @ts-expect-error — y el candado MUERDE: la emitida no es la cargable
+type _ElCandadoMuerde = Cierto<Iguales<z.input<typeof EmittedSceneSchema>, ExpandedScene>>;

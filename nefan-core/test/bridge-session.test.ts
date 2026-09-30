@@ -529,8 +529,8 @@ describe("bridge ciclo de sesión", () => {
     // Y lo PERSISTIDO sigue siendo Format D crudo: el overlay se escribe sobre
     // la copia del wire, no sobre el save (#179).
     const crudo = ctx.narrative.scenes_loaded["fd_pelea"].scene_data;
-    assert.equal(crudo.npcs, undefined, "la persistencia no se enriquece");
-    assert.equal((crudo.entities as unknown[]).length, 3, "el muerto sigue en el Format D crudo");
+    assert.equal("npcs" in crudo, false, "la persistencia no se enriquece");
+    assert.equal(crudo.entities.length, 3, "el muerto sigue en el Format D crudo");
   });
 
   it("resume: un combate ILEGIBLE en el save no resucita a nadie, y se DICE al jugador", async () => {

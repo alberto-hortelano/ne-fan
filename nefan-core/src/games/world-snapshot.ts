@@ -21,7 +21,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 
 import { SAFE_ID, loadWorldDoc } from "./loader.js";
-import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";
+import { ExpandedSceneSchema, type ExpandedScene } from "../contract/model-io/scene-schema.js";
 import { validateScene } from "../scene/scene-validate.js";
 import { WorldMapSchema } from "../contracts/world-map-schema.js";
 import type { WorldMap } from "../world-map/types.js";
@@ -75,7 +75,7 @@ export interface WorldSnapshot {
   world_doc_hash: string;
   generated_at: string;
   world_map: WorldMap;
-  scenes: Record<string, Record<string, unknown>>;
+  scenes: Record<string, ExpandedScene>;
   entry_scene_id: string;
 }
 
@@ -178,7 +178,7 @@ type Juzgado =
   | {
       kind: "juzgado";
       snapshot: WorldSnapshot;
-      servibles: Record<string, Record<string, unknown>>;
+      servibles: Record<string, ExpandedScene>;
       cribadas: string[];
       /** Por qué la ENTRADA no pasa el validador de hoy; `null` si pasa. */
       entradaInjugable: string | null;
@@ -219,7 +219,7 @@ function juzgarSnapshot(gamesDir: string, gameId: string, expectedWorldDocHash: 
   // el tile que el jugador todavía no ha pisado. Tirar las otras ocho escenas
   // buenas por él obligaba a regenerar el mundo ENTERO con el motor real, y
   // eso pasaba con cada endurecimiento del validador.
-  const servibles: Record<string, Record<string, unknown>> = {};
+  const servibles: Record<string, ExpandedScene> = {};
   const cribadas: string[] = [];
   let entradaInjugable: string | null = null;
   for (const [id, scene] of Object.entries(snapshot.scenes)) {
@@ -358,7 +358,7 @@ export function escenasQueSobreviven(
   gamesDir: string,
   gameId: string,
   worldDocHash: string,
-): Record<string, Record<string, unknown>> {
+): Record<string, ExpandedScene> {
   const path = worldSnapshotPath(gamesDir, gameId);
   const leido = leerSnapshotDeDisco(path);
   if (!leido.ok) {

@@ -94,12 +94,13 @@ describe("expansión de tiles (Format D v3)", () => {
 
   it("formatDToWorld emite world_rect global y posiciones globales para tiles", async () => {
     const { formatDToWorld } = await import("../src/scene/scene-normalize.js");
+    const { escenaCargable } = await import("../src/scene/escena-cargable.js");
     const { createTerrainCollider } = await import("../src/scene/terrain-collision.js");
     const tile = makeForestTile(); // tx=1, ty=0 → rect [32..96, -32..32]
     (tile.entities as Record<string, unknown>[]).push(
       { id: "npc1", kind: "npc", name: "Guía", cell: [0, 0], footprint: [1, 1] },
     );
-    const w = formatDToWorld(tile);
+    const w = formatDToWorld(escenaCargable(tile));
     assert.deepEqual(w.world_rect, { minX: 32, minZ: -32, maxX: 96, maxZ: 32 });
     assert.deepEqual(w.tile, { tx: 1, ty: 0 });
     // NPC en celda (0,0) → centro global (32.25, -31.75).
@@ -111,7 +112,7 @@ describe("expansión de tiles (Format D v3)", () => {
     // `ground` sobre la esquina NW del tile.
     const tile2 = makeForestTile();
     tile2.ground = [CAMINO_OESTE_ESTE, { id: "charca", kind: "water", rect: [0, 0, 6, 2] }];
-    const w2 = formatDToWorld(tile2);
+    const w2 = formatDToWorld(escenaCargable(tile2));
     const col = createTerrainCollider(w2.terrain_grid as never)!;
     // Celda (0,0) del tile (1,0) = mundo [32..32.5): su centro es sólido (agua).
     assert.ok(col.blocksCircle(32.25, -31.75, 0.1));

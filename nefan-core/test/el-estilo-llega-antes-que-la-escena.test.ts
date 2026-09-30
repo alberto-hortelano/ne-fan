@@ -27,7 +27,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 
 import { WorldMapManager } from "../src/world-map/world-map.js";
-import { expandScenePrimitives } from "../src/scene/scene-expand.js";
+import { escenaCargable } from "../src/scene/escena-cargable.js";
 import { WORLD_SNAPSHOT_SCHEMA_VERSION, writeWorldSnapshot } from "../src/games/world-snapshot.js";
 import type { ServerMessage, SessionStartedMessage } from "../src/protocol/messages.js";
 import { FIXTURE_GAMES, entrarEnLaPartida, makeCtx, makeSocket, porElBorde, waitFor } from "./helpers.js";
@@ -77,7 +77,7 @@ describe("#730 · el bridge manda session_started (con el estilo) antes de cualq
         generated_at: "2026-09-24T00:00:00.000Z",
         world_map: new WorldMapManager(WorldMapManager.createEmpty()).serialize(),
         scenes: {
-          tile_0_0: expandScenePrimitives({
+          tile_0_0: escenaCargable({
             scene_id: "tile_0_0",
             scene_description: "Tile de arranque del snapshot",
             tile: { tx: 0, ty: 0 },

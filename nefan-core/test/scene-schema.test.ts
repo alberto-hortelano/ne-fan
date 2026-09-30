@@ -19,6 +19,7 @@ import {
   EMITTED_SCENE_FIELDS,
   SCENE_FIELDS,
   RADIO_SIMULADO_POR_KIND,
+  MOTIVO_CELL_FINITA,
 } from "../src/contract/model-io/scene-schema.js";
 import {
   expandScenePrimitives,
@@ -70,6 +71,28 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
       entities: [{ id: "x", kind: "monster", name: "X", cell: [0, 0], footprint: [1, 1] }],
     });
     assert.equal(r.success, false);
+  });
+
+  it("una `cell` no finita se rechaza en la puerta, con su ruta y su motivo (#782)", () => {
+    // `1e400` se lee como Infinity en `JSON.parse`: pasaba el gate y lo cazaba
+    // un `throw` dentro de `formatDToWorld`, ya sin vuelta al modelo. NaN ya
+    // lo rechazaba `z.number()`; Infinity no.
+    for (const [cell, ruta] of [
+      [[Infinity, 1], "entities[0].cell[0]"],
+      [[1, -Infinity], "entities[0].cell[1]"],
+      [[JSON.parse("1e400"), 1], "entities[0].cell[0]"],
+    ] as [number[], string][]) {
+      const res = validateContract(EmittedSceneSchema, {
+        ...base,
+        entities: [{ id: "p", kind: "player", name: "Tú", cell, footprint: [1, 1] }],
+      });
+      assert.equal(res.ok, false, `cell ${JSON.stringify(cell)} no puede pasar`);
+      if (res.ok) continue;
+      assert.ok(res.error.startsWith(`${ruta}: `), res.error);
+      assert.equal(res.error, `${ruta}: ${MOTIVO_CELL_FINITA}`);
+    }
+    // Y la fracción FINITA sigue valiendo (colocación fina, media celda).
+    assert.equal(accepts({ ...base, entities: [{ id: "p", kind: "player", name: "Tú", cell: [1.5, 2.25], footprint: [1, 1] }] }), true);
   });
 
   it("entity sin footprint (antes: clamp)", () => {

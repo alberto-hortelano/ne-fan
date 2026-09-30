@@ -6,6 +6,7 @@ import type { PluginRecord, PluginLlmView } from "../plugins/types.js";
 import type { TileEdges } from "../scene/tile-edges.js";
 import type { TileCoord } from "../scene/tile.js";
 import type { Consequence as WireConsequence } from "../contract/model-io/schemas.js";
+import type { ExpandedScene } from "../contract/model-io/scene-schema.js";
 
 // v3: añade `plugins: PluginRecord[]` (migración v2→v3: lista vacía).
 // v4: plano continuo de tiles — SceneRecord gana tile/edges, las posiciones de
@@ -97,7 +98,10 @@ export interface NarrativeWorldState {
 }
 
 export interface SceneRecord {
-  scene_data: Record<string, unknown>;
+  /** La escena CARGABLE, con el tipo que su gate garantiza (#782): solo la
+   *  escriben `recordSceneLoaded` y la carga del save, y los dos la pasan por
+   *  `gateEscenaExpandida`. */
+  scene_data: ExpandedScene;
   loaded_at: string;
   asset_refs: string[];
   /** Coords del tile del plano continuo. Obligatorias (#405): toda escena

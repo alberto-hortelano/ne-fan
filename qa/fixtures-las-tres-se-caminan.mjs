@@ -6,7 +6,8 @@
  *  (`isGridTile`, `loadRoom` por «no es grid», el `getAt` por rect del
  *  TileStore, el `else` de `scene_loaded` que reseteaba el mundo). Todo eso
  *  murió: toda escena servida o cargada del selector es un TILE, y las tres
- *  fixtures de `data/scenes/` entran por `addTileRaw` → `formatDToWorld`. Este
+ *  fixtures de `data/scenes/` entran por `addTileRaw` → `escenaCargable` →
+ *  `formatDToWorld` (la puerta de lo crudo es el zod de escena, #782). Este
  *  guion afirma que el preset sin backend sigue sirviendo para lo que existe
  *  —«iterar renderer/UI con las fixtures del selector Room, cero backend»—
  *  sobre las TRES, no sobre una:

@@ -15,6 +15,7 @@ import {
 } from "../src/scene/scene-normalize.js";
 import { createTerrainCollider } from "../src/scene/terrain-collision.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
+import { escenaCargable } from "../src/scene/escena-cargable.js";
 import { npcSkinStyleRef } from "../src/games/style-categories.js";
 import {
   combatForHostileRole,
@@ -22,12 +23,20 @@ import {
   HOSTILE_WEAPON,
 } from "../src/combat/hostiles.js";
 
+/** La world scene de un payload a mano, por la MISMA puerta que una fixture
+ *  (#782): `formatDToWorld` solo acepta `ExpandedScene`, y lo que lo es lo
+ *  dice el zod, no el test. Un payload que el contrato rechaza lanza aquí, en
+ *  la puerta, y no llega a la conversión — lo que la conversión validaba a
+ *  mano hasta #782 lo defienden hoy `escena-cargable.test.ts`,
+ *  `scene-schema.test.ts` y las fixtures de contrato. */
+const aMundo = (d: unknown): WorldScene => formatDToWorld(escenaCargable(d));
+
 /** Atajos de lectura sobre el tipo (#378): ya no hay nada que abrir con `as`. */
 const objectsOf = (w: WorldScene) => w.objects;
 const npcsOf = (w: WorldScene) => w.npcs;
 
-/** Un tile Format D mínimo y válido, EXPANDIDO como lo haría el bridge
- *  (#405): pradera 128×128 @0,5 m en el tile (0,0) —rect mundial [−32, 32)—
+/** Un tile Format D mínimo y válido, EXPANDIDO (#405; lo que la puerta
+ *  deja pasar): pradera 128×128 @0,5 m en el tile (0,0) —rect mundial [−32, 32)—
  *  con un edificio, un npc y el spawn del jugador. Celda `[c, r]` con huella
  *  `[w, h]` → centro en x = −32 + (c + w/2)·0,5 ; z = −32 + (r + h/2)·0,5.
  *  Hasta #405 era un grid 10×6 @2 m SIN `tile`, centrado en el origen: la
@@ -67,34 +76,22 @@ const refDelSkin = (npc: NpcEnElWire) => npcSkinStyleRef(npc);
 
 describe("formatDToWorld", () => {
   it("no emite ni `exits` ni el crudo entero (#378): las salidas las pone el wire y `place_id` sustituye a `__format_d`", () => {
-    const w = formatDToWorld({ ...makeFormatD(), place_id: "taberna" });
+    const w = aMundo({ ...makeFormatD(), place_id: "taberna" });
     assert.equal("exits" in w, false, "`exits` es de EscenaServida, no de la world scene");
     assert.equal("__format_d" in w, false, "el Format D ya no viaja dentro de la world scene");
     assert.equal(w.place_id, "taberna", "lo que el cliente leía de __format_d.place_id viaja como miembro");
-    assert.equal("place_id" in formatDToWorld(makeFormatD()), false, "sin place estampado no hay clave");
-  });
-
-  it("un `place_id` que no es una cadena NO viaja: ni un número ni la cadena vacía estampan la clave", () => {
-    // La guarda tiene dos mitades y hasta hoy solo se probaba el caso AUSENTE,
-    // donde las dos dan lo mismo. Con `place_id` presente se separan: el 7 lo
-    // deja pasar quien se quede sin el `typeof`, y el `""` lo deja pasar quien
-    // cambie el `&&` por un `||`. Y esta línea es lo ÚNICO que hay entre un
-    // `Record<string, unknown>` que escribe otro proceso y una `WorldScene`
-    // cerrada que promete `place_id?: string`: aguas abajo nadie vuelve a
-    // mirarlo, todos lo tipan como cadena. Media guarda es una promesa falsa.
-    assert.equal("place_id" in formatDToWorld({ ...makeFormatD(), place_id: 7 }), false);
-    assert.equal("place_id" in formatDToWorld({ ...makeFormatD(), place_id: "" }), false);
+    assert.equal("place_id" in aMundo(makeFormatD()), false, "sin place estampado no hay clave");
   });
 
   it("las dimensiones son las del tile (64 m de lado) y el rect mundial el del tile (0,0)", () => {
-    const w = formatDToWorld(makeFormatD());
+    const w = aMundo(makeFormatD());
     assert.deepEqual(w.dimensions, { width: 64, depth: 64, height: 3 });
     assert.deepEqual(w.world_rect, { minX: -32, minZ: -32, maxX: 32, maxZ: 32 });
     assert.deepEqual(w.tile, { tx: 0, ty: 0 });
   });
 
   it("places a building object at its footprint centre in metres", () => {
-    const w = formatDToWorld(makeFormatD());
+    const w = aMundo(makeFormatD());
     const objects = objectsOf(w);
     assert.equal(objects.length, 1);
     const tavern = objects[0];
@@ -109,7 +106,7 @@ describe("formatDToWorld", () => {
   });
 
   it("extracts npcs and the player start", () => {
-    const w = formatDToWorld(makeFormatD());
+    const w = aMundo(makeFormatD());
     const npcs = npcsOf(w);
     assert.equal(npcs.length, 1);
     assert.equal(npcs[0].id, "barkeep");
@@ -122,7 +119,7 @@ describe("formatDToWorld", () => {
   it("maps tree kind to prop category", () => {
     const d = makeFormatD();
     (d.entities as Record<string, unknown>[]).push({ id: "oak", kind: "tree", name: "Roble", cell: [0, 0], footprint: [1, 1] });
-    const w = formatDToWorld(d);
+    const w = aMundo(d);
     const oak = objectsOf(w).find((o) => o.id === "oak");
     assert.equal(oak?.category, "prop");
     // El default de altura sale del KIND (tree → 4 m), no de la category.
@@ -135,31 +132,17 @@ describe("formatDToWorld", () => {
       { id: "torre", kind: "building", name: "Torre", cell: [7, 0], footprint: [2, 2], h: 6.5 },
       { id: "megalito", kind: "prop", name: "Megalito", cell: [0, 3], footprint: [1, 1], h: 999 },
     );
-    const w = formatDToWorld(d);
+    const w = aMundo(d);
     const objs = objectsOf(w);
     assert.equal((objs.find((o) => o.id === "torre")?.scale as number[])[1], 6.5);
     // Techo duro de 20 m (MAX_ENTITY_HEIGHT_M).
     assert.equal((objs.find((o) => o.id === "megalito")?.scale as number[])[1], 20);
   });
 
-  it("un `h` inválido cae al default por kind (tolerante, como shape)", () => {
-    const d = makeFormatD();
-    (d.entities as Record<string, unknown>[]).push(
-      { id: "caja", kind: "prop", name: "Caja", cell: [0, 3], footprint: [1, 1], h: -2 },
-      { id: "gema", kind: "item", name: "Gema", cell: [1, 3], footprint: [1, 1], h: "alta" },
-      { id: "cartel", kind: "decor", name: "Cartel", cell: [2, 3], footprint: [1, 1] },
-    );
-    const w = formatDToWorld(d);
-    const objs = objectsOf(w);
-    assert.equal((objs.find((o) => o.id === "caja")?.scale as number[])[1], 1);
-    assert.equal((objs.find((o) => o.id === "gema")?.scale as number[])[1], 0.5);
-    assert.equal((objs.find((o) => o.id === "cartel")?.scale as number[])[1], 0.5);
-  });
-
   it("keeps decor kind as its own walkable category", () => {
     const d = makeFormatD();
     (d.entities as Record<string, unknown>[]).push({ id: "torch", kind: "decor", name: "antorcha de pared", cell: [1, 0], footprint: [1, 1] });
-    const w = formatDToWorld(d);
+    const w = aMundo(d);
     const torch = objectsOf(w).find((o) => o.id === "torch");
     assert.equal(torch?.category, "decor");
   });
@@ -167,7 +150,7 @@ describe("formatDToWorld", () => {
   it("terrain_grid carries the engine's solid chars and nothing char→name", () => {
     // Nadie declara solidez ni nombres por char: el grid viaja solo para la
     // colisión, y lo que bloquea lo fija `DEFAULT_SOLID_CHARS`.
-    const w = formatDToWorld(makeFormatD());
+    const w = aMundo(makeFormatD());
     const tg = w.terrain_grid;
     assert.deepEqual(tg.solid_chars, ["w"]);
     assert.deepEqual(
@@ -182,17 +165,14 @@ describe("formatDToWorld", () => {
     // del juego son volúmenes del plan. Se retira del engine, y el candado es
     // el collider REAL sobre un tile real: la misma celda, con cada char.
     assert.deepEqual(DEFAULT_SOLID_CHARS, ["w"]);
+    // El char se pone en el grid que SALE de la conversión y no en la escena:
+    // desde #782 una `W` en `terrain` no pasa la puerta (el alfabeto del grid,
+    // #464), así que lo que aquí se mide es el collider, que es lo que decide.
     const conCelda = (ch: string): WorldScene => {
-      const tile = expandScenePrimitives({
-        tile: { tx: 0, ty: 0 },
-        scene_id: "tile_0_0",
-        scene_description: "campo",
-        biome: "grass",
-        entities: [],
-      }) as Record<string, unknown>;
-      const terrain = tile.terrain as string[];
-      terrain[10] = terrain[10].slice(0, 10) + ch + terrain[10].slice(11);
-      return formatDToWorld(tile);
+      const w = aMundo({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", scene_description: "campo", biome: "grass", entities: [] });
+      const grid = [...w.terrain_grid.grid];
+      grid[10] = grid[10].slice(0, 10) + ch + grid[10].slice(11);
+      return { ...w, terrain_grid: { ...w.terrain_grid, grid } };
     };
     // Celda (10,10) del tile (0,0): mundo (-32 + 10,5·0,5) en los dos ejes.
     const centro = -32 + 10.5 * 0.5;
@@ -204,60 +184,22 @@ describe("formatDToWorld", () => {
     assert.equal(conw.blocksCircle(centro, centro, 0.2), true);
   });
 
-  it("una world scene ya normalizada NO vuelve a entrar: lanza (la idempotencia murió con __format_d)", () => {
-    // Antes la guarda `__format_d` la dejaba pasar intacta; ahora el tipo
-    // impide llamar con una WorldScene y, si llega en runtime (un .mjs), lo
-    // dice en vez de devolver media conversión.
-    const w = formatDToWorld(makeFormatD());
-    assert.throws(() => formatDToWorld(w as unknown as Record<string, unknown>), /no es Format D expandido/);
-  });
-
-  it("throws fail-loud on a malformed entity (missing cell)", () => {
-    const d = makeFormatD();
-    (d.entities as Record<string, unknown>[])[0] = { id: "broken", kind: "building", name: "X", footprint: [1, 1] };
-    assert.throws(() => formatDToWorld(d), /missing cell/);
-  });
-
   // --- Huecos que destapó el mutation testing (npm run mutate) ---
   // Los tres de abajo son mutantes que SOBREVIVÍAN: el código pasaba por esas
   // líneas (97% de cobertura) pero ningún assert se habría enterado de que
   // cambiaban.
 
-  it("acepta cada forma del catálogo y descarta la inventada", () => {
+  it("acepta cada forma del catálogo", () => {
+    // La inventada ya no llega aquí: la rechaza la puerta (#782). Hasta
+    // entonces se descartaba en silencio y caía a caja.
     for (const shape of ["box", "cylinder", "sphere", "cone"]) {
       const d = makeFormatD();
       (d.entities as Record<string, unknown>[])[0].shape = shape;
-      const obj = formatDToWorld(d).objects[0];
+      const obj = aMundo(d).objects[0];
       assert.equal(obj.shape, shape, `la forma "${shape}" debería conservarse`);
     }
-    const d = makeFormatD();
-    (d.entities as Record<string, unknown>[])[0].shape = "dodecaedro";
-    const obj = formatDToWorld(d).objects[0];
-    assert.equal(obj.shape, undefined, "una forma fuera del catálogo NO se propaga al renderer");
   });
 
-  it("el bioma del tile solo viaja si es una cadena", () => {
-    // Un tile NO lleva size/terrain: su base es `biome` + primitivas.
-    const tile = (biome: unknown): Record<string, unknown> => ({
-      tile: { tx: 0, ty: 0 },
-      scene_id: "tile_0_0",
-      biome,
-      scene_description: "campo",
-      entities: [],
-    });
-    const bueno = formatDToWorld(tile("grass")) as { terrain?: { color?: number[] } };
-    assert.ok(bueno.terrain, "un biome válido produce terreno");
-
-    // Un biome no-cadena se descarta: la expansión se queda sin base y falla
-    // fuerte en vez de pintar un tile mudo.
-    assert.throws(() => formatDToWorld(tile(42)), /biome/i);
-  });
-
-  it("throws on an invalid kind", () => {
-    const d = makeFormatD();
-    (d.entities as Record<string, unknown>[])[0] = { id: "x", kind: "dragon", name: "X", cell: [0, 0], footprint: [1, 1] };
-    assert.throws(() => formatDToWorld(d), /invalid kind/);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -277,7 +219,7 @@ describe("formatDToWorld", () => {
 describe("formatDToWorld — el NPC llega entero a la clave de caché del skin", () => {
   it("propaga role, style_ref y description tal cual los declaró el motor", () => {
     const npc = npcsOf(
-      formatDToWorld(
+      aMundo(
         conNpc({ id: "guardia_1", role: "guard", style_ref: "characters_capitana", description: "guardia con yelmo abollado" }),
       ),
     )[0];
@@ -289,7 +231,7 @@ describe("formatDToWorld — el NPC llega entero a la clave de caché del skin",
   });
 
   it("sin style_ref la ref del skin cae al default por rol, y el rol sí viaja", () => {
-    const npc = npcsOf(formatDToWorld(conNpc({ id: "guardia_2", role: "guard" })))[0];
+    const npc = npcsOf(aMundo(conNpc({ id: "guardia_2", role: "guard" })))[0];
     assert.equal(npc.role, "guard");
     assert.ok(!("style_ref" in npc), "sin elección del motor no se inventa style_ref");
     assert.equal(refDelSkin(npc), "warrior");
@@ -301,18 +243,13 @@ describe("formatDToWorld — el NPC llega entero a la clave de caché del skin",
   const NO_VIAJAN: [string, Record<string, unknown>][] = [
     // Un npc que el motor declaró pelado.
     ["ninguna clave declarada", { id: "aldeana_1" }],
-    // `styleRoleForNpc` hace `(role ?? "").toLowerCase()`: un role numérico
-    // propagado revienta al pintar. Y un style_ref numérico sería truthy
-    // dentro de npcSkinStyleRef, así que viajaría al servidor de skins.
-    ["valores que no son cadena", { id: "raro", role: 42, style_ref: 7, description: { es: "raro" } }],
-    // Si "" viajara como style_ref, npcSkinStyleRef seguiría cayendo al rol,
-    // pero el prompt del skin (description ?? name) pasaría a ser "" y el
-    // batch pediría una imagen sin descripción.
-    ["cadenas vacías", { id: "aldeana_2", role: "", style_ref: "", description: "" }],
+    // Los valores que no son cadena y las cadenas vacías ya no llegan aquí
+    // (#782): el zod los rechaza en la puerta (`role`/`style_ref` son
+    // `min(1)` y `description` no admite vacío ni blanco).
   ];
   for (const [nombre, declarado] of NO_VIAJAN) {
     it(`${nombre}: no viaja ninguno de los tres, y el skin cae al default`, () => {
-      const npc = npcsOf(formatDToWorld(conNpc(declarado)))[0];
+      const npc = npcsOf(aMundo(conNpc(declarado)))[0];
       for (const campo of ["role", "style_ref", "description"]) {
         assert.ok(!(campo in npc), `"${campo}" no debería existir: ${JSON.stringify(npc)}`);
       }
@@ -341,33 +278,19 @@ describe("formatDToWorld — la `description` de un objeto es su procedencia, no
   const PROCEDENCIA = "pozo de piedra con brocal musgoso";
 
   it("con `description` declarada: la etiqueta sigue siendo `name` y la declarada viaja aparte, tal cual", () => {
-    const obj = objectsOf(formatDToWorld(conObjeto({ id: "pozo", description: PROCEDENCIA })))[0];
+    const obj = objectsOf(aMundo(conObjeto({ id: "pozo", description: PROCEDENCIA })))[0];
     assert.equal(obj.id, "pozo");
     assert.equal(obj.name, "pozo de la plaza", "la etiqueta es `name`: la procedencia no la pisa");
     assert.equal(obj.description, PROCEDENCIA, "la procedencia viaja verbatim en su propio campo");
   });
 
   it("sin `description`: `name` presente y NADA inventado (ni la etiqueta copiada como descripción)", () => {
-    const obj = objectsOf(formatDToWorld(conObjeto({ id: "pozo" })))[0];
+    const obj = objectsOf(aMundo(conObjeto({ id: "pozo" })))[0];
     assert.equal(obj.name, "pozo de la plaza");
     // `in`, no el valor: `description: undefined` también sería inventarse la
     // clave, y el JSON del wire no sería el mismo.
     assert.ok(!("description" in obj), `"description" no debería existir: ${JSON.stringify(obj)}`);
   });
-
-  // Espejo de NO_VIAJAN (NPC): la regla de «texto no vacío o nada» es la misma
-  // para los dos, porque ahora la escribe el mismo helper.
-  for (const [nombre, basura] of [
-    ["cadena vacía", ""],
-    ["un número", 42],
-    ["un objeto", { es: "raro" }],
-  ] as [string, unknown][]) {
-    it(`una \`description\` que es ${nombre} no viaja, y la etiqueta no se resiente`, () => {
-      const obj = objectsOf(formatDToWorld(conObjeto({ id: "pozo", description: basura })))[0];
-      assert.ok(!("description" in obj), `"description" no debería existir: ${JSON.stringify(obj)}`);
-      assert.equal(obj.name, "pozo de la plaza");
-    });
-  }
 
   it("la etiqueta que se pinta no cambia con la tanda: robledo_tile, objeto a objeto, `name` = `name` de su entity", () => {
     // Determinista y desde el jugador: es la fixture del selector «Room» que
@@ -377,7 +300,7 @@ describe("formatDToWorld — la `description` de un objeto es su procedencia, no
       readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../data/scenes/robledo_tile.json"), "utf-8"),
     ) as { entities: { id: string; kind: string; name: string; description?: string }[] };
     const porId = new Map(formatD.entities.map((e) => [e.id, e]));
-    const objetos = objectsOf(formatDToWorld(formatD));
+    const objetos = objectsOf(aMundo(formatD));
     assert.ok(objetos.length >= 20, `robledo_tile trae ${objetos.length} objetos — ¿fixture equivocada?`);
     for (const obj of objetos) {
       const ent = porId.get(obj.id as string);
@@ -394,7 +317,7 @@ describe("formatDToWorld — la `description` de un objeto es su procedencia, no
 describe("formatDToWorld — un NPC hostil llega con su combate derivado", () => {
   it("`role:\"hostile\"` sale con el bloque combat que el cliente exige", () => {
     const npc = npcsOf(
-      formatDToWorld(
+      aMundo(
         conNpc({ id: "bandido_1", role: "hostile", description: "bandido de camino con cota remendada" }),
       ),
     )[0];
@@ -415,7 +338,7 @@ describe("formatDToWorld — un NPC hostil llega con su combate derivado", () =>
 
   it("un NPC que NO es hostil no lleva combat ni con la clave presente", () => {
     for (const role of [undefined, "villager", "guard", "merchant", "peasant"]) {
-      const npc = npcsOf(formatDToWorld(conNpc({ id: `pacifico_${role}`, ...(role ? { role } : {}) })))[0];
+      const npc = npcsOf(aMundo(conNpc({ id: `pacifico_${role}`, ...(role ? { role } : {}) })))[0];
       assert.ok(
         !("combat" in npc),
         `un ${role ?? "npc sin rol"} salió con combat: el cliente lo daría de alta como combatiente`,
@@ -424,7 +347,7 @@ describe("formatDToWorld — un NPC hostil llega con su combate derivado", () =>
   });
 
   it("el hostil va a npcs[], no a objects[] (la rama de objects era el fósil)", () => {
-    const world = formatDToWorld(conNpc({ id: "lobo_1", role: "hostile", name: "Lobo flaco" }));
+    const world = aMundo(conNpc({ id: "lobo_1", role: "hostile", name: "Lobo flaco" }));
     const objetos = world.objects;
     assert.ok(!objetos.some((o) => o.id === "lobo_1"), "el hostil no puede salir por objects[]");
     assert.ok(objetos.every((o) => !("combat" in o)), "ningún object lleva combat");
@@ -438,20 +361,16 @@ describe("formatDToWorld — un NPC hostil llega con su combate derivado", () =>
  *  Nadie asserteaba nada de ahí. */
 describe("formatDToWorld — la cola de la world scene", () => {
   it("el id de la world scene es el scene_id de la escena, sin alias que lo dupliquen", () => {
-    const w = formatDToWorld(makeFormatD());
+    const w = aMundo(makeFormatD());
     assert.equal(w.scene_id, "taberna_test");
     assert.equal(Object.values(w).filter((v) => v === "taberna_test").length, 1,
       "un solo campo lleva el id: dos nombres para el mismo valor es lo que se retiró");
   });
 
-  it("la descripción viaja tal cual y, sin ella, es cadena VACÍA", () => {
-    assert.equal(formatDToWorld(makeFormatD()).scene_description, "Una taberna de prueba.");
-
-    // Sin descripción, cadena VACÍA: el HUD la pinta tal cual, y un texto de
-    // relleno sería peor que nada.
-    const muda = makeFormatD();
-    delete muda.scene_description;
-    assert.equal(formatDToWorld(muda).scene_description, "");
+  it("la descripción viaja tal cual", () => {
+    // Sin ella ya no hay escena (#782): `scene_description` es obligatoria en
+    // el zod, y la puerta la rechaza antes de pintar.
+    assert.equal(aMundo(makeFormatD()).scene_description, "Una taberna de prueba.");
   });
 
   it("emite un color de terreno usable como fallback sin textura", () => {
@@ -459,37 +378,23 @@ describe("formatDToWorld — la cola de la world scene", () => {
     // oblicuo; su vista 3D pinta el suelo desde el `ground` declarado). Lo que
     // importa es que exista y sea un RGB 0..1 verdoso (suelo de campo), no el
     // valor.
-    const color = (formatDToWorld(makeFormatD()).terrain as { color?: number[] } | undefined)?.color;
+    const color = (aMundo(makeFormatD()).terrain as { color?: number[] } | undefined)?.color;
     assert.ok(Array.isArray(color), "terrain.color debe existir");
     assert.equal(color!.length, 3, "RGB de tres componentes");
     assert.ok(color!.every((c) => typeof c === "number" && c >= 0 && c <= 1), `fuera de 0..1: ${color}`);
     assert.ok(color![1] > color![0] && color![1] > color![2], `el suelo por defecto es verdoso: ${color}`);
   });
 
-  it("scatter_generators solo viaja si es un objeto; basura declarada se descarta", () => {
+  it("scatter_generators viaja tal cual lo declaró el motor", () => {
+    // La basura (una cadena, un save tocado) ya no llega aquí: la rechaza el
+    // gate de escena con `parseScatter` (#782).
     const conScatter = makeFormatD();
     conScatter.scatter_generators = { hierba: { density: 0.4 } };
-    assert.deepEqual(formatDToWorld(conScatter).scatter_generators, { hierba: { density: 0.4 } });
-
-    // Un valor truthy que NO es objeto (save viejo, error del motor) se
-    // descarta: parseScatter aguas abajo espera un mapa, no una cadena.
-    const basura = makeFormatD();
-    basura.scatter_generators = "hierba";
-    assert.equal(formatDToWorld(basura).scatter_generators, undefined);
+    assert.deepEqual(aMundo(conScatter).scatter_generators, { hierba: { density: 0.4 } });
   });
 
-  // La `style_ref` de ESCENA se retiró (guiaba el repintado del tile, que
-  // murió con la vista oblicua): normalizar no la propaga. La de ENTIDAD
-  // (npc) sigue viva y tiene sus propios casos más abajo.
-  it("la style_ref de escena no llega a la world scene (campo retirado)", () => {
-    const conRef = makeFormatD();
-    conRef.style_ref = "settlement";
-    const w = formatDToWorld(conRef);
-    assert.ok(!("style_ref" in w), "no se propaga la elección de escena");
-  });
-
-  it("el biome viaja solo si es una cadena", () => {
-    const tile = formatDToWorld({
+  it("el biome viaja tal cual", () => {
+    const tile = aMundo({
       tile: { tx: 0, ty: 0 },
       scene_id: "tile_0_0",
       scene_description: "campo",
@@ -497,12 +402,8 @@ describe("formatDToWorld — la cola de la world scene", () => {
       entities: [],
     });
     assert.equal(tile.biome, "forest_floor");
-
-    // Una escena ya EXPANDIDA con un biome corrupto (un save tocado a mano) no
-    // vuelve a pasar por resolveBiome, así que la única red es este filtro de tipo.
-    const roto = makeFormatD();
-    roto.biome = 42;
-    assert.equal(formatDToWorld(roto).biome, undefined);
+    // Un biome corrupto en una escena ya expandida (un save tocado a mano) lo
+    // rechaza el gate desde #782; antes lo filtraba aquí un `typeof`.
   });
 
   it("una escena que no declara ningún opcional no emite ninguno", () => {
@@ -510,14 +411,14 @@ describe("formatDToWorld — la cola de la world scene", () => {
     // viaja. Se mira el JSON —lo que recibe el cliente— y no el objeto en
     // memoria: `formatDToWorld` deja la clave con `undefined`, que el wire no
     // lleva; un default inventado (`[]`, `""`) sí llegaría a los clientes.
-    const wire: Record<string, unknown> = JSON.parse(JSON.stringify(formatDToWorld(makeFormatD())));
+    const wire: Record<string, unknown> = JSON.parse(JSON.stringify(aMundo(makeFormatD())));
     for (const campo of ["scatter_generators", "style_ref"]) {
       assert.ok(!(campo in wire), `"${campo}" no declarado no debería viajar`);
     }
     // `biome` sí viaja: un tile lo declara siempre (es su base), así que ya no
     // es un «no declarado» — y viaja tal cual, sin normalizar.
     assert.equal(wire.biome, "grass");
-    const w = formatDToWorld(makeFormatD());
+    const w = aMundo(makeFormatD());
     // Y sin avisos, `__plan_warnings` es `undefined` y NO una lista vacía. La
     // diferencia no la nota el lector del cliente (`?? []`), pero sí el wire:
     // un `[]` viajaría en CADA tile, y el tipo declara el miembro opcional
@@ -526,176 +427,52 @@ describe("formatDToWorld — la cola de la world scene", () => {
   });
 });
 
-/** Contrato de la cabecera del módulo (#378): lo que NO es Format D expandido
- *  LANZA nombrando lo que falta. Hasta esta tanda volvía verbatim, «media
- *  conversión sobre un payload ajeno es peor que ninguna» — pero una
- *  `WorldScene` con miembros no puede ser «lo que entró», y todo lo que llega
- *  aquí en producción pasó por `ExpandedSceneSchema`: un payload sin grid es
- *  un error de quien llama, no una escena que pintar a medias. */
-describe("formatDToWorld — lo que no es Format D expandido lanza", () => {
-  // Marcadas `__expanded` a propósito: sin la marca la conversión intentaría
-  // expandirlas y el error sería el del expander, no el de esta guarda.
-  const casos: [string, Record<string, unknown>][] = [
-    ["sin size", { __expanded: true, terrain: ["gg", "gg"], entities: [] }],
-    ["size sin cols", { __expanded: true, size: { rows: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"], entities: [] }],
-    ["size sin rows", { __expanded: true, size: { cols: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"], entities: [] }],
-    ["terrain con una fila no-string", { __expanded: true, size: { cols: 2, rows: 2, meters_per_cell: 2 }, terrain: ["gg", 42], entities: [] }],
-    ["sin entities", { __expanded: true, size: { cols: 2, rows: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"] }],
-  ];
-  for (const [nombre, payload] of casos) {
-    it(`${nombre} → lanza y nombra las claves que trae`, () => {
-      assert.throws(() => formatDToWorld(payload), (err: Error) => {
-        assert.match(err.message, /no es Format D expandido/);
-        for (const k of Object.keys(payload)) assert.ok(err.message.includes(k), `nombra "${k}": ${err.message}`);
-        return true;
-      });
-    });
-  }
-});
-
 /** #405: `tile` es obligatorio y el rect mundial sale de él — y SOLO de él.
  *  Hasta esta tanda una escena sin `tile` se «centraba en el origen» (rect
  *  ±cols·mpc/2), y esa rama vivía en cuatro sitios más (colisión, plan,
  *  bridge, cliente). Dos tiles distintos y no uno: con un solo caso no se
  *  distingue «el rect sale del tile» de «el rect es siempre el de (0,0)». */
-describe("formatDToWorld — el rect mundial sale del tile, y sin tile no hay escena", () => {
+describe("formatDToWorld — el rect mundial sale del tile", () => {
   const tileEn = (tx: number, ty: number) =>
     expandScenePrimitives({ tile: { tx, ty }, scene_id: `tile_${tx}_${ty}`, scene_description: "campo", biome: "grass", entities: [] });
 
   it("tile (0,0) → rect [−32, 32) y origin (−32, −32)", () => {
-    const w = formatDToWorld(tileEn(0, 0));
+    const w = aMundo(tileEn(0, 0));
     assert.deepEqual(w.world_rect, { minX: -32, minZ: -32, maxX: 32, maxZ: 32 });
     assert.deepEqual(w.terrain_grid.origin, [-32, -32]);
   });
 
   it("tile (1,0) → rect [32, 96) × [−32, 32): la regla, no su contraria", () => {
-    const w = formatDToWorld(tileEn(1, 0));
+    const w = aMundo(tileEn(1, 0));
     assert.deepEqual(w.world_rect, { minX: 32, minZ: -32, maxX: 96, maxZ: 32 });
     assert.deepEqual(w.terrain_grid.origin, [32, -32]);
     assert.deepEqual(w.tile, { tx: 1, ty: 0 });
   });
 
   it("tile (−2, 3) → rect [−160, −96) × [160, 224): los dos ejes y los dos signos", () => {
-    const w = formatDToWorld(tileEn(-2, 3));
+    const w = aMundo(tileEn(-2, 3));
     assert.deepEqual(w.world_rect, { minX: -160, minZ: 160, maxX: -96, maxZ: 224 });
     assert.deepEqual(w.terrain_grid.origin, [-160, 160]);
-  });
-
-  it("expandida sin `tile` → lanza nombrando `tile` (ya no hay escena centrada en el origen)", () => {
-    const { tile: _t, ...sinTile } = makeFormatD();
-    assert.throws(() => formatDToWorld(sinTile), /`tile`/);
-  });
-
-  it("cruda sin `tile` → lanza nombrando `tile` (no hay «escena suelta» que expandir)", () => {
-    assert.throws(
-      () => formatDToWorld({ scene_id: "suelta", scene_description: "campo", biome: "grass", entities: [] }),
-      /`tile`/,
-    );
-  });
-
-  it("`tile` con coords no enteras → lanza diciendo qué llegó", () => {
-    assert.throws(() => formatDToWorld({ ...makeFormatD(), tile: { tx: 0.5, ty: 0 } }), /enteros.*0\.5/);
-  });
-});
-
-/** Fail-loud: una entity malformada tumba la escena con un mensaje que dice
- *  QUÉ entity y QUÉ campo. El motor narrativo re-responde leyendo ese texto
- *  (pre-flight de narrative-mcp) y el bridge lo difunde como
- *  `narrative_status: error`: un mensaje vacío o genérico deja al modelo sin
- *  saber qué corregir, y a un TypeError posterior sin contexto. */
-describe("formatDToWorld — fail-loud con índice, id y campo", () => {
-  /** La entity 0 del fixture, sustituida por una mesa con lo que se le pase. */
-  const mesa = (extra: Record<string, unknown>) => conEntity({ id: "mesa", kind: "prop", ...extra });
-
-  it("una entity nula se nombra por su índice", () => {
-    assert.throws(() => formatDToWorld(conEntity(null, 1)), /scene entities\[1\] is null\/undefined/);
-  });
-
-  it("sin id, el mensaje lo dice antes de mirar nada más", () => {
-    assert.throws(
-      () => formatDToWorld(conEntity({ kind: "building", name: "X", cell: [0, 0], footprint: [1, 1] })),
-      /scene entities\[0\] missing id/,
-    );
-  });
-
-  it("un kind inválido enumera los válidos (el motor los copia de ahí)", () => {
-    assert.throws(
-      () => formatDToWorld(conEntity({ id: "wyrm", kind: "dragon", name: "X", cell: [0, 0], footprint: [1, 1] })),
-      (err: Error) => {
-        assert.match(err.message, /wyrm.*invalid kind="dragon"/);
-        for (const kind of ["player", "npc", "building", "prop", "tree", "item", "decor"]) {
-          assert.ok(err.message.includes(kind), `el mensaje debería listar "${kind}": ${err.message}`);
-        }
-        return true;
-      },
-    );
-  });
-
-  it("cell ausente o de un solo número → missing cell, no un TypeError después", () => {
-    const re = /scene entities\[0\] \(mesa\) missing cell \[col,row\]/;
-    assert.throws(() => formatDToWorld(mesa({ name: "Mesa", footprint: [1, 1] })), re);
-    assert.throws(() => formatDToWorld(mesa({ name: "Mesa", cell: [3], footprint: [1, 1] })), re);
-  });
-
-  it("footprint ausente o de un solo número → missing footprint", () => {
-    const re = /scene entities\[0\] \(mesa\) missing footprint \[w,h\]/;
-    assert.throws(() => formatDToWorld(mesa({ name: "Mesa", cell: [1, 1] })), re);
-    assert.throws(() => formatDToWorld(mesa({ name: "Mesa", cell: [1, 1], footprint: [2] })), re);
-  });
-
-  it("una sola coordenada no finita basta, y el mensaje enseña las cuatro", () => {
-    assert.throws(
-      () => formatDToWorld(mesa({ name: "Mesa", cell: [1, NaN], footprint: [1, 1] })),
-      /\(mesa\) cell\/footprint must be finite numbers, got cell=\[1,NaN\] fp=\[1,1\]/,
-    );
-    assert.throws(
-      () => formatDToWorld(mesa({ name: "Mesa", cell: [1, 1], footprint: ["a", 1] })),
-      /must be finite numbers, got cell=\[1,1\] fp=\[a,1\]/,
-    );
-  });
-
-  it("un npc sin name se distingue de un objeto sin name", () => {
-    assert.throws(
-      () => formatDToWorld(conEntity({ id: "tabernero", kind: "npc", cell: [1, 1], footprint: [1, 1] })),
-      /scene entities\[0\] \(npc tabernero\) missing name/,
-    );
-    assert.throws(
-      () => formatDToWorld(mesa({ cell: [1, 1], footprint: [1, 1] })),
-      /scene entities\[0\] \(mesa\) missing name/,
-    );
   });
 });
 
 /** Altura y forma: el `scale.y` que el cliente 3D (fps-gl en el navegador)
- *  construye tal cual. Un `h` degenerado (0, ∞) produciría una caja invisible
- *  o de 20 m en vez de caer al default por kind. (Hasta la retirada de la
- *  vista oblicua lo extruía además el 2D como prisma, con `prismQuads`; ese
- *  camino ya no existe.) */
-describe("formatDToWorld — altura y forma degeneradas", () => {
+ *  construye tal cual. Un `h` degenerado (0, NaN, negativo) lo rechaza la
+ *  puerta desde #782 (antes caía aquí al default por kind, en silencio);
+ *  lo que queda es la forma por defecto del árbol. */
+describe("formatDToWorld — la forma por defecto", () => {
   const conProp = (h: unknown): Record<string, unknown> => {
     const d = makeFormatD();
     (d.entities as Record<string, unknown>[]).push({ id: "barril", kind: "prop", name: "Barril", cell: [0, 3], footprint: [1, 1], h });
     return d;
   };
-  const alturaDelBarril = (h: unknown): number =>
-    (objectsOf(formatDToWorld(conProp(h))).find((o) => o.id === "barril")!.scale as number[])[1];
-
-  it("h = 0 no produce una caja de altura cero: cae al default por kind", () => {
-    assert.equal(alturaDelBarril(0), KIND_DEFAULT_HEIGHT.prop);
-  });
-
-  it("h infinito (JSON.parse de 1e999 en un save) cae al default, no al techo", () => {
-    assert.equal(alturaDelBarril(Infinity), KIND_DEFAULT_HEIGHT.prop);
-    assert.equal(alturaDelBarril(NaN), KIND_DEFAULT_HEIGHT.prop);
-  });
-
   it("un árbol sin shape declarada sale redondo (cylinder), no caja", () => {
     const d = makeFormatD();
     (d.entities as Record<string, unknown>[]).push({ id: "oak", kind: "tree", name: "Roble", cell: [0, 0], footprint: [1, 1] });
-    const oak = objectsOf(formatDToWorld(d)).find((o) => o.id === "oak");
+    const oak = objectsOf(aMundo(d)).find((o) => o.id === "oak");
     assert.equal(oak?.shape, "cylinder");
     // Un prop sin shape NO recibe forma: el cliente cae a su caja por defecto.
-    const barril = objectsOf(formatDToWorld(conProp(1))).find((o) => o.id === "barril");
+    const barril = objectsOf(aMundo(conProp(1))).find((o) => o.id === "barril");
     assert.ok(!("shape" in barril!), `un prop sin shape no debería llevar la clave: ${JSON.stringify(barril)}`);
   });
 });
@@ -745,7 +522,7 @@ describe("huellaEnMetros — la misma aritmética para el tile y para el spawn",
     (d.entities as Record<string, unknown>[]).push({
       id: "cofre_escena", kind: "prop", name: "Cofre", cell: [10, 10], footprint: [3, 3],
     });
-    const cofre = objectsOf(formatDToWorld(d)).find((o) => o.id === "cofre_escena")!;
+    const cofre = objectsOf(aMundo(d)).find((o) => o.id === "cofre_escena")!;
     const spawneado = huellaEnMetros("object");
     assert.equal(cofre.scale[0], spawneado.x);
     assert.equal(cofre.scale[2], spawneado.z);

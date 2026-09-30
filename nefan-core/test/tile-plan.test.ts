@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 
 import { composeTilePlan, MAX_TILE_VOLUMES } from "../src/scene/tile-plan.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
+import { escenaCargable } from "../src/scene/escena-cargable.js";
 import { MAX_VEG_DENSITY } from "../src/scene/blueprint/vegetation.js";
 
 function tile(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -278,7 +279,7 @@ describe("composeTilePlan · lo que el tile no declara no se inventa", () => {
 
 describe("el plan viaja RESUELTO en la world scene", () => {
   it("formatDToWorld emite __plan y marca los objetos que ya pinta el greybox", () => {
-    const w = formatDToWorld(tile()) as {
+    const w = formatDToWorld(escenaCargable(tile())) as {
       __plan?: { volumes: Array<{ id: string }> };
       objects: Array<{ id: string; volume_id?: string }>;
     };
@@ -295,10 +296,21 @@ describe("el plan viaja RESUELTO en la world scene", () => {
   });
 
   it("los avisos del plan viajan con la escena (cada capa los reporta por su canal)", () => {
-    const w = formatDToWorld(tile({ ground: [{ id: "roto", kind: "inventado" }] })) as {
-      __plan_warnings?: string[];
-    };
+    // Una escena VÁLIDA que pide más de lo que cabe: el aviso del presupuesto.
+    // Hasta #782 se medía con un `ground` inventado, que hoy no pasa la
+    // puerta de la escena — un aviso que solo produce lo inválido no es el
+    // que viaja en partida.
+    const trastos = Array.from({ length: 100 }, (_, i) => ({
+      id: `trasto_${i}`,
+      kind: "prop",
+      name: "trasto",
+      cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
+      footprint: [1, 1],
+    }));
+    const w = formatDToWorld(
+      escenaCargable(tile({ entities: trastos, vegetation_zones: [{ type: "pino", area: "rest", density: MAX_VEG_DENSITY }] })),
+    );
     assert.equal(w.__plan_warnings?.length, 1);
-    assert.match(w.__plan_warnings![0], /ground inválido/);
+    assert.match(w.__plan_warnings![0], new RegExp(`tope son ${MAX_TILE_VOLUMES}`));
   });
 });

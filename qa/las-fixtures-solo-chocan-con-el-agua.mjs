@@ -6,8 +6,8 @@
  *  Nace en la QA de #407 (`W` sale de `DEFAULT_SOLID_CHARS`). Los guiones 05 y
  *  06 miden lo mismo pero bajo `qa/run.mjs`, o sea CON bridge: la normalización
  *  la hace el servidor. El preset `html-fixtures` recorre el OTRO camino
- *  legítimo hasta la world scene —`addTileRaw` → `formatDToWorld` en el
- *  cliente (regla `solo-el-bridge-normaliza-la-escena`, `max: 2`)— y ese
+ *  legítimo hasta la world scene —`addTileRaw` → `escenaCargable` →
+ *  `formatDToWorld` en el cliente (regla `solo-el-bridge-normaliza-la-escena`, `max: 2`)— y ese
  *  camino no lo mira ningún guion. Si un día el cliente empaquetara un core
  *  distinto del del bridge, aquí se vería y en el 06 no.
  *

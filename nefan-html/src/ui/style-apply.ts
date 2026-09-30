@@ -31,6 +31,7 @@ import {
 import { buildFpsTileSpec } from "@nefan-core/src/scene/blueprint/index.js";
 import { buildLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
 import { formatDToWorld, type WorldScene } from "@nefan-core/src/scene/scene-normalize.js";
+import type { ExpandedScene } from "@nefan-core/src/contract/model-io/scene-schema.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
 
 /** Tope de celdas por petición del server (SurfaceAtlasRequest max_length). */
@@ -109,17 +110,6 @@ export interface StyleApplyUrls {
   assets: string;
 }
 
-interface SnapshotScene {
-  scene_id?: string;
-  biome?: string;
-  ground?: unknown[];
-  volumes?: unknown[];
-  scatter_generators?: unknown;
-  scatter_zones?: unknown[];
-  scene_description?: string;
-  [k: string]: unknown;
-}
-
 export class StyleApplyController {
   /** Última corrida (o la que va) — la escribe `run()`, que es el camino que
    *  se prueba: un contador alimentado desde fuera se pondría verde solo. */
@@ -148,7 +138,10 @@ export class StyleApplyController {
           : "este juego no tiene el mundo generado — genera el mundo primero",
       );
     }
-    const snapshot = snap.snapshot as { world_doc_hash: string; scenes: Record<string, SnapshotScene> };
+    // El `as` es del WIRE, no de la escena: el bridge valida el snapshot con
+    // `WorldSnapshotSchema` antes de mandarlo (sus escenas son `ExpandedScene`
+    // por su gate), pero el mensaje `world_snapshot` viaja como `Record`.
+    const snapshot = snap.snapshot as { world_doc_hash: string; scenes: Record<string, ExpandedScene> };
     const scenes = Object.entries(snapshot.scenes);
     const notes: string[] = [];
 

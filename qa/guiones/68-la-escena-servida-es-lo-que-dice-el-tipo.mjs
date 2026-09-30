@@ -22,8 +22,9 @@
  *       cliente lo rotula sin volver a mirar.
  *  Y aparte:
  *   6 · normalizar DOS veces desde JS (`__nefan.addTileRaw(__nefan.scene)`)
- *       se DICE: `formatDToWorld` lanza nombrando lo que no es Format D, en
- *       vez de devolver media conversión (la guarda `__format_d` que hacía
+ *       se DICE: la puerta de lo crudo (`escenaCargable`, desde #782; antes
+ *       `formatDToWorld`) lanza nombrando lo que no es Format D, en vez de
+ *       devolver media conversión (la guarda `__format_d` que hacía
  *       idempotente la llamada murió con él).
  *
  *  EN NEGATIVO (probado el 2026-09-03 al escribirlo): volver a emitir
@@ -110,7 +111,9 @@ export default async function (ctx) {
   ctx.log(`addTileRaw(escena servida): ${segundaPasada.mensaje.slice(0, 160)}`);
   ctx.expect(
     "normalizar una escena YA servida lanza y nombra lo que falta (no devuelve media conversión)",
-    segundaPasada.lanzo && /no es Format D expandido/.test(segundaPasada.mensaje) && /claves:/.test(segundaPasada.mensaje),
+    // Desde #782 la rechaza la PUERTA de lo crudo (`escenaCargable`) con el
+    // motivo del zod: la escena servida trae `terrain` como objeto de color.
+    segundaPasada.lanzo && /no es Format D/.test(segundaPasada.mensaje) && /terrain/.test(segundaPasada.mensaje),
     segundaPasada.mensaje.slice(0, 200),
   );
   const sigue = await ctx.page.evaluate(() => ({ scene: window.__nefan.status().scene, id: window.__nefan.scene?.scene_id }));

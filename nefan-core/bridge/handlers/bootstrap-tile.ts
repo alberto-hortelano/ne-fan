@@ -9,6 +9,7 @@
  *  Y su hermano sin sembrar (#578): `runEntradaEnElMapaDelFichero` regenera
  *  SOLO la entrada de un mundo pre-generado cuya entrada ya no pasa el
  *  validador, dentro del mapa y con el anillo del fichero. */
+import type { ExpandedScene } from "../../src/contract/model-io/scene-schema.js";
 import { loadWorldDoc } from "../../src/games/loader.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { motivoParaElJugador } from "../../src/protocol/status-motivo.js";
@@ -34,7 +35,7 @@ export async function generateBootstrapTileScene(
   ctx: BridgeContext,
   sessionGameId: string,
   opts: { generateVocabulary?: boolean } = {},
-): Promise<{ sceneId: string; scene: Record<string, unknown> }> {
+): Promise<{ sceneId: string; scene: ExpandedScene }> {
   const jobSession = ctx.narrative.session_id;
   const llmCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
   // Fresh session: ask the narrative engine to bootstrap the world map
@@ -91,10 +92,9 @@ export async function generateBootstrapTileScene(
   }
   // Expandir primitivas ANTES de persistir y de snapshotear: lo guardado,
   // snapshoteado y difundido es Format D plano.
-  res.scene = expandScenePrimitives(res.scene);
-  ctx.narrative.recordSceneLoaded(sceneId, res.scene);
+  const escena = ctx.narrative.recordSceneLoaded(sceneId, expandScenePrimitives(res.scene));
   await ctx.narrative.save();
-  return { sceneId, scene: res.scene };
+  return { sceneId, scene: escena };
 }
 
 /** Genera el tile (0,0) de una sesión nueva — corre dentro de la cola. El

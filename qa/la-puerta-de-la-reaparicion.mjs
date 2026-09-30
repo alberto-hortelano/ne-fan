@@ -87,6 +87,7 @@ import { aabbBloquea, fronteraBloquea } from "../nefan-core/dist/src/simulation/
 import { solidoBloquea } from "../nefan-core/dist/src/simulation/salida-del-solido.js";
 import { createTerrainCollider, PLAYER_RADIUS_M } from "../nefan-core/dist/src/scene/terrain-collision.js";
 import { formatDToWorld } from "../nefan-core/dist/src/scene/scene-normalize.js";
+import { escenaCargable } from "../nefan-core/dist/src/scene/escena-cargable.js";
 import { planCollisionGrid } from "../nefan-core/dist/src/scene/blueprint/plan-collision.js";
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -154,7 +155,7 @@ if (devuelto.x === cadaver.x && devuelto.z === cadaver.z && devuelto.y === 0) {
  *  del tile (grid del terreno y grid derivado del plan) y las cajas. */
 function mundoDeLaFixture(nombre, planAplicado) {
   const crudo = JSON.parse(readFileSync(path.join(RAIZ, "nefan-core/data/scenes", `${nombre}.json`), "utf8"));
-  const w = formatDToWorld(crudo);
+  const w = formatDToWorld(escenaCargable(crudo));
   const rect = w.world_rect;
 
   // El plan COMPUESTO (`__plan`), que es el que el cliente instala

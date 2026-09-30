@@ -168,6 +168,14 @@
       "porque": "todo lector del resumen de node --test en scripts/ tiene que decidir también por el código de salida (#697)"
     },
     {
+      "fichero": "escena-cargable.test.ts",
+      "lee": "nefan-core/data/scenes (SCENES)",
+      "argumentos": [
+        "SCENES"
+      ],
+      "porque": "toda fixture del selector «Room» pasa la puerta de lo crudo (`escenaCargable`, #782)"
+    },
+    {
       "fichero": "scene-schema.test.ts",
       "lee": "nefan-core/data/scenes (SCENES)",
       "argumentos": [

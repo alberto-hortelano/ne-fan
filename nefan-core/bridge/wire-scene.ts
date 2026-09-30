@@ -24,6 +24,7 @@
  */
 
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
+import type { ExpandedScene } from "../src/contract/model-io/scene-schema.js";
 import type { EscenaServida, SceneRecordEnElWire, SessionDataEnElWire } from "../src/protocol/messages.js";
 import {
   entidadesFueraDelMundo,
@@ -91,7 +92,7 @@ export function avisoDeIlegibles(nombres: readonly string[]): string {
 function alWire(
   ctx: BridgeContext,
   sceneId: string,
-  sceneData: Record<string, unknown>,
+  sceneData: ExpandedScene,
   estados: Map<string, EstadoEnElWire>,
 ): EscenaServida {
   const wm = ctx.narrative.worldMap;
@@ -111,7 +112,7 @@ function alWire(
 export function escenaParaElWire(
   ctx: BridgeContext,
   sceneId: string,
-  sceneData: Record<string, unknown>,
+  sceneData: ExpandedScene,
 ): EscenaServida {
   return alWire(ctx, sceneId, sceneData, estadosDeCombate(ctx).estados);
 }

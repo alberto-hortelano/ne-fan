@@ -24,7 +24,7 @@ import {
   type WorldSnapshot,
 } from "../src/games/world-snapshot.js";
 import { WorldMapManager } from "../src/world-map/world-map.js";
-import { expandScenePrimitives } from "../src/scene/scene-expand.js";
+import { escenaCargable } from "../src/scene/escena-cargable.js";
 import { routeMessage } from "../bridge/router.js";
 import type {
   StyleApplicationRecordedMessage,
@@ -77,7 +77,7 @@ function makeSnapshot(worldDocHash: string): WorldSnapshot {
     // `validateScene` con `bootstrap: true`, que exige el spawn del jugador
     // —igual que el bootstrap vivo al generarla. Sin él salía `stale`.
     scenes: {
-      tile_0_0: expandScenePrimitives({
+      tile_0_0: escenaCargable({
         scene_id: "tile_0_0",
         scene_description: "arranque",
         tile: { tx: 0, ty: 0 },

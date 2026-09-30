@@ -51,6 +51,7 @@ import type {
   StateUpdateMessage,
 } from "../src/protocol/messages.js";
 import type { WorldClaim } from "./world-claim.js";
+import type { ExpandedScene } from "../src/contract/model-io/scene-schema.js";
 
 /** Superficie mínima de socket que usan los handlers — un WebSocket de `ws`
  *  la cumple, y los tests pueden pasar un capturador. */
@@ -240,7 +241,7 @@ export function writeSessionSnapshot(
   try {
     const worldDoc = loadWorldDoc(ctx.gamesDir, gameId);
     const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
-    const vivas: Record<string, Record<string, unknown>> = {};
+    const vivas: Record<string, ExpandedScene> = {};
     for (const [id, rec] of Object.entries(ctx.narrative.scenes_loaded)) {
       vivas[id] = structuredClone(rec.scene_data);
     }
@@ -358,7 +359,7 @@ export function addNeighborhoodSceneIds(
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
       const n = ctx.narrative.getTile(rec.tile.tx + dx, rec.tile.ty + dy);
-      const id = n ? (n.scene_data.scene_id as string | undefined) : undefined;
+      const id = n?.scene_data.scene_id;
       if (id) sceneIds.add(id);
     }
   }
@@ -473,7 +474,7 @@ export type SitioDeAparicion =
 export function broadcastScene(
   ctx: BridgeContext,
   sceneId: string,
-  scene: Record<string, unknown>,
+  scene: ExpandedScene,
   elapsedMs?: number,
   meta?: {
     edge?: import("../src/world-map/types.js").Edge;

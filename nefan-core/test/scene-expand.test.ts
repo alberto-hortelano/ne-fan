@@ -1,4 +1,5 @@
 import { describe, it } from "node:test";
+import { escenaCargable } from "../src/scene/escena-cargable.js";
 import assert from "node:assert/strict";
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "../src/scene/scene-expand.js";
@@ -54,8 +55,10 @@ describe("expandScenePrimitives", () => {
     assert.equal(out.__expanded, true);
   });
 
-  it("formatDToWorld expands defensively and the water collides", () => {
-    const world = formatDToWorld(makeTile());
+  it("una cruda que entra por la puerta llega expandida y el agua colisiona", () => {
+    // Hasta #782 la expandía `formatDToWorld` por dentro («defensivamente»):
+    // hoy lo hace la puerta de lo crudo, `escenaCargable`.
+    const world = formatDToWorld(escenaCargable(makeTile()));
     const tg = world.terrain_grid as { grid: string[]; solid_chars: string[] };
     assert.equal(tg.grid.length, TILE_CELLS, "la fixture cruda llega expandida");
     assert.ok(tg.solid_chars.includes("w"));

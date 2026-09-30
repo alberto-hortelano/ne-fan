@@ -193,6 +193,7 @@
         "src/scene/tile-plan.ts"
       ],
       "tests": [
+        "test/escena-cargable.test.ts",
         "test/plan-collision.test.ts",
         "test/scene-expand.test.ts",
         "test/scene-normalize.test.ts",
@@ -775,6 +776,7 @@
         "test/contract-physics.test.ts",
         "test/contract-prompts.test.ts",
         "test/entity-vocabulary.test.ts",
+        "test/escena-cargable.test.ts",
         "test/message-schema.test.ts",
         "test/retired-terrain-fields.test.ts",
         "test/scene-fixtures.test.ts",
@@ -1135,6 +1137,26 @@
       ],
       "break": 51,
       "porque": "Dónde vive el save: `FsSessionStorage` (`saves/{session_id}/state.json` en disco, listado de slots, borrado) y `MemorySessionStorage`, el doble que usan los tests. Entra con #430 (2026-09-24), que lo saca de la exclusión declarativa de `serialize-llm`, donde estaba por el coste de su batería y no por sus mutantes (el mismo motivo que `narrative-state`, contestado por `tap-runner`, #443/#597). Importa `node:fs` y `node:path`, y eso lo deja fuera de `core-puro-sin-node` —frontera cierta— pero no de la mutación: entra por el `directorios_completos` de `src/narrative`, y el sandbox de Stryker lo corre escribiendo en temporales como cualquier test. BATERÍA: el MÍNIMO que exige el candado de importadores, ni uno elegido a mano — los DIECISÉIS ficheros que `testsQueImportan` da para el fichero (medido el 2026-09-24; eran 16 el 15-09). COSTE MEDIDO DE LA BATERÍA el 2026-09-24 en esta máquina (16 núcleos), en serie con los `node_args` del plan: 3,43-3,58 s en tres repeticiones. MUTANTES: 162, contados con el instrumentador de Stryker (ver `narrative-state`, donde está la calibración contra tres módulos medidos). RELOJ ESTIMADO EN CI: 40-90 s (137 s-proceso por invocación V8 × los cocientes 0,28-0,65 de los módulos medidos): el grueso de la batería lo alcanza por `NarrativeState` y casi nunca llama a la escritura de disco, así que por mutante corre poco. No cabe en `tope_local` (162 > 120) y, aunque cupiera, `permisoLocal` rechaza el coste desconocido: la primera medida la pide `npm run mutacion -- pendiente`. `sin medir` y no un número por la misma razón que sus vecinos; el candado de `test/mutation-config.test.ts` lo pondrá rojo en cuanto la huella traiga el número. Módulo PROPIO y no junto a `narrative-state`: su suelo no puede ser la media con un fichero cuatro veces mayor. Suelo 51 PUESTO A LA MEDIDA de la corrida 36684509746 (2026-09-30, COMPLETA con 71 informes, sobre 0afb76c): **79 vivos de 162 mutantes**, score 51,23 % (83 `Killed` + 0 `Timeout`, 49 `Survived`, 30 `NoCoverage`). El suelo es el score truncado: no aprieta más de lo medido ni afloja lo que ya se mata."
+    },
+    {
+      "id": "escena-cargable",
+      "mutate": [
+        "src/scene/escena-cargable.ts"
+      ],
+      "tests": [
+        "test/el-estilo-llega-antes-que-la-escena.test.ts",
+        "test/escena-cargable.test.ts",
+        "test/plan-collision.test.ts",
+        "test/scene-expand.test.ts",
+        "test/scene-normalize.test.ts",
+        "test/style-application.test.ts",
+        "test/terrain-collision.test.ts",
+        "test/tile-plan.test.ts",
+        "test/tile.test.ts",
+        "test/world-snapshot.test.ts"
+      ],
+      "break": 0,
+      "porque": "La puerta de lo CRUDO hacia `formatDToWorld` (#782): emitida → `EmittedSceneSchema` → `expandScenePrimitives` → `ExpandedSceneSchema`, o directa al segundo gate si ya trae la marca. Hasta #782 lo hacía `formatDToWorld` por dentro, con una validación a mano más laxa que el zod. Va en módulo PROPIO y no dentro de `scene-normalize` porque aquel no cabe en `tope_local` (300 mutantes) y este sí: el bucle se cierra en local. Nace sin suelo medido; el `break` se fija con `npm run mutacion -- local escena-cargable`. Batería DERIVADA del árbol de imports: `escena-cargable.test.ts` es la suya, y los otros ocho la usan para construir la escena que miden (por la misma puerta que una fixture, en vez de `expandScenePrimitives` + `as`); `tile.test.ts` también, pero por `import()` dinámico, que el derivador no ve: entra a mano."
     },
     {
       "id": "escena-servida",

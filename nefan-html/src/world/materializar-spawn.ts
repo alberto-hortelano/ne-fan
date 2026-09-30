@@ -66,7 +66,7 @@ export interface MaterializadorDeSpawn {
  *  traducirlos aquí es justamente lo que impide que ninguno se filtre. */
 const PINTURA_POR_CLASE: Record<
   "building" | "object" | "item",
-  { category: string; color: string; radius: number; altura: string; que: string }
+  { category: string; color: string; radius: number; altura: keyof typeof KIND_DEFAULT_HEIGHT; que: string }
 > = {
   building: { category: "building", color: "#5a4a38", radius: 8, altura: "building", que: "edificio" },
   object: { category: "prop", color: "#666", radius: 5, altura: "prop", que: "objeto" },

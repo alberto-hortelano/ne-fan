@@ -98,6 +98,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { formatDToWorld } from "../nefan-core/dist/src/scene/scene-normalize.js";
+import { escenaCargable } from "../nefan-core/dist/src/scene/escena-cargable.js";
 import { planCollisionGrid } from "../nefan-core/dist/src/scene/blueprint/plan-collision.js";
 import { createTerrainCollider, PLAYER_RADIUS_M } from "../nefan-core/dist/src/scene/terrain-collision.js";
 // El lado de celda del tile se LEE de su fuente, no se copia. Lo canda
@@ -226,7 +227,7 @@ if (overlay === null) {
  *  SOLO con los ocho vecinos ausentes, que es lo que hay en `html-fixtures`. */
 function mundoDeLaFixture(nombre) {
   const crudo = JSON.parse(readFileSync(path.join(RAIZ, "nefan-core/data/scenes", `${nombre}.json`), "utf8"));
-  const w = formatDToWorld(crudo);
+  const w = formatDToWorld(escenaCargable(crudo));
   const rect = w.world_rect;
 
   const grids = [w.terrain_grid, planCollisionGrid(w.__plan?.ground, w.__plan?.volumes, rect)].filter(Boolean);
