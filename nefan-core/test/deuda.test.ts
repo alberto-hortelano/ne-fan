@@ -422,6 +422,17 @@ describe("cola de deuda · argv (fail-loud)", () => {
     }
   });
 
+  it("el error de --top dice lo que falla: `012` es un entero positivo con ceros a la izquierda", () => {
+    const error = (argv: string[]) => {
+      const o = opcionesDeCli(argv);
+      return o.ok ? "" : o.error;
+    };
+    assert.match(error(["--top", "012"]), /ceros a la izquierda/);
+    assert.doesNotMatch(error(["--top", "012"]), /necesita un entero positivo/);
+    assert.doesNotMatch(error(["--top", "x"]), /ceros a la izquierda/);
+    assert.doesNotMatch(error(["--top", "0"]), /ceros a la izquierda/);
+  });
+
   it("un posicional suelto o una flag desconocida es error: `deuda 5` ya no recorta a 5", () => {
     assert.equal(opcionesDeCli(["5"]).ok, false);
     assert.equal(opcionesDeCli(["--mdd"]).ok, false);

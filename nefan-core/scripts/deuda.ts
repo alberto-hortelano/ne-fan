@@ -635,6 +635,14 @@ export type OpcionesDeCli =
   | { ok: true; formato: "json" | "md" | "texto"; top: number }
   | { ok: false; error: string };
 
+/** Por qué no vale un `--top`, dicho con exactitud: `012` SÍ es un entero
+ *  positivo, lo que no vale es escribirlo con ceros a la izquierda. */
+function errorDeTop(v: string | undefined): string {
+  if (v === undefined) return "--top necesita un valor (un entero positivo)";
+  if (/^0+[1-9]\d*$/.test(v)) return `--top se escribe sin ceros a la izquierda (llegó «${v}»)`;
+  return `--top necesita un entero positivo (llegó «${v}»)`;
+}
+
 /** El argv de la cola. Fail-loud: un `--top` sin número entero positivo, una
  *  flag desconocida o un posicional suelto son error y no se degradan a 12 en
  *  silencio — antes `npm run deuda -- 5` recortaba a 5 sin decir `--top` y
@@ -649,9 +657,7 @@ export function opcionesDeCli(argv: readonly string[]): OpcionesDeCli {
     else if (a === "--md") md = true;
     else if (a === "--top") {
       const v = argv[++i];
-      if (v === undefined || !/^[1-9]\d*$/.test(v)) {
-        return { ok: false, error: `--top necesita un entero positivo (llegó ${v === undefined ? "nada" : `«${v}»`})` };
-      }
+      if (v === undefined || !/^[1-9]\d*$/.test(v)) return { ok: false, error: errorDeTop(v) };
       top = Number(v);
     } else return { ok: false, error: `argumento desconocido: «${a}»` };
   }

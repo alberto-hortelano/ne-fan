@@ -10,11 +10,13 @@ import { join } from "node:path";
 
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { SCRIPT_DE_PURGA, verificarKindsConProductor } from "../services/asset-store/kinds-con-productor.js";
+import { resolveServiceUrl } from "../src/contracts/service-registry.js";
 import {
   compararExport,
   FICHERO_EXPORT,
   guardiaDeOrden,
   informeDePurga,
+  medirHechos,
   parseArgs,
   purgar,
   rutasDeCli,
@@ -200,31 +202,49 @@ describe("purgar", () => {
 
 describe("el ORDEN de las guardias del CLI", () => {
   // Lo que protege el material pagado no es cada guardia sino su precedencia:
-  // con dos fallando a la vez, el mensaje tiene que mandar a hacer PRIMERO el
-  // `mv` de los blobs, que es lo que no se puede hacer después de borrar la
-  // fila. Tabla de los ocho combos, no tres casos sueltos: así reordenar dos
-  // `if` pone rojo aunque cada guardia siga funcionando sola.
-  const rutas = { cacheDir: "/c", archivoDir: "/a", storeUrl: "http://127.0.0.1:1", dbPath: "/d.sqlite3" };
+  // con blobs sobrantes el mensaje tiene que mandar a hacer PRIMERO el `mv`,
+  // que es lo que no se puede hacer después de borrar la fila. Esa mitad está
+  // en el TIPO (con blobs, store y DB no se miden) y en `medirHechos`; la
+  // otra (store > db) es la tabla de abajo.
+  const rutas = { cacheDir: "/c", archivoDir: "/a", dbPath: "/d.sqlite3" };
 
-  it("manda la guardia de más arriba: blobs > store > db", () => {
-    for (const blobs of [true, false]) {
-      for (const storeArriba of [true, false]) {
-        for (const dbExiste of [true, false]) {
-          const v = veredictoDeGuardias({ sobrantes: blobs ? ["textures"] : [], storeArriba, dbExiste }, rutas);
-          const esperada = blobs ? "blobs" : storeArriba ? "store" : !dbExiste ? "db" : undefined;
-          const combo = JSON.stringify({ blobs, storeArriba, dbExiste });
-          if (esperada === undefined) assert.deepEqual(v, { ok: true }, combo);
-          else assert.equal(v.ok === false && v.guardia, esperada, combo);
-        }
+  it("sin blobs sobrantes manda el store sobre la DB, en las cuatro combinaciones", () => {
+    for (const storeArriba of [true, false]) {
+      for (const dbExiste of [true, false]) {
+        const v = veredictoDeGuardias({ sobrantes: [], storeUrl: "http://s", storeArriba, dbExiste }, rutas);
+        const esperada = storeArriba ? "store" : !dbExiste ? "db" : undefined;
+        const combo = JSON.stringify({ storeArriba, dbExiste });
+        if (esperada === undefined) assert.deepEqual(v, { ok: true }, combo);
+        else assert.equal(v.ok === false && v.guardia, esperada, combo);
       }
     }
   });
 
   it("la de blobs da un `mv` por sobrante, de cache/ a archivo/ (jamás rm)", () => {
-    const v = veredictoDeGuardias({ sobrantes: ["textures", "manifest.json"], storeArriba: false, dbExiste: true }, rutas);
-    assert.equal(v.ok, false);
+    const v = veredictoDeGuardias({ sobrantes: ["textures", "manifest.json"] }, rutas);
+    assert.equal(v.ok === false && v.guardia, "blobs");
     const mvs = v.ok ? [] : v.lineas.filter((l) => l.trim().startsWith("mv "));
     assert.deepEqual(mvs.map((l) => l.trim()), ["mv /c/textures /a/textures", "mv /c/manifest.json /a/manifest.json"]);
+  });
+
+  it("medirHechos mira los blobs ANTES de resolver el store: un offset inválido no tapa el `mv`", async () => {
+    // QA de BQ (M1): con `resolveServiceUrl` delante, `NEFAN_PORT_OFFSET=150`
+    // cambiaba las líneas `mv` por una traza de service-registry.
+    const cacheDir = join(root, "orden-cache");
+    mkdirSync(join(cacheDir, "textures"), { recursive: true });
+    const h = await medirHechos({ ...rutas, cacheDir }, { NEFAN_PORT_OFFSET: "150" });
+    assert.deepEqual(h, { sobrantes: ["textures"] });
+    assert.throws(() => resolveServiceUrl("asset-store", { NEFAN_PORT_OFFSET: "150" }), /NEFAN_PORT_OFFSET/);
+  });
+
+  it("medirHechos sin sobrantes sondea el store de la URL resuelta y mira la DB sin crearla", async () => {
+    const cacheDir = join(root, "orden-limpio");
+    mkdirSync(cacheDir, { recursive: true });
+    const dbPath = join(root, "orden-no-existe.sqlite3");
+    // Puerto 1: nadie escucha, el sondeo cae en «parado» sin esperar al timeout.
+    const h = await medirHechos({ ...rutas, cacheDir, dbPath }, { NEFAN_URL_ASSET_STORE: "http://127.0.0.1:1" });
+    assert.deepEqual(h, { sobrantes: [], storeUrl: "http://127.0.0.1:1", storeArriba: false, dbExiste: false });
+    assert.equal(existsSync(dbPath), false);
   });
 });
 
@@ -244,17 +264,15 @@ describe("parseArgs del CLI", () => {
 
   it("las flags mandan sobre la config; sin --archivo, archivo/cache del repo", () => {
     const cfg = { dbPath: "/cfg/m.sqlite3", cacheDir: "/cfg/cache" };
-    assert.deepEqual(rutasDeCli({ ejecutar: false }, cfg, "http://s", "/repo"), {
+    assert.deepEqual(rutasDeCli({ ejecutar: false }, cfg, "/repo"), {
       dbPath: "/cfg/m.sqlite3",
       cacheDir: "/cfg/cache",
       archivoDir: "/repo/archivo/cache",
-      storeUrl: "http://s",
     });
-    assert.deepEqual(rutasDeCli({ ejecutar: true, db: "/x", cache: "/c", archivo: "/a" }, cfg, "http://s", "/repo"), {
+    assert.deepEqual(rutasDeCli({ ejecutar: true, db: "/x", cache: "/c", archivo: "/a" }, cfg, "/repo"), {
       dbPath: "/x",
       cacheDir: "/c",
       archivoDir: "/a",
-      storeUrl: "http://s",
     });
   });
 

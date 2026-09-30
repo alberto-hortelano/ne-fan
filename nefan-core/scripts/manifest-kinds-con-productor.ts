@@ -185,20 +185,18 @@ export function parseArgs(argv: string[]): Args | { error: string } {
   return args;
 }
 
-/** Lo que `main` averigua del mundo antes de abrir la DB. Son HECHOS: el
- *  orden en que pesan no lo decide quien los mide, lo decide
- *  `veredictoDeGuardias`. */
-export interface HechosDeGuardia {
-  /** Entradas de `cache/` que no son de un kind con productor (`guardiaDeOrden`). */
-  sobrantes: string[];
-  storeArriba: boolean;
-  dbExiste: boolean;
-}
+/** Lo que `main` averigua del mundo antes de abrir la DB. Con blobs
+ *  sobrantes lo demás NO se mide —ni se resuelve la URL del store, que puede
+ *  lanzar con un `NEFAN_PORT_OFFSET` inválido—: la precedencia blobs > store
+ *  > db está en el TIPO, y un «blobs fallando con el store medido» no se
+ *  puede escribir. */
+export type HechosDeGuardia =
+  | { sobrantes: [string, ...string[]] }
+  | { sobrantes: []; storeUrl: string; storeArriba: boolean; dbExiste: boolean };
 
 export interface RutasDeGuardia {
   cacheDir: string;
   archivoDir: string;
-  storeUrl: string;
   dbPath: string;
 }
 
@@ -208,10 +206,10 @@ export type VeredictoDeGuardias =
 
 /** La precedencia de las guardias, que es lo que protege el material pagado
  *  (ver el ORDEN de la cabecera): blobs archivados > store parado > DB
- *  existe. Con dos fallando a la vez manda la de más arriba, porque su
- *  remedio (`mv` de blobs) es el que no se puede hacer después. */
+ *  existe. Con blobs sobrantes manda esa, porque su remedio (`mv` de blobs)
+ *  es el que no se puede hacer después de borrar la fila. */
 export function veredictoDeGuardias(h: HechosDeGuardia, rutas: RutasDeGuardia): VeredictoDeGuardias {
-  if (h.sobrantes.length > 0) {
+  if (!("storeUrl" in h)) {
     return {
       ok: false,
       guardia: "blobs",
@@ -226,7 +224,7 @@ export function veredictoDeGuardias(h: HechosDeGuardia, rutas: RutasDeGuardia): 
       ok: false,
       guardia: "store",
       lineas: [
-        `manifest-kinds-con-productor: hay un asset-store respondiendo en ${rutas.storeUrl} — párale primero (tecla k de start.sh): VACUUM exige exclusividad.`,
+        `manifest-kinds-con-productor: hay un asset-store respondiendo en ${h.storeUrl} — párale primero (tecla k de start.sh): VACUUM exige exclusividad.`,
       ],
     };
   }
@@ -286,27 +284,24 @@ export function informeDePurga(r: Resumen, ejecutar: boolean, dbPath: string): {
 }
 
 /** Las rutas efectivas: las flags mandan sobre la config del store. */
-export function rutasDeCli(
-  parsed: Args,
-  cfg: { dbPath: string; cacheDir: string },
-  storeUrl: string,
-  repoRoot: string,
-): RutasDeGuardia {
+export function rutasDeCli(parsed: Args, cfg: { dbPath: string; cacheDir: string }, repoRoot: string): RutasDeGuardia {
   return {
     dbPath: parsed.db ?? cfg.dbPath,
     cacheDir: parsed.cache ?? cfg.cacheDir,
     archivoDir: parsed.archivo ?? resolve(repoRoot, "archivo", "cache"),
-    storeUrl,
   };
 }
 
-/** Mide los tres hechos EN EL ORDEN de la cabecera y sin abrir la DB. */
-async function medirHechos(rutas: RutasDeGuardia): Promise<HechosDeGuardia> {
-  return {
-    sobrantes: guardiaDeOrden(existsSync(rutas.cacheDir) ? readdirSync(rutas.cacheDir) : []),
-    storeArriba: await storeArriba(rutas.storeUrl),
-    dbExiste: existsSync(rutas.dbPath),
-  };
+/** Mide los hechos EN EL ORDEN de la cabecera y sin abrir la DB: primero los
+ *  blobs, y solo si no sobra nada, la URL del store, su sondeo y la DB. */
+export async function medirHechos(
+  rutas: RutasDeGuardia,
+  env: Record<string, string | undefined>,
+): Promise<HechosDeGuardia> {
+  const sobrantes = guardiaDeOrden(existsSync(rutas.cacheDir) ? readdirSync(rutas.cacheDir) : []);
+  if (sobrantes.length > 0) return { sobrantes: sobrantes as [string, ...string[]] };
+  const storeUrl = resolveServiceUrl("asset-store", env);
+  return { sobrantes: [], storeUrl, storeArriba: await storeArriba(storeUrl), dbExiste: existsSync(rutas.dbPath) };
 }
 
 /** Cableado: mide, delega el veredicto y el informe en las funciones puras
@@ -318,8 +313,8 @@ async function main(): Promise<number> {
     console.error("uso: npx tsx scripts/manifest-kinds-con-productor.ts [--ejecutar] [--db <p>] [--cache <dir>] [--archivo <dir>]");
     return 2;
   }
-  const rutas = rutasDeCli(parsed, loadAssetStoreConfig(process.env), resolveServiceUrl("asset-store", process.env), REPO_ROOT);
-  const veredicto = veredictoDeGuardias(await medirHechos(rutas), rutas);
+  const rutas = rutasDeCli(parsed, loadAssetStoreConfig(process.env), REPO_ROOT);
+  const veredicto = veredictoDeGuardias(await medirHechos(rutas, process.env), rutas);
   if (!veredicto.ok) {
     console.error(veredicto.lineas.join("\n"));
     return 1;
