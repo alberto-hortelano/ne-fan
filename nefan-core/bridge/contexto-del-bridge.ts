@@ -77,6 +77,7 @@ export function crearContextoDelBridge(deps: DependenciasDelContexto): {
     activePlugins: new Map(),
     sceneGen: new SceneGenQueue(),
     despertar: { enVuelo: null },
+    conversacion: { terminadas: 0 },
     posTracking: { cellKey: null, tileKey: null },
     world: createWorldClaim(narrative, sim),
     subscribe(ws) {

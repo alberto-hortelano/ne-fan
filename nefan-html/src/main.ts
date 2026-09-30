@@ -268,7 +268,7 @@ const chip = crearChipDeConexion();
 const conversacion = crearConversacion({
   lienzo: () => fpsRenderer.element,
   session,
-  enviarEleccion: (eleccion) => narrativeClient.sendDialogueChoice(eleccion),
+  red: () => narrativeClient,
 });
 const travelPanel = new TravelPanel();
 /** Lo que el juego recuerda del último viaje pedido por «Salidas», paso a

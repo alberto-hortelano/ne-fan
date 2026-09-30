@@ -328,6 +328,16 @@
 }
 #dialogue-choices { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; align-items: flex-start; }
 #dialogue-choices .nf-action { width: 100%; }
+/* Terminar: arriba a la derecha del panel, en la fila del hablante, visible
+   en todos los estados (también durante el typewriter y con el texto libre
+   abierto). */
+#dialogue-panel { position: relative; }
+#dialogue-end {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+#dialogue-speaker { padding-right: 7.5em; }
 #dialogue-input {
   display: none;
   width: 100%;

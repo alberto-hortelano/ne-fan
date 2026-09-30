@@ -401,6 +401,12 @@ export class BridgeClient {
     this.send({ type: "dialogue_choice", ...payload });
   }
 
+  /** Terminar la conversación sin contestar: el bridge lo apunta en el
+   *  historial y NO llama al motor. Sin respuesta. */
+  sendDialogueEnd(payload: { speaker: string; speakerId?: string }): void {
+    this.send({ type: "dialogue_end", ...payload });
+  }
+
   /** Tell the bridge the player entered a world-map place. The bridge lazily
    *  realizes the place's scene and broadcasts it as a narrative_event. */
   sendPlayerEnteredPlace(placeId: string): void {

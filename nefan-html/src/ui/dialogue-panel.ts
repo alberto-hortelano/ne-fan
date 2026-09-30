@@ -2,8 +2,8 @@
  *  escribir y opciones que se eligen con la tecla O con el ratón.
  *
  *  Teclado y click entran por los MISMOS métodos públicos
- *  (chooseByIndex/openFreeText/advance), así que no hay dos caminos que
- *  mantener. Al abrirse suelta el pointer lock: con el ratón capturado el
+ *  (chooseByIndex/openFreeText/advance/terminar), así que no hay dos caminos
+ *  que mantener. Al abrirse suelta el pointer lock: con el ratón capturado el
  *  cursor no existe y las opciones serían inclicables. */
 
 import { alPulsarTecla } from "../input/puerta-de-teclado.js";
@@ -17,6 +17,14 @@ export type FreeTextCallback = (text: string) => void;
 export interface DialogueSpeaker {
   /** Id de la entidad, cuando el bridge pudo resolverlo. */
   id?: string;
+}
+
+/** Las teclas que avanzan una línea sin opciones. */
+const TECLAS_DE_AVANZAR = new Set(["e", "E", " ", "Enter"]);
+
+/** Las teclas que, con el typewriter corriendo, lo completan. */
+function esTeclaDeAccion(key: string): boolean {
+  return TECLAS_DE_AVANZAR.has(key) || key === "t" || key === "T" || (key >= "1" && key <= "9");
 }
 
 export class DialoguePanel {
@@ -38,6 +46,8 @@ export class DialoguePanel {
   onAdvanced: DialogueCallback = () => {};
   onChoice: ChoiceCallback = () => {};
   onFreeText: FreeTextCallback = () => {};
+  /** El jugador corta la conversación sin contestar (botón o Esc). */
+  onTerminar: DialogueCallback = () => {};
 
   constructor() {
     this.panel = document.getElementById("dialogue-panel")!;
@@ -47,6 +57,13 @@ export class DialoguePanel {
     this.choicesEl = document.getElementById("dialogue-choices")!;
     this.inputEl = document.getElementById("dialogue-input") as HTMLInputElement;
     this.choiceBar = new ActionBar(this.choicesEl);
+
+    // Terminar (tanda BX): siempre visible, fuera de la barra de opciones.
+    // Sin foco, por lo mismo que los botones de la barra: con foco se
+    // tragaría Espacio y Enter.
+    const endBtn = document.getElementById("dialogue-end")!;
+    endBtn.addEventListener("pointerdown", (e) => e.preventDefault());
+    endBtn.addEventListener("click", () => this.terminar());
 
     this.inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -58,6 +75,8 @@ export class DialoguePanel {
         e.preventDefault();
         e.stopImmediatePropagation();
       } else if (e.key === "Escape") {
+        // Esc con el texto libre abierto retrocede UN nivel (a las opciones);
+        // un segundo Esc termina la conversación. El botón termina siempre.
         this._closeFreeText();
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -78,40 +97,36 @@ export class DialoguePanel {
     alPulsarTecla((e) => {
       if (!this._visible) return;
       if (this._freeTextOpen) return;  // input element handles its own keys
-
-      // Mientras el typewriter corre las opciones no existen aún: una tecla
-      // de acción completa el texto en vez de actuar (elegir sin haber
-      // podido leer la línea entera).
-      const isActionKey =
-        e.key === "e" || e.key === "E" || e.key === " " || e.key === "Enter" ||
-        e.key === "t" || e.key === "T" || (e.key >= "1" && e.key <= "9");
-      if (this._typewriterTimer && isActionKey) {
-        this.finishTypewriter();
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        return;
-      }
-
-      if (e.key === "t" || e.key === "T") {
-        this.openFreeText();
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        return;
-      }
-
-      if (this._choices.length > 0) {
-        const idx = parseInt(e.key) - 1;
-        if (idx >= 0 && idx < this._choices.length) {
-          this.chooseByIndex(idx);
-          e.preventDefault();
-          e.stopImmediatePropagation();
-        }
-      } else if (e.key === "e" || e.key === "E" || e.key === " " || e.key === "Enter") {
-        this.advance();
-        e.preventDefault();
-        e.stopImmediatePropagation();
-      }
+      const accion = this._accionDeTecla(e.key);
+      if (!accion) return;
+      accion();
+      e.preventDefault();
+      e.stopImmediatePropagation();
     });
+  }
+
+  /** Qué hace una tecla con el panel delante, o `null` si no es suya (y
+   *  sigue hacia el proveedor). Partido del manejador para que cada decisión
+   *  quepa a la vista (tanda BX: el Esc lo hizo crecer). */
+  private _accionDeTecla(key: string): (() => void) | null {
+    // Esc TERMINA la conversación, y va ANTES de la guarda del typewriter:
+    // irse no exige leer la línea entera. Al consumirla, el Esc del proveedor
+    // (soltar/capturar el ratón) no corre con el panel abierto: el ratón lo
+    // devuelve `conversacion.ts` al cerrar.
+    if (key === "Escape") return () => this.terminar();
+    // Mientras el typewriter corre las opciones no existen aún: una tecla
+    // de acción completa el texto en vez de actuar (elegir sin haber
+    // podido leer la línea entera).
+    if (this._typewriterTimer && esTeclaDeAccion(key)) return () => this.finishTypewriter();
+    if (key === "t" || key === "T") return () => this.openFreeText();
+    if (this._choices.length > 0) return this._opcionDeTecla(key);
+    return TECLAS_DE_AVANZAR.has(key) ? () => this.advance() : null;
+  }
+
+  /** La opción que elige una tecla 1..N, si la hay. */
+  private _opcionDeTecla(key: string): (() => void) | null {
+    const idx = parseInt(key) - 1;
+    return idx >= 0 && idx < this._choices.length ? () => this.chooseByIndex(idx) : null;
   }
 
   // --- Acciones (mismo camino para tecla y para click) ---
@@ -126,6 +141,13 @@ export class DialoguePanel {
   advance(): void {
     this.hide();
     this.onAdvanced();
+  }
+
+  /** Termina la conversación sin contestar: botón, Esc y el hook del banco
+   *  entran por aquí. */
+  terminar(): void {
+    this.hide();
+    this.onTerminar();
   }
 
   openFreeText(): void {

@@ -31,8 +31,15 @@
  *      tile minutos) y lo cazó la QA de la tanda (guion 344): el tile y la
  *      posición son aún los de salida, así que sin esto la réplica abría el
  *      panel detrás del «Viajando…» y seguía abierta en el destino;
- *   3. el jugador está en OTRO TILE que cuando se pidió (`active_scene_id`);
- *   4. el hablante está más LEJOS que el alcance del nombre del HUD
+ *   3. el jugador ha DADO POR TERMINADA una conversación desde que pidió
+ *      (botón «terminar» o Esc, tanda BX; contador del bridge, foto antes y
+ *      después como los ataques). Global y no por hablante: quien acaba de
+ *      decir «basta» a una conversación no quiere que la réplica que llega
+ *      después le meta en otra. Con «elijo y espero» no puede pasar —sin
+ *      panel abierto no hay botón—: solo si entretanto se abrió OTRA línea
+ *      (un E a otro NPC, un diálogo del motor) y el jugador la cortó;
+ *   4. el jugador está en OTRO TILE que cuando se pidió (`active_scene_id`);
+ *   5. el hablante está más LEJOS que el alcance del nombre del HUD
  *      (`ALCANCE_DEL_NOMBRE_M`). Sin posición del hablante —el narrador, o un
  *      nombre sin entidad detrás— esta pregunta no se hace.
  *
@@ -52,7 +59,7 @@ import { ALCANCE_DEL_NOMBRE_M } from "../scene/aim.js";
 import type { ConsequenceEffect } from "./types.js";
 
 /** Por qué la réplica ya no era la conversación actual. */
-export type MotivoDeDiferir = "combate" | "viaje" | "otro_tile" | "lejos";
+export type MotivoDeDiferir = "combate" | "viaje" | "terminada" | "otro_tile" | "lejos";
 
 /** El effect de una réplica que llegó tarde: lo que dijo el hablante, sin
  *  panel. Es un kind PROPIO y no un `show_dialogue` con una bandera a
@@ -88,6 +95,9 @@ export interface ContextoDeLaReplica {
   atacoDesdeQuePidio: boolean;
   /** ¿Hay un viaje pedido y todavía sin llegar? */
   viajeEnCurso: boolean;
+  /** ¿Ha dado el jugador por terminada alguna conversación (botón o Esc)
+   *  entre el pedir y el llegar? */
+  terminoUnaConversacionDesdeQuePidio: boolean;
   /** ¿Algún hostil vivo le tiene enganchado al llegar? Solo elige la pista. */
   hayPelea: boolean;
   jugador: PuntoXZ;
@@ -99,6 +109,7 @@ export type Vigencia = { vigente: true } | { vigente: false; motivo: MotivoDeDif
 export function vigenciaDeLaReplica(ctx: ContextoDeLaReplica, hablante?: PuntoXZ): Vigencia {
   if (ctx.atacoDesdeQuePidio) return { vigente: false, motivo: "combate" };
   if (ctx.viajeEnCurso) return { vigente: false, motivo: "viaje" };
+  if (ctx.terminoUnaConversacionDesdeQuePidio) return { vigente: false, motivo: "terminada" };
   if (ctx.escenaAlPedir !== ctx.escenaAhora) return { vigente: false, motivo: "otro_tile" };
   if (hablante && Math.hypot(hablante.x - ctx.jugador.x, hablante.z - ctx.jugador.z) > ALCANCE_DEL_NOMBRE_M) {
     return { vigente: false, motivo: "lejos" };

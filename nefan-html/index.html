@@ -123,6 +123,10 @@
             <div id="dialogue-choices" role="group"></div>
             <input id="dialogue-input" type="text" placeholder="Escribe tu respuesta y pulsa Enter…">
           </div>
+          <!-- Terminar la conversación (tanda BX): FUERA de #dialogue-choices,
+               que está vacío durante el typewriter, para que se vea en
+               cualquier estado del panel. Lo cablea dialogue-panel.ts. -->
+          <button id="dialogue-end" class="nf-action" type="button"><kbd class="nf-key">Esc</kbd><span class="nf-label">terminar</span></button>
         </div>
         <div id="action-bar"></div>
       </div>

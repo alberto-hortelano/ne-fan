@@ -18,8 +18,10 @@ export interface DepsDeConversacion {
   lienzo(): HTMLElement;
   /** Sin partida no hay motor al que mandar la elección. */
   session: Pick<ClientSession, "active">;
-  /** La elección, camino del bridge. */
-  enviarEleccion: NarrativeClient["sendDialogueChoice"];
+  /** Camino del bridge: la elección (`sendDialogueChoice`) y el fin sin
+   *  contestar (`sendDialogueEnd`, que el bridge apunta en el historial sin
+   *  llamar al motor, tanda BX). Función porque el cliente nace después. */
+  red(): Pick<NarrativeClient, "sendDialogueChoice" | "sendDialogueEnd">;
 }
 
 export interface Conversacion {
@@ -130,11 +132,21 @@ export function crearConversacion(deps: DepsDeConversacion): Conversacion {
     cerrar();
   };
 
+  /** Terminar sin contestar (botón o Esc): se cierra IGUAL que tras elegir —el
+   *  ratón vuelve— y el bridge lo apunta sin preguntar al motor. La línea se
+   *  lee ANTES de cerrar: `hide()` borra el `speakerId`. */
+  panel.onTerminar = () => {
+    const cur = panel.current();
+    cerrar();
+    if (!deps.session.active) return;
+    deps.red().sendDialogueEnd({ speaker: cur.speaker, speakerId: cur.speakerId });
+  };
+
   panel.onChoice = (idx, text) => {
     cerrar();
     if (!deps.session.active) return;
     const cur = panel.current();
-    deps.enviarEleccion({
+    deps.red().sendDialogueChoice({
       eventId: `client_${Date.now()}`,  // bridge generates the canonical id
       choiceIndex: idx,
       speaker: cur.speaker,
@@ -147,7 +159,7 @@ export function crearConversacion(deps: DepsDeConversacion): Conversacion {
     cerrar();
     if (!deps.session.active) return;
     const cur = panel.current();
-    deps.enviarEleccion({
+    deps.red().sendDialogueChoice({
       eventId: `client_${Date.now()}`,
       choiceIndex: -1,
       speaker: cur.speaker,
