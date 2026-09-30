@@ -27,6 +27,7 @@ import {
   esAyudanteDelTranspilador,
   fallosDelModulo,
   fuenteConNombresReservados,
+  fusionarVolcados,
   informeDeBateriaRota,
   rutaDelScript,
   testsCaidosDelTap,
@@ -108,6 +109,36 @@ describe("ejercicio de batería · cargar no es ejercer", () => {
     // hilo y aquí no corrió.
     assert.deepEqual(ejercicioDeFichero(cobertura(fn("", 0, 0), fn("algo", 100, 0))), { tipo: "sin cargar" });
     assert.match(ejercicioLegible({ tipo: "sin cargar" }), /SIN CARGAR/);
+  });
+});
+
+describe("ejercicio de batería · dos volcados del mismo fichero", () => {
+  // `tsx` arranca más de un hilo y cada uno deja su `coverage-*.json`: el
+  // fichero mutado puede venir cargado-sin-llamar en uno y ejercido en otro.
+  // Quedarse con el que NO se ejerció es el falso negativo del candado.
+  const raiz = "/repo/nefan-core";
+  const ruta = "src/world-map/place-target.ts";
+  const cargado = cobertura(fn("", 0, 1), fn("resolvePlaceTarget", 200, 0));
+  const ejercido7 = cobertura(fn("", 0, 1), fn("resolvePlaceTarget", 200, 7));
+
+  it("gana el volcado con más llamadas, venga en el orden que venga", () => {
+    for (const orden of [[cargado, ejercido7], [ejercido7, cargado]]) {
+      const fusion = fusionarVolcados(orden.map((c) => ({ result: [c] })), raiz);
+      assert.equal(fusion.get(ruta), ejercido7);
+      assert.equal(ejercido(ejercicioDeFichero(fusion.get(ruta))), true);
+    }
+  });
+
+  it("con empate se queda el PRIMERO: el `>` es estricto a propósito", () => {
+    const otro = cobertura(fn("", 0, 1), fn("resolvePlaceTarget", 200, 0));
+    const fusion = fusionarVolcados([{ result: [cargado] }, { result: [otro] }], raiz);
+    assert.equal(fusion.get(ruta), cargado);
+  });
+
+  it("lo que no es del paquete no entra, y un volcado sin `result` no rompe", () => {
+    const ajeno: CoberturaDeFichero = { url: "node:internal/modules/esm/loader", functions: [fn("x", 0, 99)] };
+    const fusion = fusionarVolcados([{ result: [ajeno] }, {}, { result: [cargado] }], raiz);
+    assert.deepEqual([...fusion.keys()], [ruta]);
   });
 });
 

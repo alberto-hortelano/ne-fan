@@ -628,9 +628,83 @@ export function cabeceraDe(bloques: readonly Bloque[]): string {
   );
 }
 
-function main(): void {
-  const argv = process.argv.slice(2);
-  const TOP = Number(argv[argv.indexOf("--top") + 1]) || 12;
+/** Cuántos items de cada bloque se imprimen si no se pide otra cosa. */
+export const TOP_POR_DEFECTO = 12;
+
+export type OpcionesDeCli =
+  | { ok: true; formato: "json" | "md" | "texto"; top: number }
+  | { ok: false; error: string };
+
+/** Por qué no vale un `--top`, dicho con exactitud: `012` SÍ es un entero
+ *  positivo, lo que no vale es escribirlo con ceros a la izquierda. */
+function errorDeTop(v: string | undefined): string {
+  if (v === undefined) return "--top necesita un valor (un entero positivo)";
+  if (/^0+[1-9]\d*$/.test(v)) return `--top se escribe sin ceros a la izquierda (llegó «${v}»)`;
+  return `--top necesita un entero positivo (llegó «${v}»)`;
+}
+
+/** El argv de la cola. Fail-loud: un `--top` sin número entero positivo, una
+ *  flag desconocida o un posicional suelto son error y no se degradan a 12 en
+ *  silencio — antes `npm run deuda -- 5` recortaba a 5 sin decir `--top` y
+ *  `--top 0` imprimía 12. */
+export function opcionesDeCli(argv: readonly string[]): OpcionesDeCli {
+  let json = false;
+  let md = false;
+  let top = TOP_POR_DEFECTO;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--json") json = true;
+    else if (a === "--md") md = true;
+    else if (a === "--top") {
+      const v = argv[++i];
+      if (v === undefined || !/^[1-9]\d*$/.test(v)) return { ok: false, error: errorDeTop(v) };
+      top = Number(v);
+    } else return { ok: false, error: `argumento desconocido: «${a}»` };
+  }
+  return { ok: true, formato: json ? "json" : md ? "md" : "texto", top };
+}
+
+export interface BloqueImpreso {
+  bloque: Bloque;
+  mostrados: Item[];
+  /** Items que quedan fuera por `top` (0 si caben todos). */
+  resto: number;
+}
+
+/** LA decisión de qué se imprime: los `top` primeros de cada bloque, en el
+ *  orden de los bloques, y cuántos quedan fuera. La redacción es otra cosa. */
+export function planDeImpresion(bloques: readonly Bloque[], top: number): BloqueImpreso[] {
+  return bloques.map((bloque) => ({
+    bloque,
+    mostrados: bloque.items.slice(0, top),
+    resto: Math.max(0, bloque.items.length - top),
+  }));
+}
+
+/** El texto de la cola, en markdown o para la terminal. */
+export function redactarCola(cabecera: string, plan: readonly BloqueImpreso[], formato: "md" | "texto"): string {
+  const md = formato === "md";
+  const out: string[] = [md ? `## ${cabecera}\n` : `\n${cabecera}\n`];
+  for (const { bloque: b, mostrados, resto } of plan) {
+    const titular = `${b.titulo} · ${b.items.length}`;
+    out.push(md ? `### ${titular}\n` : `\n${titular}\n${"─".repeat(78)}`);
+    out.push(md ? `<sub>${b.fuente}</sub>\n` : `  fuente: ${b.fuente}`);
+    if (b.aviso) out.push(md ? `> ⚠️ ${b.aviso}\n` : `  ⚠️  ${b.aviso}`);
+    for (const it of mostrados) out.push(md ? `- [ ] \`${it.donde}\` — ${it.que}` : `  ${it.donde}\n      ${it.que}`);
+    if (resto > 0) out.push(md ? `\n<sub>…y ${resto} más (\`--top\`)</sub>\n` : `  …y ${resto} más (--top ${b.items.length})`);
+    else if (md) out.push("");
+  }
+  if (!md) out.push("");
+  return out.join("\n");
+}
+
+function main(): number {
+  const opciones = opcionesDeCli(process.argv.slice(2));
+  if (!opciones.ok) {
+    console.error(`deuda: ${opciones.error}`);
+    console.error("uso: npm run deuda [-- --md | --json] [--top <n>]");
+    return 2;
+  }
   const bloques = [
     bloqueFronteras(),
     bloqueCrap(ultimoCambio()),
@@ -638,34 +712,10 @@ function main(): void {
     bloqueCrap(ultimoCambio(MEDIDA_SCRIPTS), MEDIDA_SCRIPTS, reglaDeScripts()),
     bloqueMutacion(),
   ];
-
-  if (argv.includes("--json")) {
-    console.log(JSON.stringify({ bloques }, null, 2));
-    return;
-  }
-
-  const md = argv.includes("--md");
-  const cabecera = cabeceraDe(bloques);
-  if (md) console.log(`## ${cabecera}\n`);
-  else console.log(`\n${cabecera}\n`);
-
-  for (const b of bloques) {
-    const cabecera = `${b.titulo} · ${b.items.length}`;
-    console.log(md ? `### ${cabecera}\n` : `\n${cabecera}\n${"─".repeat(78)}`);
-    console.log(md ? `<sub>${b.fuente}</sub>\n` : `  fuente: ${b.fuente}`);
-    if (b.aviso) console.log(md ? `> ⚠️ ${b.aviso}\n` : `  ⚠️  ${b.aviso}`);
-    for (const it of b.items.slice(0, TOP)) {
-      console.log(md ? `- [ ] \`${it.donde}\` — ${it.que}` : `  ${it.donde}\n      ${it.que}`);
-    }
-    if (b.items.length > TOP) {
-      const resto = b.items.length - TOP;
-      console.log(
-        md ? `\n<sub>…y ${resto} más (\`--top\`)</sub>\n` : `  …y ${resto} más (--top ${b.items.length})`,
-      );
-    } else if (md) console.log("");
-  }
-  if (!md) console.log("");
+  if (opciones.formato === "json") console.log(JSON.stringify({ bloques }, null, 2));
+  else console.log(redactarCola(cabeceraDe(bloques), planDeImpresion(bloques, opciones.top), opciones.formato));
+  return 0;
 }
 
 // Solo se ejecuta al invocarlo como comando; importado (tests) no imprime nada.
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) process.exitCode = main();

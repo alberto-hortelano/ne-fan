@@ -10,11 +10,18 @@ import { join } from "node:path";
 
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { SCRIPT_DE_PURGA, verificarKindsConProductor } from "../services/asset-store/kinds-con-productor.js";
+import { resolveServiceUrl } from "../src/contracts/service-registry.js";
 import {
   compararExport,
   FICHERO_EXPORT,
   guardiaDeOrden,
+  informeDePurga,
+  medirHechos,
+  parseArgs,
   purgar,
+  rutasDeCli,
+  veredictoDeGuardias,
+  type Resumen,
 } from "../scripts/manifest-kinds-con-productor.js";
 
 let root: string;
@@ -190,6 +197,115 @@ describe("purgar", () => {
     assert.equal(db.getMeta("imported_at"), "2026-08-05T00:00:00.000Z");
     assert.equal(readFileSync(ruta, "utf-8"), ajeno, "el export ajeno no se pisa");
     db.close();
+  });
+});
+
+describe("el ORDEN de las guardias del CLI", () => {
+  // Lo que protege el material pagado no es cada guardia sino su precedencia:
+  // con blobs sobrantes el mensaje tiene que mandar a hacer PRIMERO el `mv`,
+  // que es lo que no se puede hacer después de borrar la fila. Esa mitad está
+  // en el TIPO (con blobs, store y DB no se miden) y en `medirHechos`; la
+  // otra (store > db) es la tabla de abajo.
+  const rutas = { cacheDir: "/c", archivoDir: "/a", dbPath: "/d.sqlite3" };
+
+  it("sin blobs sobrantes manda el store sobre la DB, en las cuatro combinaciones", () => {
+    for (const storeArriba of [true, false]) {
+      for (const dbExiste of [true, false]) {
+        const v = veredictoDeGuardias({ sobrantes: [], storeUrl: "http://s", storeArriba, dbExiste }, rutas);
+        const esperada = storeArriba ? "store" : !dbExiste ? "db" : undefined;
+        const combo = JSON.stringify({ storeArriba, dbExiste });
+        if (esperada === undefined) assert.deepEqual(v, { ok: true }, combo);
+        else assert.equal(v.ok === false && v.guardia, esperada, combo);
+      }
+    }
+  });
+
+  it("la de blobs da un `mv` por sobrante, de cache/ a archivo/ (jamás rm)", () => {
+    const v = veredictoDeGuardias({ sobrantes: ["textures", "manifest.json"] }, rutas);
+    assert.equal(v.ok === false && v.guardia, "blobs");
+    const mvs = v.ok ? [] : v.lineas.filter((l) => l.trim().startsWith("mv "));
+    assert.deepEqual(mvs.map((l) => l.trim()), ["mv /c/textures /a/textures", "mv /c/manifest.json /a/manifest.json"]);
+  });
+
+  it("medirHechos mira los blobs ANTES de resolver el store: un offset inválido no tapa el `mv`", async () => {
+    // QA de BQ (M1): con `resolveServiceUrl` delante, `NEFAN_PORT_OFFSET=150`
+    // cambiaba las líneas `mv` por una traza de service-registry.
+    const cacheDir = join(root, "orden-cache");
+    mkdirSync(join(cacheDir, "textures"), { recursive: true });
+    const h = await medirHechos({ ...rutas, cacheDir }, { NEFAN_PORT_OFFSET: "150" });
+    assert.deepEqual(h, { sobrantes: ["textures"] });
+    assert.throws(() => resolveServiceUrl("asset-store", { NEFAN_PORT_OFFSET: "150" }), /NEFAN_PORT_OFFSET/);
+  });
+
+  it("medirHechos sin sobrantes sondea el store de la URL resuelta y mira la DB sin crearla", async () => {
+    const cacheDir = join(root, "orden-limpio");
+    mkdirSync(cacheDir, { recursive: true });
+    const dbPath = join(root, "orden-no-existe.sqlite3");
+    // Puerto 1: nadie escucha, el sondeo cae en «parado» sin esperar al timeout.
+    const h = await medirHechos({ ...rutas, cacheDir, dbPath }, { NEFAN_URL_ASSET_STORE: "http://127.0.0.1:1" });
+    assert.deepEqual(h, { sobrantes: [], storeUrl: "http://127.0.0.1:1", storeArriba: false, dbExiste: false });
+    assert.equal(existsSync(dbPath), false);
+  });
+});
+
+describe("parseArgs del CLI", () => {
+  it("sin flags es un dry-run sobre las rutas por defecto", () => {
+    assert.deepEqual(parseArgs([]), { ejecutar: false });
+  });
+
+  it("recoge --ejecutar y las tres rutas", () => {
+    assert.deepEqual(parseArgs(["--db", "x.sqlite3", "--ejecutar", "--cache", "c", "--archivo", "a"]), {
+      ejecutar: true,
+      db: "x.sqlite3",
+      cache: "c",
+      archivo: "a",
+    });
+  });
+
+  it("las flags mandan sobre la config; sin --archivo, archivo/cache del repo", () => {
+    const cfg = { dbPath: "/cfg/m.sqlite3", cacheDir: "/cfg/cache" };
+    assert.deepEqual(rutasDeCli({ ejecutar: false }, cfg, "/repo"), {
+      dbPath: "/cfg/m.sqlite3",
+      cacheDir: "/cfg/cache",
+      archivoDir: "/repo/archivo/cache",
+    });
+    assert.deepEqual(rutasDeCli({ ejecutar: true, db: "/x", cache: "/c", archivo: "/a" }, cfg, "/repo"), {
+      dbPath: "/x",
+      cacheDir: "/c",
+      archivoDir: "/a",
+    });
+  });
+
+  it("una flag desconocida o una ruta sin valor es error (salida 2), no se ignora", () => {
+    assert.ok("error" in parseArgs(["--ejectuar"]));
+    assert.ok("error" in parseArgs(["--db"]));
+    assert.ok("error" in parseArgs(["--ejecutar", "--archivo"]));
+  });
+});
+
+describe("informeDePurga: con qué código sale", () => {
+  const base: Resumen = { kinds: [{ type: "texture", subtype: "albedo", filas: 3, bytes: 30 }], totalFilas: 3, totalBytes: 30 };
+  const ejecutado = (quedan: number): Resumen => ({
+    ...base,
+    exportado: { ruta: "/a/manifest-retirado.json", filas: 3, reutilizado: false },
+    borradas: { filas: 3, pins: 1, meta: 2 },
+    quedan,
+  });
+
+  it("dry-run sale con 0, tenga o no filas ajenas", () => {
+    assert.equal(informeDePurga(base, false, "/d").codigo, 0);
+    assert.equal(informeDePurga({ kinds: [], totalFilas: 0, totalBytes: 0 }, false, "/d").codigo, 0);
+  });
+
+  it("--ejecutar sin nada que exportar sale con 0", () => {
+    assert.equal(informeDePurga({ kinds: [], totalFilas: 0, totalBytes: 0 }, true, "/d").codigo, 0);
+  });
+
+  it("--ejecutar sale con 0 solo si no quedan filas ajenas, y dice cuántas quedan", () => {
+    assert.equal(informeDePurga(ejecutado(0), true, "/d").codigo, 0);
+    const mal = informeDePurga(ejecutado(2), true, "/d");
+    assert.equal(mal.codigo, 1);
+    assert.ok(mal.lineas.some((l) => /\b2\b/.test(l) && l.startsWith("quedan")), mal.lineas.join("\n"));
   });
 });
 
