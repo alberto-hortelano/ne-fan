@@ -13,7 +13,9 @@ import { buildScatterExclusions } from "../src/scene/blueprint/scatter.js";
 import type { BuildingVolume, GateVolume, Volume } from "../src/scene/blueprint/volumes.js";
 import type { GreyboxPrimitive } from "../src/scene/greybox/common.js";
 import { volumePrimsForTile } from "../src/scene/greybox/volume-prims.js";
-import { tileWorldRect } from "../src/scene/tile.js";
+import { createTerrainCollider, NPC_RADIUS_M, PASO_LIBRE_M, PLAYER_RADIUS_M } from "../src/scene/terrain-collision.js";
+import { enrichFpsPrims } from "../src/scene/blueprint/fps-detail.js";
+import { TILE_MPC, tileWorldRect } from "../src/scene/tile.js";
 
 const RECT = tileWorldRect(0, 0);
 const EPS = 1e-9;
@@ -68,6 +70,42 @@ function pintadoEn(ps: GreyboxPrimitive[], u: number, v: number): boolean {
 function solida(grid: string[], u: number, v: number): boolean {
   return grid[Math.floor(v)][Math.floor(u)] === "S";
 }
+
+/** Área de un polígono convexo dentro de la celda (col, fila): recorte de
+ *  Sutherland–Hodgman contra sus cuatro lados y fórmula del lazo. Es la
+ *  pregunta de la colisión por solape contestada por OTRO camino (recortar,
+ *  no proyectar sobre ejes), para que el test no copie a la implementación. */
+function areaEnCelda(poligono: [number, number][], col: number, fila: number): number {
+  const lados: Array<[(p: [number, number]) => number]> = [
+    [(p) => p[0] - col], [(p) => col + 1 - p[0]], [(p) => p[1] - fila], [(p) => fila + 1 - p[1]],
+  ];
+  let pts = poligono;
+  for (const [dentro] of lados) {
+    const out: [number, number][] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      const da = dentro(a);
+      const db = dentro(b);
+      if (da >= 0) out.push(a);
+      if ((da >= 0) !== (db >= 0)) {
+        const t = da / (da - db);
+        out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      }
+    }
+    pts = out;
+    if (pts.length < 3) return 0;
+  }
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % pts.length];
+    area += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(area) / 2;
+}
+/** Por debajo de esto, la figura solo TOCA la celda (un borde en la frontera). */
+const AREA_EPS = 1e-9;
 
 describe("el vano pintado es el vano por el que se pasa", () => {
   it("gate `orient:\"y\"`: a lo largo del eje del muro, celda libre ⇔ ninguna prim de muro la pisa", () => {
@@ -277,12 +315,13 @@ describe("prop: lo que se pinta y lo que colisiona", () => {
     assert.ok(Math.abs(g.pos[0] - 33) < EPS && Math.abs(g.pos[2] - 31) < EPS, "centrada en el rect");
     assert.ok(Math.abs(g.rotY! - (40 * Math.PI) / 180) < EPS);
     // Y colisiona donde se pinta, a la resolución de la rejilla: una celda es
-    // sólida si y solo si su CENTRO cae en la caja pintada.
+    // sólida si y solo si la caja pintada ocupa ÁREA dentro de ella (#788:
+    // por centro, un prop girado de fondo < 1 celda se atravesaba).
     const grid = volumeCollisionGrid([girado], RECT)!;
     let celdas = 0;
     for (let row = 25; row < 38; row++) {
       for (let col = 26; col < 41; col++) {
-        const pintada = dentroDeCaja(g, col + 0.5, row + 0.5);
+        const pintada = areaEnCelda(esquinasCaja(g), col, row) > AREA_EPS;
         assert.equal(solida(grid.grid, col, row), pintada, `celda (${col},${row})`);
         if (pintada) celdas++;
       }
@@ -386,4 +425,262 @@ describe("el scatter no pisa lo construido (exclusión = huella declarada + marg
       }
     });
   }
+});
+
+// ─── #788: lo fino también cierra ────────────────────────────────────────
+// El criterio es el CUERPO andando, no un relleno de la rejilla: un círculo
+// del radio del jugador (o del NPC) avanza a pasos de 0,05 m por donde
+// `blocksCircle` —el mismo predicado que usa el cliente— lo deja, y se mira
+// si sale del recinto. Por centro de celda, una cerca de `width` < 1 con el
+// eje sobre una frontera de celdas no marcaba NINGUNA celda y se cruzaba.
+
+/** Celda (u, v) → metros de mundo en el tile (0,0). */
+function aMetros(u: number, v: number): [number, number] {
+  return [RECT.minX + u * TILE_MPC, RECT.minZ + v * TILE_MPC];
+}
+
+/** ¿Sale andando un cuerpo de radio `r` desde el centro (celdas) hasta más
+ *  de `alcance` celdas de él? BFS 4-conexo en una rejilla de 0,05 m. */
+function escapa(vols: Volume[], centro: [number, number], alcance: number, r: number): boolean {
+  const col = createTerrainCollider(volumeCollisionGrid(vols, RECT));
+  if (!col) return true; // nada colisiona: se sale por cualquier lado
+  const [cx, cz] = aMetros(...centro);
+  const R = alcance * TILE_MPC;
+  const paso = 0.05;
+  const n = Math.ceil((2 * R) / paso) + 1;
+  const i0 = Math.floor(n / 2);
+  const pos = (i: number) => (i - i0) * paso;
+  if (col.blocksCircle(cx, cz, r)) throw new Error("el cuerpo arranca dentro del sólido: caso mal planteado");
+  const visto = new Uint8Array(n * n);
+  const cola = [i0 * n + i0];
+  visto[i0 * n + i0] = 1;
+  while (cola.length > 0) {
+    const k = cola.pop()!;
+    const i = k % n;
+    const j = (k - i) / n;
+    if (Math.hypot(pos(i), pos(j)) >= R) return true;
+    for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]) {
+      if (a < 0 || b < 0 || a >= n || b >= n || visto[b * n + a]) continue;
+      visto[b * n + a] = 1;
+      if (!col.blocksCircle(cx + pos(a), cz + pos(b), r)) cola.push(b * n + a);
+    }
+  }
+  return false;
+}
+
+/** Vértices de un cuadrado de lado `L` celdas girado `grados` alrededor de `c`
+ *  (cerrado: el último repite el primero). */
+function cuadrado(c: [number, number], L: number, grados: number): [number, number][] {
+  const a = (grados * Math.PI) / 180;
+  const [co, si] = [Math.cos(a), Math.sin(a)];
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(
+    ([x, y]) => [c[0] + (x * co - y * si) * L / 2, c[1] + (x * si + y * co) * L / 2] as [number, number],
+  );
+}
+
+const CUERPOS = [["jugador", PLAYER_RADIUS_M], ["NPC", NPC_RADIUS_M]] as const;
+/** Orientaciones: eje con los lados SOBRE fronteras de celda (el peor caso:
+ *  por centro no marca nada), girado 30° y girado 45° con centro fraccionario. */
+const ORIENTACIONES: Array<{ nombre: string; c: [number, number]; grados: number }> = [
+  { nombre: "eje, lados en frontera de celda", c: [64, 64], grados: 0 },
+  { nombre: "girado 30°", c: [64, 64], grados: 30 },
+  { nombre: "girado 45°, centro fraccionario", c: [64.37, 63.81], grados: 45 },
+];
+const LADO = 14;
+const ALCANCE = LADO * 0.75 + 3; // pasado el anillo en cualquier orientación
+
+describe("#788: un muro fino encierra al cuerpo que anda (jugador y NPC)", () => {
+  for (const width of [0.2, 0.5, 0.9]) {
+    for (const { nombre, c, grados } of ORIENTACIONES) {
+      for (const [quien, r] of CUERPOS) {
+        it(`width ${width}, ${nombre}: el ${quien} no sale`, () => {
+          const muro: Volume = { id: "cerca", label: "cerca", type: "wall", points: cuadrado(c, LADO, grados), width, h: 2 };
+          assert.equal(escapa([muro], c, ALCANCE, r), false);
+        });
+      }
+    }
+  }
+
+  it("control: con un hueco de 6 celdas (3 m) en la cerca, el cuerpo sí sale (el verde no es vacío)", () => {
+    for (const { c, grados } of ORIENTACIONES) {
+      const [p0, p1, p2, p3] = cuadrado(c, LADO, grados);
+      // Polilínea abierta que deja sin cerrar las 6 últimas celdas del lado p3→p0.
+      const t = 6 / LADO; // con 4 celdas, en diagonal, el NPC ya no cabe por la escalera de celdas
+      const casiP0: [number, number] = [p3[0] + (p0[0] - p3[0]) * (1 - t), p3[1] + (p0[1] - p3[1]) * (1 - t)];
+      const muro: Volume = { id: "cerca", label: "cerca rota", type: "wall", points: [p0, p1, p2, p3, casiP0], width: 0.2, h: 2 };
+      for (const [quien, r] of CUERPOS) assert.ok(escapa([muro], c, ALCANCE, r), `${quien} a ${grados}°`);
+    }
+  });
+
+  it("puntas libres (#787): el muro fino acaba donde se ve acabar, también en diagonal", () => {
+    // Eje sobre frontera (v 90) y diagonal: la celda de delante de cada punta,
+    // a lo largo del eje, está libre — nada de tapa invisible.
+    const recto: Volume = { id: "a", label: "cerca", type: "wall", points: [[70, 90], [100, 90]], width: 0.3, h: 2 };
+    const g = volumeCollisionGrid([recto], RECT)!;
+    assert.ok(solida(g.grid, 70.5, 89.5) && solida(g.grid, 99.5, 90.5), "colisiona hasta las dos puntas");
+    assert.ok(!solida(g.grid, 100.5, 89.5) && !solida(g.grid, 100.5, 90.5), "delante de la punta este, libre");
+    assert.ok(!solida(g.grid, 69.5, 89.5) && !solida(g.grid, 69.5, 90.5), "delante de la punta oeste, libre");
+    const diag: Volume = { id: "b", label: "cerca", type: "wall", points: [[70, 70], [90, 90]], width: 0.3, h: 2 };
+    const gd = volumeCollisionGrid([diag], RECT)!;
+    assert.ok(solida(gd.grid, 89.5, 89.5) && solida(gd.grid, 70.5, 70.5), "la diagonal colisiona en sus dos celdas de punta");
+    assert.ok(!solida(gd.grid, 90.5, 90.5) && !solida(gd.grid, 69.5, 69.5), "la celda siguiente por el eje, libre");
+  });
+
+  it("render ≠ colisión, fijado: en un tramo suelto, celda sólida ⇔ lo pintado ocupa área en ella", () => {
+    // DECISIÓN (2026-09-30, #788): la colisión del muro es lo pintado
+    // REDONDEADO HACIA FUERA hasta la celda. Una cerca de 0,3 pintada colisiona
+    // con una o dos filas enteras (0,5–1 m): más gruesa que lo que se ve, a
+    // propósito — es lo que la hace cerrar. Lo que no puede pasar es lo
+    // contrario (pintado sin colisión) ni una celda sólida sin nada pintado
+    // (aire que choca). En polilíneas se suman las tapas de vértice compartido.
+    for (const width of [0.3, 2]) {
+      for (const grados of [0, 30]) {
+        const a = (grados * Math.PI) / 180;
+        const ini: [number, number] = [50.25, 60];
+        const fin: [number, number] = [ini[0] + 22 * Math.cos(a), ini[1] + 22 * Math.sin(a)];
+        const muro: Volume = { id: "m", label: "cerca", type: "wall", points: [ini, fin], width, h: 2 };
+        const ps = prims([muro]).filter((p) => p.shape === "box" && p.pos[1] <= 0.05 && p.size[1] >= 1);
+        assert.ok(ps.length > 0, "hay muro pintado");
+        const g = volumeCollisionGrid([muro], RECT)!;
+        let solidas = 0;
+        for (let row = 50; row < 80; row++) {
+          for (let col = 44; col < 80; col++) {
+            const area = ps.reduce((acc, p) => acc + areaEnCelda(esquinasCaja(p), col, row), 0);
+            const s = solida(g.grid, col + 0.5, row + 0.5);
+            assert.equal(s, area > AREA_EPS, `width ${width} a ${grados}°, celda (${col},${row}): área pintada ${area}`);
+            if (s) solidas++;
+          }
+        }
+        assert.ok(solidas >= 22, `width ${width} a ${grados}°: ${solidas} celdas`);
+      }
+    }
+  });
+
+  it("gate en una cerca fina: se cruza por el vano, y sin el gate no", () => {
+    // Eje en la frontera u = 64: por centro, esta cerca ni existía.
+    const cerca: Volume = { id: "cerca", label: "empalizada", type: "wall", points: [[64, 4], [64, 124]], width: 0.3, h: 2 };
+    const puerta: Volume = { id: "p", label: "portillo", type: "gate", at: [64, 64], w: 8, orient: "y" };
+    const cruza = (vols: Volume[]) => {
+      const col = createTerrainCollider(volumeCollisionGrid(vols, RECT))!;
+      // De oeste a este por la fila 64: se barre una línea de cuerpos.
+      const [, z] = aMetros(64, 64);
+      for (let u = 54; u <= 74; u += 0.1) if (col.blocksCircle(aMetros(u, 64)[0], z, NPC_RADIUS_M)) return false;
+      return true;
+    };
+    assert.equal(cruza([cerca]), false, "la cerca sin portillo cierra el paso");
+    assert.equal(cruza([cerca, puerta]), true, "el portillo abre el vano");
+  });
+});
+
+describe("#788: el resto de figuras finas también cierra (prism, prop girado, edificio girado, torre)", () => {
+  /** Anillo de cuatro rects finos girados `grados` (cada lado un rect de
+   *  `L + d` × `d` para que se solapen en las esquinas). */
+  function anilloDeRects(c: [number, number], L: number, d: number, grados: number): Array<{ rect: [number, number, number, number]; angle: number }> {
+    const a = (grados * Math.PI) / 180;
+    const x: [number, number] = [Math.cos(a), -Math.sin(a)]; // eje local del rect (rotatedRectCorners)
+    const y: [number, number] = [Math.sin(a), Math.cos(a)];
+    const lados: Array<[[number, number], number]> = [
+      [[-y[0] * L / 2, -y[1] * L / 2], grados], [[y[0] * L / 2, y[1] * L / 2], grados],
+      [[-x[0] * L / 2, -x[1] * L / 2], grados + 90], [[x[0] * L / 2, x[1] * L / 2], grados + 90],
+    ];
+    return lados.map(([[du, dv], angle]) => {
+      const w = L + d;
+      return { rect: [c[0] + du - w / 2, c[1] + dv - d / 2, w, d], angle };
+    });
+  }
+  const C: [number, number] = [64.3, 63.7];
+  const L = 14;
+  const D = 0.3;
+
+  for (const grados of [30, 45]) {
+    it(`prop rect ${L}×${D} con angle ${grados}: el anillo encierra`, () => {
+      const vols: Volume[] = anilloDeRects(C, L, D, grados).map(({ rect, angle }, i) => ({
+        id: `p${i}`, label: "tablón", type: "prop", rect, angle, shape: "box", h: 1,
+      }));
+      for (const [quien, r] of CUERPOS) assert.equal(escapa(vols, C, ALCANCE, r), false, quien);
+    });
+
+    it(`building con angle ${grados} y un lado fino: el anillo encierra`, () => {
+      const vols: Volume[] = anilloDeRects(C, L, D, grados).map(({ rect, angle }, i) => ({
+        id: `b${i}`, label: "tapia", type: "building", rect, angle, roof: { kind: "flat" },
+      }));
+      for (const [quien, r] of CUERPOS) assert.equal(escapa(vols, C, ALCANCE, r), false, quien);
+    });
+
+    it(`prism en tira de ${D} girada ${grados}°: el anillo encierra`, () => {
+      const vols: Volume[] = anilloDeRects(C, L, D, grados).map(({ rect, angle }, i) => ({
+        id: `x${i}`, label: "tira", type: "prism", points: rotatedRectCorners(rect, angle), h: 2,
+      }));
+      for (const [quien, r] of CUERPOS) assert.equal(escapa(vols, C, ALCANCE, r), false, quien);
+    });
+  }
+
+  it("prism con los lados sobre fronteras de celda: no gana filas tangentes", () => {
+    const v: Volume = { id: "x", label: "losa", type: "prism", points: [[40, 40], [50, 40], [50, 46], [40, 46]], h: 2 };
+    const g = volumeCollisionGrid([v], RECT)!;
+    let n = 0;
+    for (const fila of g.grid) n += [...fila].filter((ch) => ch === "S").length;
+    assert.equal(n, 60, "10×6 celdas, ni una más");
+  });
+
+  it("torre de r 0,3 lejos de todo centro de celda: colisiona donde está", () => {
+    // Centro de la celda (50,50) a 0,5 de (50.2, 50.9): por centro, cero celdas.
+    const v: Volume = { id: "t", label: "poste", type: "tower", at: [50.2, 50.9], r: 0.3 };
+    const g = volumeCollisionGrid([v], RECT);
+    assert.ok(g, "algo colisiona");
+    assert.ok(solida(g.grid, 50.2, 50.9), "la celda del centro del disco es sólida");
+    const col = createTerrainCollider(g)!;
+    assert.ok(col.blocksCircle(...aMetros(50.2, 50.9), PLAYER_RADIUS_M), "el cuerpo no se planta encima");
+  });
+});
+
+describe("el vano del gate se cruza de pie: nada pintado baja del paso libre (QA BV, M1)", () => {
+  // La colisión es 2D: el vano de un gate es transitable a cualquier `h`. Lo
+  // pintado tiene que estar de acuerdo — con `h` 3 el dintel caía a la altura
+  // de los ojos y el jugador lo cruzaba por dentro. Relación fijada: toda prim
+  // del gate (greybox + detalle fps) que pisa la planta del vano arranca por
+  // encima de `PASO_LIBRE_M` (ojos + plano cercano de la cámara).
+  const alturas = [0.1, 1, 3, 5, 6, 6.2, undefined, 12, 24];
+  for (const h of alturas) {
+    for (const orient of ["x", "y"] as const) {
+      it(`h ${h ?? "por defecto"}, orient ${orient}`, () => {
+        const w = 8;
+        const at: [number, number] = [64, 64];
+        const g: GateVolume = h === undefined
+          ? { id: "p", label: "portón", type: "gate", at, w, orient }
+          : { id: "p", label: "portón", type: "gate", at, w, orient, h };
+        const base = volumePrimsForTile(g, [g]);
+        const todas = [...base, ...enrichFpsPrims(base, [g], "semilla")];
+        // Planta del vano: ancho `w` a lo largo del muro, fondo de sobra (±6).
+        const [a0, a1] = [at[0] - w / 2, at[0] + w / 2];
+        const vano: [number, number][] = orient === "x"
+          ? [[a0, at[1] - 6], [a1, at[1] - 6], [a1, at[1] + 6], [a0, at[1] + 6]]
+          : [[at[0] - 6, at[1] - w / 2], [at[0] + 6, at[1] - w / 2], [at[0] + 6, at[1] + w / 2], [at[0] - 6, at[1] + w / 2]];
+        let encima = 0;
+        for (const p of todas) {
+          if (p.shape !== "box") continue;
+          const esq = esquinasCaja(p);
+          // ¿Pisa la planta del vano (área > 0)? Recorte contra sus celdas.
+          let pisa = false;
+          for (let v = Math.floor(vano[0][1]); v < vano[2][1] && !pisa; v++) {
+            for (let u = Math.floor(vano[0][0]); u < vano[1][0] && !pisa; u++) pisa = areaEnCelda(esq, u, v) > AREA_EPS;
+          }
+          if (!pisa) continue;
+          encima++;
+          assert.ok(p.pos[1] * TILE_MPC >= PASO_LIBRE_M - 1e-9,
+            `prim a ${(p.pos[1] * TILE_MPC).toFixed(2)} m sobre el vano, por debajo del paso libre ${PASO_LIBRE_M} m`);
+        }
+        assert.ok(encima > 0, "el dintel cruza el vano (si no, el aserto no mira nada)");
+      });
+    }
+  }
+
+  it("un gate alto no cambia: jambas de `h` y dintel en `h − 0,9`, como se declaró", () => {
+    for (const h of [8, 12, 24]) {
+      const g: GateVolume = { id: "p", label: "portón", type: "gate", at: [64, 64], w: 8, orient: "x", h };
+      const [jamba, , dintel] = volumePrimsForTile(g, [g]);
+      assert.equal(jamba.size[1], h);
+      assert.equal(dintel.pos[1], h - 0.9);
+    }
+  });
 });

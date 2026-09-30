@@ -26,8 +26,9 @@
  *
  *  El paso se mide en CELDAS libres y no en metros porque la colisión es un
  *  grid: `volumeCollisionGrid` marca la celda entera cuyo CENTRO cae dentro
- *  del tronco, así que el hueco analítico se redondea hacia fuera hasta media
- *  celda por lado. Con el hueco medido en metros (1,00 m analítico) el peor
+ *  del tronco (más la del centro del disco, que con r ≥ 0,9 ya lo estaba:
+ *  ver `markDisc`, que por eso no va por solape como el resto), así que el
+ *  hueco analítico se redondea hacia fuera hasta media celda por lado. Con el hueco medido en metros (1,00 m analítico) el peor
  *  caso de rasterización dejaba 0,50 m de celdas libres — menos que el
  *  jugador, y la garantía sería falsa justo donde importa. */
 

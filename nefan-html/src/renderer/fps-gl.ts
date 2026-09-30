@@ -32,6 +32,7 @@ import {
   attackAreaQuality,
   attackAreaReach,
 } from "@nefan-core/src/combat/attack-area.js";
+import { CAMERA_NEAR_M, PLAYER_EYE_M } from "@nefan-core/src/scene/terrain-collision.js";
 import { TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
 
 /** Lado del tile en metros (64). */
@@ -42,7 +43,6 @@ import type { Edge } from "@nefan-core/src/world-map/types.js";
 import type { AttackTelegraph, Cuerpos, Entity, PlayerView } from "./types.js";
 import { SPRITE_PENDING, type SpriteRenderer } from "./sprite-renderer.js";
 
-const EYE_M = 1.6;
 const FOV_DEG = 70;
 /** Duración del tween de giro (presentación; el estado es el yaw lógico). */
 const TURN_TIME_S = 0.1;
@@ -668,7 +668,7 @@ export class FpsGl {
     // near 0.3 (no 0.1): ×3 de precisión de z-buffer — con 0.1 las cuatro
     // capas del suelo (separadas 2 cm entre sí) aún z-fighteaban a media
     // distancia. Nada renderiza a <0.3 m del ojo (radio jugador 0.4).
-    this.cam = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.3, 600);
+    this.cam = new THREE.PerspectiveCamera(FOV_DEG, 1, CAMERA_NEAR_M, 600);
     this.sky = skyDome();
     this.scene.add(this.sky);
     this.scene.fog = new THREE.Fog(SKY_BOTTOM, FOG_NEAR, FOG_FAR);
@@ -1548,7 +1548,7 @@ export class FpsGl {
     const step = (dt / TURN_TIME_S) * Math.PI * 0.5;
     this.renderYaw = Math.abs(d) <= step ? targetYaw : this.renderYaw + Math.sign(d) * step;
     this.applyAmbienceAt(player.pos.x, player.pos.z);
-    this.cam.position.set(player.pos.x, this.reliefWorldAt(player.pos.x, player.pos.z) + EYE_M, player.pos.z);
+    this.cam.position.set(player.pos.x, this.reliefWorldAt(player.pos.x, player.pos.z) + PLAYER_EYE_M, player.pos.z);
     // rotation.y = π + yaw: la cámara de three mira −z con rotación 0 y
     // yawOf tiene 0 = +z (R_y(π+yaw)·(0,0,−1) = (sin yaw, 0, cos yaw)).
     // rotation.x = pitch en orden YXZ: el giro vertical se aplica en el marco

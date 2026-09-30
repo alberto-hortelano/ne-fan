@@ -34,6 +34,19 @@ export const PLAYER_RADIUS_M = 0.4;
  *  razonaba desde el jugador y dejaba fuera justo al cuerpo que no cabe. */
 export const NPC_RADIUS_M = 0.5;
 
+/** Altura de los OJOS del jugador en METROS: donde el renderer pone la cámara
+ *  (`fps-gl.ts`). Vive en core porque la geometría que se pinta tiene que
+ *  saber por dónde pasa la cabeza: un dintel más bajo se cruza por dentro. */
+export const PLAYER_EYE_M = 1.6;
+
+/** Plano cercano de la cámara del jugador en METROS (`fps-gl.ts`). */
+export const CAMERA_NEAR_M = 0.3;
+
+/** Altura LIBRE mínima de un vano que se cruza andando, en METROS: los ojos
+ *  más el plano cercano. Con algo pintado más bajo, al pasar por debajo la
+ *  cámara lo corta (o lo atraviesa) — la colisión es 2D y no lo impide. */
+export const PASO_LIBRE_M = PLAYER_EYE_M + CAMERA_NEAR_M;
+
 /** El cuerpo MAYOR que el simulador mueve por el mundo. Quien decida cuánto
  *  hueco hay que dejar deriva de aquí, no del jugador.
  *

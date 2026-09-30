@@ -12,6 +12,8 @@
 
 import { PALETTE, wallColors, roofColors, darken, lighten } from "../blueprint/palette.js";
 import { volumeFootprint } from "../blueprint/footprint.js";
+import { PASO_LIBRE_M } from "../terrain-collision.js";
+import { TILE_MPC } from "../tile.js";
 import type {
   BuildingVolume,
   CustomPart,
@@ -363,13 +365,27 @@ function wallPrims(v: WallVolume, gates: GateVolume[]): GreyboxPrimitive[] {
     return out;
 }
 
+/** Lo que el gate cuelga por debajo de su `h`, en celdas: el dintel arranca
+ *  en `h − 0.9` y los corbeles de `fps-detail` (`gateCorbels`) bajan dos
+ *  escalones de 0,75 más. */
+export const GATE_DESCUELGUE_CELDAS = 0.9 + 2 * 0.75;
+
+/** Altura PINTADA de un gate, en celdas: la declarada (8 por defecto), pero
+ *  nunca tan baja que lo que cuelga bajo el dintel quede por debajo del paso
+ *  libre del jugador (`PASO_LIBRE_M`): con `h` 3, el dintel caía a la altura
+ *  de los ojos y se cruzaba por dentro (QA de la tanda BV, M1). Un gate alto
+ *  no cambia; uno bajo se pinta con la altura mínima que deja pasar. */
+export function gateAlturaCeldas(v: GateVolume): number {
+  return Math.max(v.h ?? 8, PASO_LIBRE_M / TILE_MPC + GATE_DESCUELGUE_CELDAS);
+}
+
 /** Gatehouse: jambas + dintel que cruza el muro anfitrión + almenas. El
  *  vano queda libre — lo talla el muro. */
 function gatePrims(v: GateVolume): GreyboxPrimitive[] {
     // Gatehouse: jambas robustas + dintel de madera oscura que cruza el
     // muro anfitrión + almenas. El vano queda libre (el muro lo talla).
     const w = v.w ?? 8;
-    const h = v.h ?? 8;
+    const h = gateAlturaCeldas(v);
     // Jamba de 3 celdas: el borde exterior queda EXACTAMENTE en w/2 + 3 —
     // la huella declarada de volumeFootprint (el bbox proyectado la cubre).
     const jambW = 3;
