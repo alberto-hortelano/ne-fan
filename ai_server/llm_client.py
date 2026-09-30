@@ -20,15 +20,12 @@ import time
 from narrative_schemas import (
     GENERATE_SCENE_SYSTEM_PROMPT,
     GENERATE_SCENE_TOOL,
-    WEAPON_ORIENT_SYSTEM_PROMPT,
-    WEAPON_ORIENT_TOOL,
     NARRATIVE_REACT_SYSTEM_PROMPT,
     NARRATIVE_REACT_TOOL,
     NARRATIVE_WAKE_TOOL,
     PLAYER_DEATH_SYSTEM_PROMPT,
     validate_death_resolution,
     validate_scene_response,
-    validate_weapon_orient_response,
     validate_narrative_reaction,
 )
 
@@ -132,7 +129,7 @@ class LLMClient:
             self._try_connect_mcp()
 
         # Direct API: always initialize if a key is available, even if MCP is up.
-        # This way analyze_weapon can fall back to API when MCP has no listener.
+        # This way the narrative kinds can fall back to API when MCP has no listener.
         self.api_client = None
         if HAS_ANTHROPIC:
             api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -191,11 +188,6 @@ class LLMClient:
                             )
                         else:
                             print(f"LLM: room_response desconocido descartado (id={req_id[:8]}…)")
-                elif msg_type == "vision_response":
-                    req_id = msg["request_id"]
-                    with self._pending_lock:
-                        if req_id in self._pending:
-                            self._pending[req_id] = msg.get("result", {})
                 elif msg_type == "narrative_event_response":
                     req_id = msg["request_id"]
                     with self._pending_lock:
@@ -441,7 +433,7 @@ class LLMClient:
                     # Structured error from the bridge (e.g. no_mcp_listener).
                     # Without this check, validate_scene_response pads the
                     # error dict into a placeholder scene and the caller gets
-                    # a 200 — same guard the vision path already has.
+                    # a 200.
                     if isinstance(result, dict) and result.get("error"):
                         reason = result.get("reason", "unknown")
                         print(f"LLM: Scene MCP rejected — {reason}")
@@ -536,159 +528,6 @@ class LLMClient:
             ) from e
 
     # ------------------------------------------------------------------
-    # Vision: weapon orientation
-    # ------------------------------------------------------------------
-
-    def analyze_weapon(
-        self,
-        images: list,
-        weapon_type: str = "generic",
-        kind: str = "weapon_orient",
-        context: dict | None = None,
-    ) -> dict | None:
-        """Send weapon images to Claude and get back orientation vectors.
-
-        Returns None if no backend can handle the request — caller should
-        fall back to a heuristic placement.
-        """
-        context = context or {}
-        if not images:
-            return None
-
-        if self._ws_connected and self._ws:
-            result = self._analyze_weapon_via_mcp(images, weapon_type, kind, context)
-            if result is not None:
-                return result
-
-        if self.api_client:
-            return self._analyze_weapon_via_api(images, weapon_type, kind, context)
-
-        print("LLM: No vision backend available")
-        return None
-
-    def _analyze_weapon_via_mcp(
-        self,
-        images: list,
-        weapon_type: str,
-        kind: str,
-        context: dict,
-    ) -> dict | None:
-        request_id = str(uuid.uuid4())
-        with self._pending_lock:
-            self._pending[request_id] = None
-
-        try:
-            self._ws.send(json.dumps({  # type: ignore
-                "type": "vision_request",
-                "request_id": request_id,
-                "kind": kind,
-                "weapon_type": weapon_type,
-                "images": images,
-                "context": context,
-            }))
-        except Exception as e:
-            print(f"LLM: Vision MCP send failed ({e})")
-            with self._pending_lock:
-                self._pending.pop(request_id, None)
-            return None
-
-        print(f"LLM: Vision request sent via MCP (id={request_id[:8]}, type={weapon_type})")
-
-        # Vision generation gets a longer timeout
-        timeout = max(self.timeout, 180.0)
-        start = time.time()
-        while time.time() - start < timeout:
-            with self._pending_lock:
-                result = self._pending.get(request_id)
-                if result is not None:
-                    del self._pending[request_id]
-                    # Check for explicit no-listener error from the bridge
-                    if isinstance(result, dict) and result.get("error") == "no_mcp_listener":
-                        reason = result.get("reason", "unknown")
-                        msg = result.get("message", "")
-                        print(f"LLM: Vision MCP rejected — {reason}")
-                        if msg:
-                            print(f"LLM:   {msg}")
-                        return None
-                    try:
-                        validated = validate_weapon_orient_response(result)
-                    except ValueError as e:
-                        print(f"LLM: Vision response failed validation — {e}")
-                        return None
-                    print(f"LLM: Vision response received ({time.time() - start:.1f}s, "
-                          f"confidence={validated.get('confidence', 0):.2f})")
-                    return validated
-            time.sleep(0.1)
-
-        with self._pending_lock:
-            self._pending.pop(request_id, None)
-        print(f"LLM: Vision MCP timeout ({timeout}s)")
-        return None
-
-    def _analyze_weapon_via_api(
-        self,
-        images: list,
-        weapon_type: str,
-        kind: str,
-        context: dict,
-    ) -> dict | None:
-        if not self.api_client:
-            return None
-
-        # Build user content: text + images interleaved with view labels
-        content: list = [{
-            "type": "text",
-            "text": (
-                f"Weapon type hint: {weapon_type}\n"
-                f"Number of views: {len(images)}\n\n"
-                "Examine the views (front, side, top in order) and respond via the "
-                "orient_weapon tool."
-            ),
-        }]
-        for img in images:
-            data_b64 = img.get("data_b64") if isinstance(img, dict) else None
-            if not data_b64:
-                continue
-            content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": img.get("media_type", "image/png"),
-                    "data": data_b64,
-                },
-            })
-            content.append({
-                "type": "text",
-                "text": f"View: {img.get('view', 'unknown')}",
-            })
-
-        try:
-            response = self.api_client.messages.create(  # type: ignore
-                model=self.model,
-                max_tokens=1024,
-                system=WEAPON_ORIENT_SYSTEM_PROMPT,
-                tools=[WEAPON_ORIENT_TOOL],
-                tool_choice={"type": "tool", "name": "orient_weapon"},
-                messages=[{"role": "user", "content": content}],
-            )
-            for block in response.content:
-                if block.type == "tool_use" and block.name == "orient_weapon":
-                    try:
-                        validated = validate_weapon_orient_response(block.input)
-                    except ValueError as e:
-                        print(f"LLM: Vision API response failed validation — {e}")
-                        return None
-                    print(f"LLM: Vision API response (confidence="
-                          f"{validated.get('confidence', 0):.2f})")
-                    return validated
-        except Exception as e:
-            print(f"LLM: Vision API error ({e})")
-            return None
-
-        print("LLM: Vision API gave no tool_use response")
-        return None
-
-    # ------------------------------------------------------------------
     # Narrative reactivity (Phase 3): player choices → world consequences
     # ------------------------------------------------------------------
 
@@ -750,7 +589,7 @@ class LLMClient:
             return None
         print(f"LLM: narrative event sent via MCP (id={request_id[:8]}, speaker={speaker})")
 
-        # Same long timeout as vision — Claude may take a moment to think
+        # Long timeout — Claude may take a moment to think
         timeout = max(self.timeout, 120.0)
         start = time.time()
         while time.time() - start < timeout:

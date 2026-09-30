@@ -29,7 +29,6 @@ de personaje de sprite-forge.
 |----------|---------|----------|
 | `/health` | los 2 | Estado del proceso |
 | `/generate_scene` | :8765 | **Canónico** — LLM genera escena open-world (terreno, vegetación, edificios, objetos) |
-| `/analyze_weapon` | :8765 | Vision IA para orientar armas (vía MCP bridge) |
 | `/develop_world` | :8765 | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |
 | `/notify_session` | :8765 | El bridge informa de inicio/reanudación de sesión narrativa (`AiClient`) |
 | `/report_player_choice` | :8765 | El bridge reporta la elección de diálogo → Claude devuelve consequences |

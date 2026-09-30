@@ -1,12 +1,10 @@
 /** S3 · narrative-llm — HTTP :8765 (subconjunto narrativo del ai_server
  * Python) + sidecar narrative-mcp (WS :3737, ver narrative-mcp-ws.ts).
  *
- * Todo lo que necesita el motor narrativo (Claude vía MCP) o visión LLM:
- * generación de escenas, consecuencias de elecciones, desarrollo de mundos,
- * reviews de blueprint/plató, orientación de armas. Cero GPU. Depende de:
- * canal WS con narrative-mcp (o fallback API Anthropic) y, para la
- * segmentación SAM2 de analyze/review, de remote-gen (`/segment`, F4 — hoy
- * la llamada fal vive en el mismo proceso).
+ * Todo lo que necesita el motor narrativo (Claude vía MCP): generación de
+ * escenas, consecuencias de elecciones, despertar tras la muerte y desarrollo
+ * de mundos. Cero GPU. Depende del canal WS con narrative-mcp (o fallback API
+ * Anthropic).
  *
  * Convención: el wire es snake_case (implementación Python/Pydantic; los
  * shapes de referencia son los modelos de ai_server/routers/{narrative,
@@ -97,19 +95,6 @@ export interface DevelopWorldResponse {
   };
 }
 
-export interface AnalyzeWeaponRequest {
-  /** Base64 crudos (sin prefijo data:). */
-  images: string[];
-  weapon_type?: string;
-  kind?: "weapon_orient" | "weapon_verify";
-  context?: Record<string, unknown>;
-}
-
-/** Orientación del arma (grip + vectores), validada por
- *  validate_weapon_orient_response en el server; el shape fino vive en el
- *  contrato del prompt (data/contract/prompts/weapon_orient.md). */
-export type AnalyzeWeaponResponse = Record<string, unknown>;
-
 /** Lo que declara de sí mismo CUALQUIER motor narrativo en `GET /health` —
  *  el real (`ai_server/main.py`) y el falso (`labs/narrative/fake-ai-server.ts`).
  *
@@ -158,7 +143,6 @@ export const NarrativeLlmApi = {
     "/report_player_death",
   ),
   developWorld: endpoint<DevelopWorldRequest, DevelopWorldResponse>("POST", "/develop_world"),
-  analyzeWeapon: endpoint<AnalyzeWeaponRequest, AnalyzeWeaponResponse>("POST", "/analyze_weapon"),
   // /review_scene_image (muerto, sin clientes) ELIMINADO en F4 junto con
   // LLMClient.review_scene_image y pipe_server.py. El agregado de estado de
   // backends se retiró en #256: nadie lo llamaba y agregaba UN valor.

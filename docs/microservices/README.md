@@ -41,7 +41,7 @@ flowchart LR
   S1 --- S2
   S2 --> SAVES
   S1 -- generate_scene / choices --> S3
-  S3 -- room/vision/event --> MCP
+  S3 -- room/event --> MCP
   MCP -- tools MCP --> CC
   MCP -- tools de estado --> S2
   S3 -- /segment --> S5
@@ -68,8 +68,8 @@ Dos ciclos (sin cambios respecto a hoy):
   en el gateway.
 - **narrative-llm + narrative-mcp = un servicio lógico, dos procesos**: el
   ciclo por WS :3737 es acoplamiento de despliegue total (si uno cae, el otro
-  no sirve). El único endpoint de visión que queda es `/analyze_weapon`
-  (orientación de armas): vive aquí porque necesita el canal MCP.
+  no sirve). Ya no queda ningún endpoint de visión: el último (orientar
+  armas) se retiró sin productor en #790, con su canal del wire.
 - ~~**gpu-worker vs remote-gen**~~ (obsoleta desde #199): separaba lo que
   consume GPU local de lo que consume dinero. Ya no hay GPU local que separar
   — el gpu-worker se retiró entero y solo queda el eje del dinero.
@@ -129,14 +129,14 @@ GET /styles/{style_id}/{file} MIGRADO a S6 en F2.
 🆕 GET /session/{id}/llm_context (F5).
 
 **S3 narrative-llm (HTTP :8765)** — ✅ /health, /notify_session,
-/generate_scene, /report_player_choice, /develop_world, /analyze_weapon.
+/generate_scene, /report_player_choice, /report_player_death, /develop_world.
 ☠ ELIMINADOS sin clientes vivos: el agregado de estado de backends (#256,
 con sus dos helpers de LLMClient), /review_scene_image (F4),
 /review_stage_image (con el proscenio) y /review_scene_blueprint +
 /analyze_scene_image (con el repintado oblicuo). WS :3737 completo en
-`narrative-mcp-ws.ts` (room/vision/narrative_event + responses +
-narrative_progress + takeover); los kinds de visión vivos son
-weapon_orient y weapon_verify.
+`narrative-mcp-ws.ts` (room/narrative_event + responses +
+narrative_progress + takeover). El canal de visión y sus dos kinds de
+armas se retiraron sin productor en #790.
 
 **S4 gpu-worker — RETIRADO en #199 (2026-08-24).** Servía /generate_texture,
 /generate_model, /generate_skin y /generate_sprite; ninguno tenía consumidor

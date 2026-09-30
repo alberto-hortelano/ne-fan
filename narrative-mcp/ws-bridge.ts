@@ -7,7 +7,6 @@ import type {
   RequestMsg,
   RoomResponseMsg,
   TakeoverMsg,
-  VisionResponseMsg,
 } from './protocol.js';
 import { RUNTIME_CONFIG } from './runtime-config.js';
 
@@ -212,7 +211,7 @@ export class WsBridge {
     try {
       if (msg.type === 'hello') return;
 
-      if (msg.type === 'room_request' || msg.type === 'vision_request' || msg.type === 'narrative_event') {
+      if (msg.type === 'room_request' || msg.type === 'narrative_event') {
         this.requestOrigins.set(msg.request_id, ws);
         // Fail-fast: if no MCP client (Claude Code) has ever called
         // narrative_listen, reject the request immediately so the AI server
@@ -234,7 +233,7 @@ export class WsBridge {
    *  excepción local a este proceso. */
   private reportDispatchFailure(msg: ClientMsg, err: unknown): void {
     console.error(`[narrative-mcp] error despachando '${msg.type}':`, err);
-    if (msg.type !== 'room_request' && msg.type !== 'vision_request' && msg.type !== 'narrative_event') {
+    if (msg.type !== 'room_request' && msg.type !== 'narrative_event') {
       return;
     }
     try {
@@ -283,13 +282,7 @@ export class WsBridge {
     const target = this.targetFor(msg.request_id);
     this.requestOrigins.delete(msg.request_id);
     if (!target) return;
-    if (msg.type === 'vision_request') {
-      target.send(JSON.stringify({
-        type: 'vision_response',
-        request_id: msg.request_id,
-        result: errorPayload,
-      } satisfies VisionResponseMsg));
-    } else if (msg.type === 'narrative_event') {
+    if (msg.type === 'narrative_event') {
       target.send(JSON.stringify({
         type: 'narrative_event_response',
         request_id: msg.request_id,
@@ -388,15 +381,6 @@ export class WsBridge {
       request_id: requestId,
       room_data: roomData,
     } satisfies RoomResponseMsg, 'response');
-  }
-
-  /** Send vision analysis result back to Python. Called by narrative_respond. */
-  sendVisionResponse(requestId: string, result: Record<string, unknown>): void {
-    this.sendToOrigin(requestId, {
-      type: 'vision_response',
-      request_id: requestId,
-      result,
-    } satisfies VisionResponseMsg, 'vision response');
   }
 
   /** Send narrative reaction result back to Python. Called by narrative_respond. */

@@ -3,11 +3,11 @@
 > **Documento histórico — no es el backlog.** El trabajo pendiente vive ahora en
 > `npm run deuda` (cola derivada de las herramientas) y en las issues de GitHub.
 > Se conserva por el rastro y porque hay docstrings que citan su numeración
-> (`analyze_weapon` cita «next.md §2.1»), congelada por eso.
+> (los de plugins citan «next.md §7.x»), congelada por eso.
 > **Verifica contra el código antes de actuar sobre nada de aquí**: §3.4 pide trocear `ws-server.ts` (~850 líneas) y `ai_server/main.py` (~870);
 > hoy son 216 líneas con 9 handlers y 167 con 11 routers, troceados hace meses.
 
-Auditoría original en `2d4f8ca` (estado, errores, modularidad, dead code). Las secciones ya implementadas se han retirado de este documento y quedan resumidas con su commit. **Se conserva la numeración original** porque hay docstrings en el código que la citan (p. ej. `analyze_weapon` en `ai_server/main.py` cita "next.md §2.1").
+Auditoría original en `2d4f8ca` (estado, errores, modularidad, dead code). Las secciones ya implementadas se han retirado de este documento y quedan resumidas con su commit. **Se conserva la numeración original** porque hay docstrings en el código que la citan (p. ej. `nefan-core/src/plugins/loader.ts` cita "next.md §7.3").
 
 ---
 
@@ -19,7 +19,7 @@ Auditoría original en `2d4f8ca` (estado, errores, modularidad, dead code). Las 
 - **§2 Gestión de errores — cerrado** (`48dc53f`, `ba2dd3b`, PR #23): catches TS → `errors.push`; `load_game` responde al socket; `Result` en `reportPlayerChoice`; Pydantic en todos los endpoints de generación; `NodeAccess.must_get_node`; doctrina en CLAUDE.md.
 - **§2.2 restos + §4 dead code — cerrado** (rama `legacy/retire-generate-room`):
   - Cadena `generate_room`/`populate_room` retirada end-to-end: endpoints de `ai_server/main.py`, `populate_room`/`generate_room` y sus helpers MCP/API de `llm_client.py`, prompts/tools/validators legacy de `narrative_schemas.py` (el archivo pasó de ~1140 a ~700 líneas), `AiClient.generateRoom` de `ai-client.ts`, tabla de endpoints de CLAUDE.md. El tipo WS `room_request` se queda: lo comparte la ruta canónica (`format: "scene"`).
-  - Pydantic en `/generate_scene` (acepta las dos formas vivas: LlmContext del bridge y bypass de ScenarioRunner, con `model_validator` que exige una completa) y `/analyze_weapon`.
+  - Pydantic en `/generate_scene` (acepta las dos formas vivas: LlmContext del bridge y bypass de ScenarioRunner, con `model_validator` que exige una completa) y el de visión de armas (retirado entero en #790).
   - `skin_test_*` movidos a `ai_server/routers/diagnostic.py` bajo prefijo `/diagnostic/*`, montados sólo si `ai_server.expose_diagnostic = true` en `nefan-core/src/config.ts` (default false → 404).
   - Dead code borrado: `combat_resolver.gd`, `nefan-core/src/dev/room-registry.ts`, `nefan-core/src/dev/dev-state.ts` y sus exports del barrel.
   - **Fix fail-loud nuevo**: `_generate_scene_via_mcp` no detectaba la respuesta estructurada `{error: no_mcp_listener}` del bridge MCP — `validate_scene_response` la rellenaba hasta convertirla en escena placeholder ("Un paraje desolado") y el endpoint devolvía 200. Ahora replica el guard de la ruta de visión y el endpoint devuelve 503.

@@ -5,30 +5,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { TILE_CELLS } from '@nefan/core/contracts/world-map-schema';
-import { validateDeathResolution, validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene, validateAnchor } from './validators.js';
+import { validateDeathResolution, validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateFormatDScene, validateAnchor } from './validators.js';
 import { ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { rechazo, vigilarErroresDeTool } from './rechazo.js';
 import { bridgeGet, bridgePost, postProgress, setActiveSession, setActivityHook, type BridgeResult } from './bridge-http-client.js';
-import type { VisionRequestMsg } from './protocol.js';
-
-// Kinds que llegaron como `vision_request` y por tanto DEBEN responderse con
-// `vision_response` (payload en `result`). Fuente de verdad: el contrato del
-// wire (narrative-mcp-ws.ts → VisionRequestMsg.kind). La doble asignación de
-// abajo es una guardia de deriva a nivel de tipos: si el contrato añade o quita
-// un kind de visión, `tsc -b` rompe hasta que este conjunto lo refleje — así
-// ningún kind de visión puede volver a caer al fallthrough de escena
-// (room_response).
-const VISION_KINDS = [
-  'weapon_orient',
-  'weapon_verify',
-] as const;
-type VisionKind = (typeof VISION_KINDS)[number];
-const _visionKindsCoverContract: VisionRequestMsg['kind'] = null as unknown as VisionKind;
-const _contractCoversVisionKinds: VisionKind = null as unknown as VisionRequestMsg['kind'];
-void _visionKindsCoverContract;
-void _contractCoversVisionKinds;
-
 // Tipos de consequence, derivados del SoT zod (contract/model-io/schemas.ts):
 // la prosa de las tools no puede volver a desincronizarse de lo que el
 // pre-flight acepta.
@@ -72,10 +53,6 @@ const TILE_INSTRUCTIONS = loadPrompt('tile_instructions.md');
 
 const SCENE_INSTRUCTIONS = loadPrompt('scene_instructions.md');
 
-const WEAPON_ORIENT_INSTRUCTIONS = loadPrompt('weapon_orient.md');
-
-const WEAPON_VERIFY_INSTRUCTIONS = loadPrompt('weapon_verify.md');
-
 const DEVELOP_WORLD_INSTRUCTIONS = loadPrompt('develop_world.md');
 
 const NARRATIVE_EVENT_INSTRUCTIONS = loadPrompt('narrative_event.md');
@@ -103,7 +80,7 @@ function describeStateCall(method: string, path: string): string {
 /** session_id del playthrough al que pertenece un request narrativo: viaja en
  *  world_state (scene, de serializeForLlm), en context (narrative_event) o en
  *  el bloque `session` que ai_server añade a ambos. null si el request no
- *  lleva sesión (develop_world, vision sin contexto). */
+ *  lleva sesión (develop_world). */
 function extractSessionId(msg: unknown): string | null {
   if (!msg || typeof msg !== 'object') return null;
   for (const key of ['world_state', 'context'] as const) {
@@ -127,7 +104,7 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'scene' | 'weapon_orient' | 'weapon_verify' | 'narrative_event' | 'develop_world' | 'player_death' = 'scene';
+  let currentKind: 'scene' | 'narrative_event' | 'develop_world' | 'player_death' = 'scene';
   // Catálogo de refs de estilo de la sesión (world.style_refs de la última
   // petición scene): pre-flight de `style_ref` de NPC y de `surface_ref` de
   // cara — un id fuera del catálogo rebota al motor con la lista válida.
@@ -162,8 +139,6 @@ not need to memorise it from this description.
 
 Request kinds you may receive:
 - "scene"           → generate a top-down 2D map (Map Format D).
-- "weapon_orient"   → orient a 3D weapon mesh from 3 orthographic renders.
-- "weapon_verify"   → check a weapon is correctly placed in a character's hand.
 - "develop_world"   → a player-submitted world draft to develop into a full
                       world document (template embedded in the message).
 - "player_death"    → the player has died. Decide where they wake up and what
@@ -194,38 +169,6 @@ into context:
         // start/resume pisó la sesión con esta petición en vuelo.
         setActiveSession(extractSessionId(msg));
         reportProgress('el motor narrativo ha recogido la petición y está trabajando…');
-
-        if (msg.type === 'vision_request') {
-          currentKind = msg.kind;
-          // Build content blocks: text header + image blocks + footer
-          const header = JSON.stringify({
-            kind: msg.kind,
-            weapon_type: msg.weapon_type,
-            context: msg.context ?? {},
-            num_images: msg.images.length,
-          }, null, 2);
-
-          const content: Array<
-            { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
-          > = [
-            { type: 'text', text: `Vision request:\n${header}` },
-          ];
-          for (const img of msg.images) {
-            content.push({
-              type: 'image',
-              data: img.data_b64,
-              mimeType: img.media_type,
-            });
-            content.push({ type: 'text', text: `(view: ${img.view})` });
-          }
-          const instructions =
-            msg.kind === 'weapon_verify' ? WEAPON_VERIFY_INSTRUCTIONS : WEAPON_ORIENT_INSTRUCTIONS;
-          content.push({
-            type: 'text',
-            text: `Examine the views, then respond.\n\n${instructions}`,
-          });
-          return { content };
-        }
 
         if (msg.type === 'narrative_event' && msg.kind === 'develop_world') {
           currentKind = 'develop_world';
@@ -445,8 +388,6 @@ into context:
     'narrative_listen. The room_data field is a JSON string whose shape depends on ' +
     'the kind of the pending request (the listen message embedded the exact schema):\n' +
     '  scene          → Map Format D map JSON\n' +
-    '  weapon_orient  → { grip_point_normalized, blade_direction, up_direction, weapon_type, confidence, ... }\n' +
-    '  weapon_verify  → { ok, issue, suggested_delta_euler }\n' +
     '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)',
     {
       room_data: z.string().describe(
@@ -532,22 +473,6 @@ into context:
             return rechazo('develop_world', `Invalid develop_world response — fix and call narrative_respond again: ${errs.join(' · ')}`, { kind, req: currentRequestId });
           }
         }
-        // Visión de armas: antes NO se validaba (el kind pasaba directo a
-        // sendVisionResponse) y el ai_server devolvía None en silencio → 503,
-        // así que una orientación/verificación mal formada del modelo jamás
-        // volvía al modelo. Ahora rebota aquí con el error preciso.
-        if (kind === 'weapon_orient') {
-          const check = validateWeaponOrient(parsed);
-          if (!check.ok) {
-            return rechazo('weapon_orient', `Invalid weapon orientation — fix and call narrative_respond again: ${check.error}`, { kind, req: currentRequestId });
-          }
-        }
-        if (kind === 'weapon_verify') {
-          const check = validateWeaponVerify(parsed);
-          if (!check.ok) {
-            return rechazo('weapon_verify', `Invalid weapon verification — fix and call narrative_respond again: ${check.error}`, { kind, req: currentRequestId });
-          }
-        }
         // Pre-flight de jugabilidad para escenas: el bridge valida con
         // flood-fill (muros cerrados con puerta alcanzable, spawn walkable,
         // borde de mapa alcanzable, place enlazado en el world map). Si falla,
@@ -598,16 +523,6 @@ into context:
         const reqId = currentRequestId;
         currentRequestId = null;
         currentKind = 'scene';
-
-        // Todos los kinds de VisionRequestMsg vuelven como vision_response
-        // (payload en `result`), como manda el contrato del wire: responderlos
-        // con un room_response (el fallthrough de escena) violaría el contrato
-        // y haría que una respuesta TARDÍA cayera en la rama
-        // _timed_out_scenes/else del ai_server, pensada solo para escenas.
-        if ((VISION_KINDS as readonly string[]).includes(kind)) {
-          bridge.sendVisionResponse(reqId, parsed);
-          return { content: [{ type: 'text', text: `Vision response sent for request ${reqId}` }] };
-        }
 
         if (kind === 'narrative_event' || kind === 'develop_world' || kind === 'player_death') {
           bridge.sendNarrativeEventResponse(reqId, parsed);
