@@ -91,6 +91,12 @@ const entityErrorMap: z.ZodErrorMap = (issue, ctx) => {
 /** El motivo de una `cell` no finita. El espejo Python (`validate_scene_response`)
  *  dice lo mismo; la ruta (`entities[i].cell[j]`) la pone `formatError`. */
 export const MOTIVO_CELL_FINITA = "`cell` son dos números FINITOS [col,row] (1e400 se lee como Infinity)";
+/** Las formas de una entity, y el motivo cuando trae otra. */
+export const ENTITY_SHAPES = ["box", "cylinder", "sphere", "cone"] as const;
+export function motivoDeShapeInvalida(recibida: unknown): string {
+  return `\`shape\` '${String(recibida)}' no es una forma; las únicas son ${ENTITY_SHAPES.join(" | ")}`;
+}
+
 /** Ídem para `h`, la altura en metros. */
 export const MOTIVO_H_FINITA = "`h` es la altura en metros y debe ser un número FINITO > 0 (1e400 se lee como Infinity)";
 
@@ -109,7 +115,12 @@ const EntityBase = z
     // de `formatDToWorld`, ya sin vuelta al modelo. Se rechaza en la puerta.
     cell: z.tuple([z.number().finite(MOTIVO_CELL_FINITA), z.number().finite(MOTIVO_CELL_FINITA)]),
     footprint: z.tuple([z.number().int().min(1), z.number().int().min(1)]),
-    shape: z.enum(["box", "cylinder", "sphere", "cone"]).optional(),
+    // El motivo es el MISMO texto que da el espejo Python (QA de #782, H5): el
+    // motor recibe uno de los dos según la vía, y no pueden decir cosas
+    // distintas. El genérico de zod («Invalid enum value…») iba en inglés.
+    shape: z
+      .enum(ENTITY_SHAPES, { errorMap: (_issue, ctx) => ({ message: motivoDeShapeInvalida(ctx.data) }) })
+      .optional(),
     // Altura en metros, FINITA por el mismo motivo que `cell` (#782): `1e400`
     // pasaba el `.positive()` y se recortaba a 20 m en silencio.
     h: z.number().finite(MOTIVO_H_FINITA).positive().optional(),
@@ -383,30 +394,30 @@ export const ExpandedSceneSchema = z
 
 export type ExpandedScene = z.infer<typeof ExpandedSceneSchema>;
 
-/** El gate de la población CARGABLE, y el ÚNICO sitio de la casa que estrecha
- *  un `unknown` a `ExpandedScene` (#782). Lo usan los que PARSEAN
+/** El gate de la población CARGABLE, y el ÚNICO sitio de la casa que da el
+ *  tipo `ExpandedScene` a un `unknown` (#782). Lo usan los que PARSEAN
  *  (`recordSceneLoaded`, la carga del save, `escenaCargable`): hasta aquí
  *  validaban con el zod y se quedaban con el objeto sin tipo, y por eso
  *  `formatDToWorld` volvía a validar a mano lo que el zod ya había dicho.
  *
- *  Devuelve `raw` y no `parsed.data` por la regla de `world-snapshot.ts`
- *  («quien valida no se queda con el resultado»): la salida del parseo poda las
- *  claves de los sub-objetos no estrictos. El `as` es honesto porque el schema
- *  no transforma: su entrada y su salida son el mismo tipo, y lo sujeta el
- *  candado de tipo de debajo. */
+ *  Devuelve la SALIDA del parseo, sin `as`: el tipo es verdad por
+ *  construcción. La primera versión devolvía `raw` con un `as` sostenido por
+ *  un candado `z.input ≡ z.output`, y la QA de #782 lo tumbó: `z.coerce`,
+ *  `.trim()` y `.toLowerCase()` reescriben el valor SIN cambiar el tipo, así
+ *  que el candado no mordía y una `cell: ["40","40"]` coaccionada habría
+ *  llegado sin coaccionar a `formatDToWorld` (la casa, fuera del tile). Con
+ *  la salida, lo que se registra es lo que el zod dijo, y el llamante que
+ *  mute su objeto después ya no toca lo registrado.
+ *
+ *  La regla contraria de `world-snapshot.ts` («quien valida no se queda con
+ *  el resultado») sigue valiendo ALLÍ: el snapshot se sirve byte a byte como
+ *  está en disco. Aquí la única diferencia medible entre `raw` y la salida son
+ *  las claves de más de los sub-objetos NO estrictos (`size`, `tile`), que el
+ *  zod poda: no las lee nadie, y ninguna escena real las trae (lo afirma
+ *  `escena-cargable.test.ts` sobre las fixtures). */
 export function gateEscenaExpandida(
   raw: unknown,
 ): { ok: true; escena: ExpandedScene } | { ok: false; error: z.ZodError } {
   const parsed = ExpandedSceneSchema.safeParse(raw);
-  return parsed.success ? { ok: true, escena: raw as ExpandedScene } : { ok: false, error: parsed.error };
+  return parsed.success ? { ok: true, escena: parsed.data } : { ok: false, error: parsed.error };
 }
-
-// CANDADO DE TIPO (#782): el `as` de `gateEscenaExpandida` solo es verdad si el
-// schema NO transforma — un `.transform`/`.default`/`.preprocess` haría que lo
-// que entra (`raw`) no fuera lo que el tipo promete. Si alguien mete uno, las
-// dos entradas dejan de ser iguales y `npm run build` se pone rojo.
-type Iguales<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
-type Cierto<T extends true> = T;
-type _EntradaEsSalida = Cierto<Iguales<z.input<typeof ExpandedSceneSchema>, ExpandedScene>>;
-// @ts-expect-error — y el candado MUERDE: la emitida no es la cargable
-type _ElCandadoMuerde = Cierto<Iguales<z.input<typeof EmittedSceneSchema>, ExpandedScene>>;

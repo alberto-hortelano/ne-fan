@@ -674,6 +674,19 @@ def validate_volumes(raw, *, field: str = "volumes"):
     return clean
 
 
+def _es_finito(v) -> bool:
+    """¿Es `v` un número FINITO tal como lo vería el zod (#782)?
+
+    `math.isfinite` no basta: un entero de 401 cifras es JSON válido, `json`
+    lo lee como `int` EXACTO y `math.isfinite`/`float()` lanzan
+    `OverflowError` sin nombrar la entity. En JS ese mismo texto es `Infinity`
+    y el zod lo rechaza con su motivo: aquí también, con el mismo."""
+    try:
+        return math.isfinite(float(v))
+    except OverflowError:
+        return False
+
+
 def validate_scene_response(data: dict) -> dict:
     """Valida y normaliza una escena Map Format D del LLM.
 
@@ -880,7 +893,7 @@ def validate_scene_response(data: dict) -> dict:
         # FINITA (#782, espejo del `.finite()` del zod): `1e400` se lee como
         # `inf`, y aquí `int(inf)` reventaba con un OverflowError sin decir de
         # qué entity. La MISMA frase que MOTIVO_CELL_FINITA.
-        if not all(math.isfinite(v) for v in cell):
+        if not all(_es_finito(v) for v in cell):
             raise ValueError(
                 f"entity '{eid}': `cell` son dos números FINITOS [col,row] (1e400 se lee como Infinity)"
             )
@@ -931,7 +944,8 @@ def validate_scene_response(data: dict) -> dict:
         if "shape" in ent:
             if ent["shape"] not in ("box", "cylinder", "sphere", "cone"):
                 raise ValueError(
-                    f"entity '{eid}': `shape` {ent['shape']!r} no es una forma; "
+                    # La MISMA frase que `motivoDeShapeInvalida` en el zod.
+                    f"entity '{eid}': `shape` '{ent['shape']}' no es una forma; "
                     "las únicas son box | cylinder | sphere | cone"
                 )
             clean_ent["shape"] = ent["shape"]
@@ -944,9 +958,8 @@ def validate_scene_response(data: dict) -> dict:
         if "h" in ent:
             altura = ent["h"]
             # FINITA (#782, espejo del `.finite()` del zod): `1e400` se lee como
-            # `inf` y pasaba el `> 0`. La MISMA frase que MOTIVO_H_FINITA. Solo
-            # un float puede no serlo (un int de Python siempre es finito).
-            if isinstance(altura, float) and not math.isfinite(altura):
+            # `inf` y pasaba el `> 0`. La MISMA frase que MOTIVO_H_FINITA.
+            if isinstance(altura, (int, float)) and not isinstance(altura, bool) and not _es_finito(altura):
                 raise ValueError(
                     f"entity '{eid}': `h` es la altura en metros y debe ser un número FINITO > 0 "
                     "(1e400 se lee como Infinity)"

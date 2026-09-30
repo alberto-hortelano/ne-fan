@@ -62,16 +62,21 @@ describe("registro directo de NPCs Format D", () => {
 });
 
 describe("las puertas del save (#334, #336)", () => {
-  it("recordSceneLoaded DEVUELVE la escena registrada: la misma referencia que recibió y que guarda (#782)", () => {
-    // Quien difunde después difunde ESTA, con su tipo. La misma referencia y
-    // no la salida del parseo, que podaría las claves de más de los
-    // sub-objetos no estrictos (regla de `world-snapshot.ts`).
+  it("recordSceneLoaded DEVUELVE la escena registrada, que es la salida de su gate y no el objeto del llamante (#782)", () => {
+    // Quien difunde después difunde ESTA, con su tipo. Y como es la salida
+    // del zod, mutar lo que se le pasó después no toca lo registrado (QA de
+    // #782, A3: con la referencia del llamante, una `shape` inventada escrita
+    // DESPUÉS se pintaba en una escena tipada como válida).
     const s = makeState();
     s.startNewSession("toledo_1200");
-    const escena = escenaExpandidaDePrueba("s1");
+    const escena = escenaExpandidaDePrueba("s1", {
+      entities: [{ id: "caja", kind: "prop", name: "Caja", cell: [3, 3], footprint: [1, 1] }],
+    });
     const registrada = s.recordSceneLoaded("s1", escena);
-    assert.equal(registrada, escena);
-    assert.equal(s.scenes_loaded["s1"].scene_data, escena);
+    assert.equal(s.scenes_loaded["s1"].scene_data, registrada);
+    assert.deepEqual(registrada, escena);
+    (escena.entities as Record<string, unknown>[])[0].shape = "pyramid";
+    assert.equal(registrada.entities[0].shape, undefined);
   });
 
   it("la carga reconstruye cada registro con la escena de su gate sin perder campos del registro (#782)", async () => {

@@ -21,6 +21,7 @@ import {
   RADIO_SIMULADO_POR_KIND,
   MOTIVO_CELL_FINITA,
   MOTIVO_H_FINITA,
+  motivoDeShapeInvalida,
 } from "../src/contract/model-io/scene-schema.js";
 import {
   expandScenePrimitives,
@@ -109,6 +110,17 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
     }
     // El techo de 20 m es de la conversión, no del contrato: 999 m pasa.
     assert.equal(conH(999).ok, true);
+  });
+
+  it("una `shape` fuera del enum vuelve con el MISMO motivo que da el espejo Python (QA de #782, H5)", () => {
+    const res = validateContract(EmittedSceneSchema, {
+      ...base,
+      entities: [...base.entities, { id: "caja", kind: "prop", name: "Caja", cell: [4, 4], footprint: [1, 1], shape: "pyramid" }],
+    });
+    assert.equal(res.ok, false);
+    if (res.ok) return;
+    assert.equal(res.error, `entities[1].shape: ${motivoDeShapeInvalida("pyramid")}`);
+    assert.equal(motivoDeShapeInvalida("pyramid"), "`shape` 'pyramid' no es una forma; las únicas son box | cylinder | sphere | cone");
   });
 
   it("entity sin footprint (antes: clamp)", () => {

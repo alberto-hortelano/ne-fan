@@ -1,0 +1,41 @@
+{
+  "description": "`cell` con un ENTERO de 401 cifras (QA de #782, H4): JSON válido; en JS es Infinity y el zod lo rechaza con `.finite()`; en Python es un `int` exacto, y `math.isfinite` reventaba con OverflowError sin nombrar la entity. Los dos gates lo rechazan con su motivo.",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      },
+      {
+        "id": "poste",
+        "kind": "prop",
+        "name": "poste",
+        "cell": [
+          10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+          60
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      }
+    ]
+  }
+}

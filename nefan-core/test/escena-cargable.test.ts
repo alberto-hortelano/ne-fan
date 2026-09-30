@@ -62,9 +62,13 @@ describe("escenaCargable — las fixtures del selector «Room» pasan por la pue
   });
 
   for (const f of files) {
-    it(`${f}: sale como escena CARGABLE (el zod de la cargada la acepta) y se convierte`, () => {
+    it(`${f}: sale como escena CARGABLE (el zod de la cargada la acepta), sin perder nada, y se convierte`, () => {
       const raw = JSON.parse(readFileSync(resolve(SCENES, f), "utf-8"));
       const escena = escenaCargable(raw);
+      // La puerta devuelve la SALIDA del zod, que poda las claves de más de
+      // los sub-objetos no estrictos: en una escena real no hay ninguna, así
+      // que la salida es la expansión entera.
+      assert.deepEqual(escena, expandScenePrimitives(raw));
       assert.equal(escena.__expanded, true);
       assert.equal(ExpandedSceneSchema.safeParse(escena).success, true);
       // La cruda no se toca: la expansión es una copia.
@@ -82,9 +86,11 @@ describe("escenaCargable — las dos poblaciones", () => {
     assert.deepEqual(escenaCargable(raw), expandScenePrimitives(cruda()));
   });
 
-  it("una ya expandida vuelve con la MISMA referencia: ni se re-expande ni se copia", () => {
+  it("una ya expandida no se re-expande: sale igual, y es la salida del gate y no el objeto del llamante", () => {
     const expandida = expandScenePrimitives(cruda());
-    assert.equal(escenaCargable(expandida), expandida);
+    const cargable = escenaCargable(expandida);
+    assert.deepEqual(cargable, expandida);
+    assert.notEqual(cargable, expandida, "lo que el llamante mute después no puede tocar lo que se pinta");
   });
 
   it("una expandida pasa por SU gate: lo que la emitida no admite (size, terrain, __expanded) aquí vale", () => {
@@ -169,16 +175,22 @@ describe("escenaCargable — lo que no es Format D lanza nombrando qué", () => 
 });
 
 describe("gateEscenaExpandida — el único estrechador de la casa", () => {
-  it("con éxito devuelve el MISMO objeto, no la salida del parseo (que poda claves)", () => {
+  it("con éxito devuelve la SALIDA del parseo: mutar después lo que se le pasó no la toca (QA de #782, A3)", () => {
+    const expandida = expandScenePrimitives(cruda()) as { entities: Record<string, unknown>[] };
+    const g = gateEscenaExpandida(expandida);
+    assert.equal(g.ok, true);
+    if (!g.ok) return;
+    expandida.entities[1].shape = "pyramid";
+    assert.equal(g.escena.entities[1].shape, undefined, "la escena del gate no comparte objetos con la del llamante");
+  });
+
+  it("y la salida es lo que dijo el zod: la clave de más de un sub-objeto no estricto se poda (medido, no supuesto)", () => {
     const expandida = expandScenePrimitives(cruda());
-    // Una clave de más en un sub-objeto NO estricto: la salida del parseo la
-    // podaría; la puerta no transforma.
     (expandida.tile as Record<string, unknown>).nota = "de disco";
     const g = gateEscenaExpandida(expandida);
     assert.equal(g.ok, true);
     if (!g.ok) return;
-    assert.equal(g.escena, expandida);
-    assert.equal((g.escena.tile as Record<string, unknown>).nota, "de disco");
+    assert.deepEqual(g.escena.tile, { tx: 0, ty: 0 });
   });
 
   it("sin éxito devuelve el error del zod, no lanza", () => {
