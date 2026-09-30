@@ -92,8 +92,8 @@ selector) follows the active system automatically.
 - "image": the image model paints your plans (costs credits). The ground +
   volumes of each tile feed a deterministic 3D render, and the image model
   paints the SURFACES of that render cell by cell (the surface atlas). Your
-  plans are never redrawn by a vision pass — what you declare is what gets
-  built, so declare it complete (typed arrays, never SVG).
+  plans are never redrawn — what you declare is what gets built, so declare
+  it complete (typed arrays, never SVG).
 - "vector": the player sees the engine's untextured 3D render of your plans
   directly; no image calls.
 - The mode is NOT frozen: the player can switch it (per facet: scenes /

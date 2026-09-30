@@ -41,6 +41,12 @@ export interface AssetSummaryRow {
   created_at: string;
 }
 
+/** Filtros de `listAssets` sobre `extra` (ver `ConsultaDeListado` del contrato). */
+export interface FiltroDeListado {
+  style?: string;
+  surfaceKind?: string;
+}
+
 export interface PruneGroup {
   type: string;
   hash: string;
@@ -228,15 +234,29 @@ export class ManifestDb {
 
   /** `assetType` admite lista CSV — la librería del motor narrativo pedía
    *  varios tipos reutilizables en una consulta; hoy la usa además el barrido
-   *  de arte de personaje para listar `sprite_hero`. */
-  listAssets(assetType?: string, limit = 50): AssetSummaryRow[] {
+   *  de arte de personaje para listar `sprite_hero`. `filtro` casa EXACTO con
+   *  `extra.style` / `extra.kind` de la fila, y va DENTRO del subselect: antes
+   *  del collapse y del `LIMIT`, para que las filas recientes de otro estilo no
+   *  llenen la ventana (la librería del motor, tanda BZ). */
+  listAssets(assetType?: string, limit = 50, filtro: FiltroDeListado = {}): AssetSummaryRow[] {
     const types = (assetType ?? "")
       .split(",")
       .map((t) => t.trim())
       .filter((t) => t.length > 0);
-    const typeFilter = types.length
-      ? `type IN (${types.map(() => "?").join(",")})`
-      : "1=1";
+    const where: string[] = [];
+    const args: string[] = [];
+    if (types.length) {
+      where.push(`type IN (${types.map(() => "?").join(",")})`);
+      args.push(...types);
+    }
+    if (filtro.style !== undefined) {
+      where.push("json_extract(extra, '$.style') = ?");
+      args.push(filtro.style);
+    }
+    if (filtro.surfaceKind !== undefined) {
+      where.push("json_extract(extra, '$.kind') = ?");
+      args.push(filtro.surfaceKind);
+    }
     const rows = this.db
       .prepare(
         `SELECT hash, type, subtype, prompt, created_at FROM (
@@ -244,10 +264,10 @@ export class ManifestDb {
                   ROW_NUMBER() OVER (PARTITION BY hash, type ORDER BY id DESC) AS rn,
                   id
            FROM assets
-           WHERE ${typeFilter}
+           WHERE ${where.length ? where.join(" AND ") : "1=1"}
          ) WHERE rn = 1 ORDER BY id DESC LIMIT ?`,
       )
-      .all(...types, limit) as unknown as AssetSummaryRow[];
+      .all(...args, limit) as unknown as AssetSummaryRow[];
     return rows;
   }
 

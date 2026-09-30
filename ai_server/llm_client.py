@@ -17,6 +17,8 @@ import uuid
 import threading
 import time
 
+import httpx
+
 from narrative_schemas import (
     GENERATE_SCENE_SYSTEM_PROMPT,
     GENERATE_SCENE_TOOL,
@@ -28,6 +30,7 @@ from narrative_schemas import (
     validate_scene_response,
     validate_narrative_reaction,
 )
+from style_packs import surface_style_key
 
 
 class NarrativeUnavailable(RuntimeError):
@@ -74,6 +77,26 @@ def mcp_ws_url_desde_entorno(env=os.environ) -> str | None:
     return raw
 
 
+def _descripciones_reusables(assets: list[dict], limit: int) -> list[str]:
+    """Proyección de las filas del store a lo que lee el motor: la descripción.
+    Fuera las etiquetas opacas (<4 chars), dedupe por prompt sin distinguir
+    mayúsculas, y las `limit` primeras (el store las da de la más reciente)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for a in assets:
+        prompt = str(a.get("prompt", "")).strip()
+        if len(prompt) < 4:
+            continue  # hashes/etiquetas internas, nada que leer
+        norm = prompt.lower()
+        if norm in seen:
+            continue
+        seen.add(norm)
+        out.append(prompt)
+        if len(out) >= limit:
+            break
+    return out
+
+
 class LLMClient:
     def __init__(
         self,
@@ -81,6 +104,7 @@ class LLMClient:
         mcp_ws_url: str | None = MCP_WS_URL_POR_DEFECTO,
         timeout: float = 60.0,
         asset_manifest=None,
+        style_packs=None,
     ):
         self.model = model
         # `None` = canal MCP APAGADO a propósito (`NEFAN_LLM_MCP_URL=off`): no
@@ -88,6 +112,10 @@ class LLMClient:
         self.mcp_ws_url = mcp_ws_url
         self.timeout = timeout
         self.asset_manifest = asset_manifest
+        # Resolver de packs (StylePackResolver): da el `style_token` con el que
+        # se compone el estilo de la clave de caché de cada superficie, que es
+        # el filtro de la librería que ve el motor (`surface_style_key`).
+        self.style_packs = style_packs
         # Active narrative session — set by /notify_session, included in every
         # request to the MCP bridge so Claude knows which playthrough is in flight.
         self.session_info: dict | None = None
@@ -260,48 +288,60 @@ class LLMClient:
         }
         print(f"LLM: active session set to {session_id} (game={game_id}, resume={is_resume})")
 
-    #: Tipos que el motor puede REUSAR: solo las superficies de la vista fps,
-    #: y por DESCRIPCIÓN verbatim (cache-hit por prompt), no por hash. Los
-    #: kinds texture/model/sprite salieron con el gpu-worker (#199): eran los
-    #: únicos que producía, así que sin él la ventana se llenaba de entradas
-    #: que ningún proceso podía volver a generar. scene/plate quedan FUERA:
-    #: sus prompts son instrucciones de repintado/inpaint ("The object being
-    #: removed is…") y con la DB real monopolizaban las 30 entradas — el motor
-    #: no veía ni una superficie (hallazgo medido 2026-08-14).
+    #: Tipo que el motor puede REUSAR: solo las superficies de la vista fps,
+    #: y por DESCRIPCIÓN verbatim, no por hash. Los kinds texture/model/sprite
+    #: salieron con el gpu-worker (#199); scene/plate quedan FUERA porque sus
+    #: prompts eran instrucciones de repintado (hallazgo medido 2026-08-14).
     REUSABLE_ASSET_TYPES = "surface"
+    #: Solo las celdas `unique`: son las que crea un `surface_desc` del motor
+    #: (src/scene/greybox/surfaces.ts). Las `tile` son la librería por defecto
+    #: del engine (`info.en`), que el motor no puede pedir por descripción.
+    REUSABLE_SURFACE_KIND = "unique"
 
     def _inject_available_assets(self, payload: dict, limit: int = 30) -> dict:
         """Add `available_assets` and active session info to a request payload
-        so the narrative engine knows what's already generated and which
+        so the narrative engine knows what's already painted and which
         playthrough is in flight. Mutates and returns the payload.
 
-        La librería que ve el motor: solo el tipo reutilizable, descripciones
-        cortas admitidas ("banco de piedra" es una entrada válida), dedupe por
-        prompt (las celdas de superficie se repiten por estilo) y las `limit`
-        más recientes. Hubo un intercalado round-robin por tipo cuando había
-        varios tipos reutilizables; murió con ellos (#199 y #257)."""
+        La librería que ve el motor son DESCRIPCIONES (lo único que usa: reusa
+        por texto, no por hash) de superficies pintadas en el ESTILO de la
+        partida — el mismo `style` que entra en la clave de caché de la celda.
+        Una descripción de otro estilo no es reusable: repetida aquí sería un
+        repintado pagado, no un cache-hit (tanda BZ). El filtro va en el store,
+        ANTES de la ventana: filtrar aquí dejaría que 200 filas recientes de
+        otros estilos expulsaran a las del bueno.
+
+        Sin `world.style_id` o sin resolver de packs NO se ofrece librería, y se
+        dice: una librería sin estilo no puede ser honesta. Se conservan los
+        prompts cortos ("banco de piedra"), el dedupe por prompt y las `limit`
+        más recientes."""
         if self.asset_manifest is not None:
-            try:
-                assets = self.asset_manifest.list_assets(
-                    asset_type=self.REUSABLE_ASSET_TYPES, limit=200
+            world = payload.get("world")
+            style_id = str(world.get("style_id") or "") if isinstance(world, dict) else ""
+            style_key = surface_style_key(self.style_packs, style_id)
+            if not style_key:
+                print(
+                    "LLM WARNING: available_assets NO se ofrece — la petición no "
+                    f"trae world.style_id ({style_id!r}) o no hay resolver de packs; "
+                    "sin estilo no se puede decir qué superficie es reusable"
                 )
-                seen_prompts: set[str] = set()
-                reusable: list[dict] = []
-                for a in assets:
-                    prompt = str(a.get("prompt", "")).strip()
-                    if len(prompt) < 4:
-                        continue  # hashes/etiquetas internas, nada que leer
-                    norm = prompt.lower()
-                    if norm in seen_prompts:
-                        continue
-                    seen_prompts.add(norm)
-                    reusable.append(a)
-                    if len(reusable) >= limit:
-                        break
-                if reusable:
-                    payload["available_assets"] = reusable
-            except Exception as e:
-                print(f"LLM: failed to list assets for narrative payload: {e}")
+            else:
+                try:
+                    assets = self.asset_manifest.list_assets(
+                        asset_type=self.REUSABLE_ASSET_TYPES,
+                        limit=200,
+                        style=style_key,
+                        surface_kind=self.REUSABLE_SURFACE_KIND,
+                    )
+                except httpx.HTTPError as e:
+                    # Degradar SIN librería es legítimo (el motor describe libre y
+                    # se pinta); lo que no se traga es un bug de código, que por
+                    # eso no se captura aquí.
+                    print(f"LLM WARNING: asset-store no respondió la librería del motor: {e}")
+                else:
+                    reusable = _descripciones_reusables(assets, limit)
+                    if reusable:
+                        payload["available_assets"] = reusable
         if self.session_info is not None:
             payload["session"] = dict(self.session_info)
         return payload

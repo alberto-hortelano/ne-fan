@@ -29,6 +29,7 @@ from asset_paths import SKINNED_SHEETS_DIR
 from deps import deps
 from dev_api_cache import DEV_API_CACHE
 from spend_tracker import SPEND, procedencia_segun_api
+from style_packs import surface_style_key
 
 logger = logging.getLogger("ai_server")
 
@@ -87,7 +88,7 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
     style_sheet = None  # lámina fps_surfaces del pack
     if body.style_id and deps.style_packs is not None:
         style_token = deps.style_packs.style_token(body.style_id)
-        style_key = f"{body.style_id}:{style_token}" if style_token else body.style_id
+        style_key = surface_style_key(deps.style_packs, body.style_id)
         style_sheet = deps.style_packs.resolve_sheet(body.style_id)
 
     # Resolver cada ref de cara distinta UNA vez. Una ref que no resuelve

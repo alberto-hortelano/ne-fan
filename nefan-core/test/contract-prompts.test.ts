@@ -412,3 +412,30 @@ describe("contrato narrativo — los dos seed del tile dicen su tipo y su rango,
     for (const s of seeds) assert.ok(s.startsWith(`seed?: integer 0..${ZONE_SEED_MAX}`), `seed del tool sin el rango del zod: «${s}»`);
   });
 });
+
+describe("lo que el prompt le dice al motor del reuso y de la visión (tanda BZ)", () => {
+  const leer = (f: string) => readFileSync(resolve(PROMPTS_DIR, f), "utf-8");
+  const DE_LA_LIBRERIA = ["scene_instructions.md", "narrative_event.md"];
+
+  it("available_assets se presenta como la librería del ESTILO de la partida, sin prometer gratis", () => {
+    // El estilo va en la clave de caché: una descripción repetida de otro
+    // estilo es un repintado PAGADO. El prompt prometía «cache hit … for free»
+    // mientras el motor veía 28 de 30 entradas de otros estilos.
+    for (const f of DE_LA_LIBRERIA) {
+      const txt = leer(f);
+      assert.doesNotMatch(txt, /for free/i, `${f} promete reuso gratis`);
+      assert.doesNotMatch(txt, /\(a verbatim description is a cache hit\)/, `${f} vende el reuso como acierto seguro`);
+      assert.match(txt, /this game's (art )?style/i, `${f} no dice que la librería es del estilo de la partida`);
+      assert.match(txt, /not guaranteed/i, `${f} no avisa de que el reuso no está garantizado`);
+    }
+  });
+
+  it("ningún prompt habla de un vision classifier que no existe (QA de CA, M2)", () => {
+    // La clasificación por visión y su canal se retiraron: un prompt que le
+    // dice al motor que su `label` «alimenta el clasificador» le da una razón
+    // falsa para escribirlo.
+    for (const f of ["tile_instructions.md", "scene_instructions.md", "ui_systems.md", "world_rules.md"]) {
+      assert.doesNotMatch(leer(f), /classifier|vision pass/i, f);
+    }
+  });
+});

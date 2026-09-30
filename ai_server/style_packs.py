@@ -290,6 +290,21 @@ class StylePackResolver:
         return data_uri, content_hash
 
 
+def surface_style_key(resolver: StylePackResolver | None, style_id: str) -> str:
+    """El `style` que entra en la clave de caché de una celda de superficie
+    (`surface_cell_context`): `"{style_id}:{style_token}"`, o el id a secas si
+    el pack no declara token. UNA fuente para los dos procesos que la usan: el
+    atlas (remote_generation), que la mete en la clave, y la librería que ve el
+    motor (llm_client), que filtra por ella — si divergieran, el motor vería
+    como reusables descripciones que en su estilo son un repintado pagado.
+    Sin estilo o sin resolver → "" (el atlas pinta sin fragmentar por estilo;
+    la librería no se ofrece)."""
+    if not style_id or resolver is None:
+        return ""
+    token = resolver.style_token(style_id)
+    return f"{style_id}:{token}" if token else style_id
+
+
 def _styles_dir_from_config() -> Path:
     """Lee content.styles_dir del runtime_config (path relativo a la raíz del
     repo). Fail-loud: sin bloque content la config está desactualizada."""

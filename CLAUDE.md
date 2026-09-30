@@ -232,7 +232,7 @@ Posiciones y escalas en METROS (anclaje por BASE: `position.y` es la base del ob
 
 **Fixtures de test** (`nefan-core/data/scenes/*.json`): escenas **Format D** commiteadas que ofrece el selector «Room» del cliente, para iterar renderer y UI sin backend (preset `html-fixtures`). Van por el mismo camino que una escena del motor —la puerta `escenaCargable` (el mismo zod), `formatDToWorld` y a pintar—, así que una fixture que no valdría en partida tampoco vale aquí: `test/scene-fixtures.test.ts` canda que solo haya Format D vivo.
 
-**Reuse de assets**: la librería que ve el motor (`available_assets`) son las SUPERFICIES pintadas, y se reusan por DESCRIPCIÓN, no por hash: repetir verbatim una `surface_desc` ya pintada es un cache-hit. La cadena por hash (`texture_hash`/`model_hash`) murió con el gpu-worker (#199) y tiene candado de reaparición en `arch-rules.json`.
+**Reuse de assets**: la librería que ve el motor (`available_assets`) son las SUPERFICIES pintadas en el ESTILO de la partida (`GET /assets?style=`, el mismo `style` que entra en la clave de caché), y se reusan por DESCRIPCIÓN, no por hash: repetir verbatim una `surface_desc` ya pintada en ese estilo suele ser un cache-hit (la clave lleva más cosas: probable, no garantizado). Una de otro estilo no se ofrece: sería un repintado pagado. La cadena por hash (`texture_hash`/`model_hash`) murió con el gpu-worker (#199) y tiene candado de reaparición en `arch-rules.json`.
 
 **Spawn dinámico**: vía consequences `spawn_entity` que devuelve `react_to_player` (`world/materializar-spawn.ts` en el cliente). Las entidades se materializan en el mundo en runtime sin recargar la escena.
 

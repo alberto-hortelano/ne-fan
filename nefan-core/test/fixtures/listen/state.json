@@ -1,0 +1,3939 @@
+{
+	"schema_version": 5,
+	"session_id": "1790773005-1d9eea",
+	"game_id": "alta_fantasia",
+	"created_at": "2026-09-30T12:56:45.070Z",
+	"updated_at": "2026-09-30T13:17:48.851Z",
+	"world": {
+		"name": "Miravanda",
+		"atmosphere": "",
+		"style_token": "hand-painted watercolor anime style, soft luminous colors, gentle warm light, lush nature, Studio Ghibli inspired, painterly",
+		"active_scene_id": "tile_0_-1",
+		"description": "Alta fantasía luminosa con melancolía suave (tono Ghibli). Toda la magia del mundo circula en **la Vena Errante**, un río de luz que migra por la cuenca del **Girial** como las aves: donde pasa florece todo y los espíritus toman cuerpo; donde falta, la magia se guarda en lámparas y semillas. Las «estaciones» son distancias a la Vena (Riberas Vivas, Sedal, Espera, y la Cendra, ramal abandonado hace dos siglos por la misteriosa Torcedura).\n\nRazas (todas humanoides): **humanos** del llano, previsores y hospitalarios; **vadelios** (elfos de agua y vidrio, envejecen solo cuando la Vena los toca); **raiceños**, soñados por árboles-madre a los que devuelven sus recuerdos; **cendrios**, dignos maestros de la escasez, ojos de brasa. Los **Vestidos** son espíritus de la Vena que toman forma humana para tratar con mortales, según los Fueros del Umbral: toda magia es un trato, y romper un trato con nombre es el peor delito.\n\nFacciones: Concierto de Vado Almar, Guarda del Caudal (oculta que la Vena adelgaza), Gremio de la Lámpara, caravanas Andantes, Mesa del Umbral, Ramal Seco cendrio. Moneda: el fanal. Sin señores oscuros ni elegidos: conflictos de tratos, deudas, hospitalidad y misterios del paisaje. Saludo común: «buen paso».",
+		"style_id": "acuarela_luminosa",
+		"world_doc_hash": "916b305927230e8ab4427fa54ac4a17a84701783d589e4e3c0df542cf9b7cde4",
+		"render_mode": "vector",
+		"character_mode": "vector",
+		"combat_system": "standard",
+		"style_refs": {
+			"characters": [
+				{
+					"id": "commoner",
+					"description": "una persona corriente con ropa de trabajo sencilla y gastada"
+				},
+				{
+					"id": "noble",
+					"description": "una persona de alta posición con ropas ricas y joyas"
+				},
+				{
+					"id": "warrior",
+					"description": "una persona de armas con armadura y armas propias del mundo"
+				}
+			],
+			"fps_faces": [
+				{
+					"id": "fachada",
+					"description": "fachada de casa de cuento: yeso cálido, puerta de madera y ventanas con jardineras floridas"
+				},
+				{
+					"id": "porton",
+					"description": "portón de madera de doble hoja con herrajes, enmarcado en piedra clara con enredaderas"
+				},
+				{
+					"id": "tienda",
+					"description": "frente de tienda acogedor: mostrador con toldo de tela y cartel de madera pintado sobre el dintel"
+				}
+			]
+		}
+	},
+	"player": {
+		"level": 1,
+		"class": "rogue",
+		"health": 100,
+		"gold": 0,
+		"inventory": [
+			{
+				"id": "lampara_agria",
+				"name": "Lámpara agria de Maela",
+				"description": "Lámpara del Gremio de la Lámpara con el sello de lacre verde; su caudal turbio y amarillento huele a leche cortada."
+			}
+		],
+		"appearance": {
+			"model_id": "y_bot",
+			"skin_path": ""
+		},
+		"position": [
+			0,
+			0,
+			-64
+		],
+		"current_scene_id": "tile_0_-1"
+	},
+	"story_so_far": "El viajero (pícaro, sin un fanal) llega a Ondahonda en la fiesta de llegada de la Vena y habla con Maela Cebada, posadera del Farol Quieto. Maela ha abierto esa mañana una lámpara del Gremio de la Lámpara que salió 'agria' y le ha dejado la cocina sin lumbre.\n\nTrato con Maela: el viajero lleva la lámpara agria (lacre verde del Gremio, vendida por un corredor de paso desconocido) al lamparero Sael Vidrio-en-Ayunas; a cambio, cena y cama gratis esa noche en el Farol Quieto.\n\nSael examina la lámpara: el sello de lacre verde del Gremio está falsificado (la espiga mira al poniente) y el caudal fue usado para DAÑAR a alguien antes de embotellarse — una 'lámpara agria' como las que inquietan al Gremio. Mientras hablan, el corredor Orio Candil (quien vendió la lámpara a Maela) aparece en la plaza vigilando la lamparería.\n\nSael explica: el caudal agrio viene de alguien que usó magia prestada para dañar a un inocente y embotelló el caudal para repartir la deuda entre los compradores (Maela puede cargar parte de esa deuda si la usa). Sael señala a Orio Candil como el vendedor del lacre verde.\n\nOrio Candil, que se presenta como corredor del Gremio, reconoce la lámpara agria en el zurrón del viajero y le ofrece cambiarla por dos lámparas nuevas y cinco fanales 'y aquí no ha pasado nada' — un pago por silencio.\n\nEl viajero acusa a Orio Candil de estafador y le amenaza con llevarlo ante la Guarda del Caudal. Orio rehúsa pelear y lanza contra él a su matón a sueldo, Brasco el del Remo (hostil), mientras intenta escabullirse. La guarda Inés de la Torre está cerca, junto a la torre-caudal.\n\nEmpieza la pelea: Brasco el del Remo ataca al viajero en la plaza; Inés de la Torre acude a la trifulca y Orio Candil se escabulle entre los puestos.\n\nEl viajero cayó en la plaza bajo el remo de Brasco. Inés de la Torre lo llevó inconsciente a la posada del Farol Quieto, donde despierta atendido por Maela. Orio Candil escapó entre los puestos; Brasco sigue rondando la plaza del norte. La lámpara agria sigue en poder del viajero.\n\nMaela comprende que la lámpara agria le habría cargado una deuda de daño; da por cumplido el trato (cena y cama ganadas esa noche). Cuenta que Orio Candil sigue en el pueblo, rondando el huerto del norte (noroeste) como quien espera a alguien, y que Inés de la Torre 'sabe más de lo que cuenta'.\n\nEl viajero decide buscar a Inés de la Torre, que al atardecer suele subir a la torre-caudal de Ondahonda a apuntar sus medidas.",
+	"scenes_loaded": {
+		"tile_0_0": {
+			"scene_data": {
+				"scene_id": "tile_0_0",
+				"scene_description": "Ondahonda al atardecer, en plena fiesta de llegada: la Vena Errante tiñe de luz el remanso del sureste y los faroles de la plaza empiezan a encenderse. La posada del Farol Quieto huele a pan de sedal y a cera, y por los caminos llegan forasteros de las cuatro direcciones.",
+				"place_id": "ondahonda",
+				"tile": {
+					"tx": 0,
+					"ty": 0
+				},
+				"biome": "meadow",
+				"size": {
+					"cols": 128,
+					"rows": 128,
+					"meters_per_cell": 0.5
+				},
+				"terrain": [
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggg______________",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____________________________________",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_______________________________________________________",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______________________________________________________________________",
+					"gggggggggggggggggggggggggggggggggggggggggggggg__________________________________________________________________________________",
+					"ggggggggggggggggggggggggggggggggggg_____________________________________________________________________________________________",
+					"ggggggggggggggggggggggggg_________________________________________________________________________________________gggggggggggggg",
+					"gggggggggg_________________________________________________________________________________ggggggggggggggggggggggggggggggggggggg",
+					"_________________________________________________________________________ggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"__________________________________________________________gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"______________________________________________gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"___________________________________gggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"_________________________gggggggggggggg______gggggggggggggggggggggggggggggggggg__ggggggggggggggggggggggggggggggggggggggggggggggg",
+					"__________ggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg_______gggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggg_______ggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggg_______ggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggg_______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggwwwww",
+					"ggggggggggggggggggggggggggggggggggggggg_______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggg_______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggggwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____gggggggggggwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____ggggggggggwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggg_______gggggggggggggggggggggggggggggggggggggggg____ggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____gggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____ggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggg____gggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggg_______gggggggggggggggggggggggggggggggggggggggg____gggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggg_______ggggggggggggggggggggggggggggggggggggggggbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggbbbbbbbbbbbbbbbbwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggg_______gggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggg_______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggg_______ggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggg_______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"gggggggggggggggggggggggggggggggggggggggggggggggg_______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggg______gggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+				],
+				"ground": [
+					{
+						"id": "camino_ribera",
+						"label": "camino de la ribera",
+						"kind": "path",
+						"points": [
+							[
+								0,
+								50
+							],
+							[
+								20,
+								49
+							],
+							[
+								40,
+								47
+							],
+							[
+								64,
+								45
+							],
+							[
+								100,
+								43
+							],
+							[
+								128,
+								42
+							]
+						],
+						"w": 6,
+						"material": "dirt"
+					},
+					{
+						"id": "senda_sien",
+						"label": "senda de peregrinos",
+						"kind": "path",
+						"points": [
+							[
+								62,
+								0
+							],
+							[
+								63,
+								20
+							],
+							[
+								62,
+								38
+							]
+						],
+						"w": 5,
+						"material": "gravel"
+					},
+					{
+						"id": "camino_postas",
+						"label": "camino de las Postas",
+						"kind": "path",
+						"points": [
+							[
+								42,
+								50
+							],
+							[
+								40,
+								72
+							],
+							[
+								48,
+								100
+							],
+							[
+								52,
+								128
+							]
+						],
+						"w": 6,
+						"material": "dirt"
+					},
+					{
+						"id": "plaza",
+						"label": "plaza de la llegada",
+						"kind": "area",
+						"rect": [
+							38,
+							32,
+							46,
+							22
+						],
+						"material": "cobble"
+					},
+					{
+						"id": "atrio_posada",
+						"label": "atrio de la posada",
+						"kind": "area",
+						"rect": [
+							48,
+							52,
+							16,
+							4
+						],
+						"material": "stone"
+					},
+					{
+						"id": "senda_remanso",
+						"label": "senda al remanso",
+						"kind": "path",
+						"points": [
+							[
+								80,
+								53
+							],
+							[
+								86,
+								70
+							],
+							[
+								92,
+								94
+							]
+						],
+						"w": 4,
+						"material": "gravel"
+					},
+					{
+						"id": "remanso_vena",
+						"label": "remanso luminoso de la Vena",
+						"kind": "water",
+						"polygon": [
+							[
+								97,
+								128
+							],
+							[
+								92,
+								106
+							],
+							[
+								96,
+								90
+							],
+							[
+								106,
+								84
+							],
+							[
+								118,
+								80
+							],
+							[
+								128,
+								79
+							],
+							[
+								128,
+								128
+							]
+						]
+					},
+					{
+						"id": "embarcadero",
+						"label": "embarcadero de tablas",
+						"kind": "deck",
+						"rect": [
+							90,
+							92,
+							16,
+							4
+						],
+						"material": "wood"
+					},
+					{
+						"id": "huerto_no",
+						"label": "huerto",
+						"kind": "area",
+						"rect": [
+							4,
+							6,
+							30,
+							20
+						],
+						"material": "dirt"
+					},
+					{
+						"id": "huerto_so",
+						"label": "huerto de coles",
+						"kind": "area",
+						"rect": [
+							4,
+							96,
+							34,
+							22
+						],
+						"material": "dirt"
+					},
+					{
+						"id": "loma_norte",
+						"label": "loma",
+						"kind": "hill",
+						"ellipse": {
+							"center": [
+								108,
+								8
+							],
+							"rx": 18,
+							"ry": 10
+						},
+						"h": 2.5
+					}
+				],
+				"volumes": [
+					{
+						"id": "posada",
+						"label": "posada del Farol Quieto",
+						"type": "building",
+						"rect": [
+							46,
+							56,
+							20,
+							14
+						],
+						"wall_h": 7,
+						"walls": {
+							"material": "plaster",
+							"color": "#e9d9b8"
+						},
+						"doors": [
+							{
+								"edge": "n",
+								"at": 8,
+								"w": 4
+							}
+						],
+						"cutaway": true,
+						"surface_desc": "warm lime plaster wall of a storybook inn, dark timber beams, flower boxes under small round windows",
+						"surface_ref": "fachada"
+					},
+					{
+						"id": "farol_posada",
+						"label": "gran farol de la posada",
+						"type": "custom",
+						"at": [
+							52,
+							53
+						],
+						"parts": [
+							{
+								"shape": "cylinder",
+								"h": 6,
+								"rBottom": 0.3,
+								"color": "#4a3a2a"
+							},
+							{
+								"shape": "box",
+								"size": [
+									1.4,
+									1.6,
+									1.4
+								],
+								"pos": [
+									0,
+									6,
+									0
+								],
+								"color": "#ffd27a",
+								"desc": "glowing glass lantern pane with a warm amber flame inside, brass frame"
+							}
+						]
+					},
+					{
+						"id": "lamparería",
+						"label": "lamparería de Sael",
+						"type": "building",
+						"rect": [
+							82,
+							36,
+							12,
+							10
+						],
+						"wall_h": 6,
+						"roof": {
+							"kind": "gable",
+							"axis": "x",
+							"material": "slate",
+							"color": "#5b7a8a"
+						},
+						"walls": {
+							"material": "wood"
+						},
+						"doors": [
+							{
+								"edge": "s",
+								"at": 4,
+								"w": 4
+							}
+						],
+						"surface_desc": {
+							"side": "pale painted timber planks with blue-glass lamp sconces",
+							"s": "shopfront of a lantern maker: rows of glass lanterns of many sizes hanging under a wooden awning, each with a soft warm glow, pale painted timber front"
+						},
+						"surface_ref": {
+							"s": "tienda"
+						}
+					},
+					{
+						"id": "toldo_lamparas",
+						"label": "toldo con lámparas",
+						"type": "prop",
+						"rect": [
+							82,
+							46,
+							12,
+							2
+						],
+						"shape": "box",
+						"h": 0.3,
+						"color": "#c9a36b",
+						"passable": true
+					},
+					{
+						"id": "casa_oeste_1",
+						"label": "casa de yeso",
+						"type": "building",
+						"rect": [
+							18,
+							30,
+							13,
+							10
+						],
+						"wall_h": 5,
+						"roof": {
+							"kind": "gable",
+							"axis": "x",
+							"material": "thatch"
+						},
+						"walls": {
+							"material": "plaster",
+							"color": "#efe2c6"
+						},
+						"doors": [
+							{
+								"edge": "s",
+								"at": 5
+							}
+						],
+						"surface_desc": "cottage front of lime-washed plaster over dark timber framing, a small shuttered window with a loaf of bread left on the sill, an iron horseshoe nailed beside the door"
+					},
+					{
+						"id": "casa_oeste_2",
+						"label": "casa del cebador",
+						"type": "building",
+						"rect": [
+							20,
+							56,
+							14,
+							10
+						],
+						"wall_h": 6,
+						"roof": {
+							"kind": "hip",
+							"material": "tile"
+						},
+						"walls": {
+							"material": "plaster",
+							"color": "#f3d9b0"
+						},
+						"doors": [
+							{
+								"edge": "e",
+								"at": 4
+							}
+						]
+					},
+					{
+						"id": "granero",
+						"label": "granero de la Espera",
+						"type": "building",
+						"rect": [
+							16,
+							76,
+							14,
+							14
+						],
+						"wall_h": 10,
+						"roof": {
+							"kind": "gable",
+							"axis": "y",
+							"material": "wood",
+							"color": "#7a4b2e"
+						},
+						"walls": {
+							"material": "timber"
+						},
+						"doors": [
+							{
+								"edge": "e",
+								"at": 5,
+								"w": 5
+							}
+						]
+					},
+					{
+						"id": "casa_norte_1",
+						"label": "casa de la jueza",
+						"type": "building",
+						"rect": [
+							40,
+							14,
+							12,
+							10
+						],
+						"wall_h": 7,
+						"roof": {
+							"kind": "hip",
+							"material": "slate",
+							"color": "#4f6b78"
+						},
+						"walls": {
+							"material": "stone"
+						},
+						"doors": [
+							{
+								"edge": "s",
+								"at": 4
+							}
+						]
+					},
+					{
+						"id": "casa_norte_2",
+						"label": "casa de vidrieros",
+						"type": "building",
+						"rect": [
+							72,
+							12,
+							14,
+							10
+						],
+						"wall_h": 5,
+						"roof": {
+							"kind": "gable",
+							"axis": "x",
+							"material": "tile"
+						},
+						"walls": {
+							"material": "plaster",
+							"color": "#e8e0cc"
+						},
+						"doors": [
+							{
+								"edge": "s",
+								"at": 5
+							}
+						]
+					},
+					{
+						"id": "torre_caudal",
+						"label": "torre-caudal de la Guarda",
+						"type": "tower",
+						"at": [
+							104,
+							22
+						],
+						"r": 5,
+						"h": 22
+					},
+					{
+						"id": "casa_este",
+						"label": "casa del medidor",
+						"type": "building",
+						"rect": [
+							96,
+							52,
+							12,
+							10
+						],
+						"wall_h": 5,
+						"roof": {
+							"kind": "shed",
+							"material": "wood"
+						},
+						"walls": {
+							"material": "wood"
+						},
+						"doors": [
+							{
+								"edge": "w",
+								"at": 4
+							}
+						]
+					},
+					{
+						"id": "casa_sur_1",
+						"label": "casa de huertanos",
+						"type": "building",
+						"rect": [
+							64,
+							78,
+							14,
+							10
+						],
+						"wall_h": 5,
+						"roof": {
+							"kind": "gable",
+							"axis": "x",
+							"material": "thatch"
+						},
+						"walls": {
+							"material": "plaster",
+							"color": "#efdcb9"
+						},
+						"doors": [
+							{
+								"edge": "n",
+								"at": 5
+							}
+						]
+					},
+					{
+						"id": "casa_sur_2",
+						"label": "casita del puente",
+						"type": "building",
+						"rect": [
+							60,
+							100,
+							10,
+							9
+						],
+						"wall_h": 4,
+						"roof": {
+							"kind": "gable",
+							"axis": "y",
+							"material": "thatch"
+						},
+						"walls": {
+							"material": "plaster"
+						},
+						"doors": [
+							{
+								"edge": "w",
+								"at": 3
+							}
+						]
+					},
+					{
+						"id": "fuente_plaza",
+						"label": "fuente de la llegada",
+						"type": "fountain",
+						"at": [
+							50,
+							40
+						],
+						"r": 4
+					},
+					{
+						"id": "sauce_llegada",
+						"label": "sauce de la llegada",
+						"type": "tree",
+						"at": [
+							74,
+							50
+						],
+						"s": 1.8,
+						"species": "sauce"
+					},
+					{
+						"id": "puesto_1",
+						"label": "puesto de fruta",
+						"type": "custom",
+						"at": [
+							70,
+							36
+						],
+						"parts": [
+							{
+								"shape": "box",
+								"size": [
+									4,
+									2,
+									2
+								],
+								"color": "#8a6a45",
+								"desc": "market stall counter of rough planks, folded sackcloth on top"
+							},
+							{
+								"shape": "box",
+								"size": [
+									4.4,
+									0.2,
+									3
+								],
+								"pos": [
+									0,
+									4,
+									0
+								],
+								"color": "#d9774a"
+							},
+							{
+								"shape": "cylinder",
+								"h": 4,
+								"rBottom": 0.15,
+								"pos": [
+									-2,
+									0,
+									-1
+								],
+								"color": "#5a4632"
+							},
+							{
+								"shape": "cylinder",
+								"h": 4,
+								"rBottom": 0.15,
+								"pos": [
+									2,
+									0,
+									-1
+								],
+								"color": "#5a4632"
+							}
+						]
+					},
+					{
+						"id": "puesto_2",
+						"label": "puesto de semillas cebadas",
+						"type": "custom",
+						"at": [
+							44,
+							36
+						],
+						"parts": [
+							{
+								"shape": "box",
+								"size": [
+									4,
+									2,
+									2
+								],
+								"color": "#7a5a3a",
+								"desc": "market stall counter of rough planks, folded sackcloth on top"
+							},
+							{
+								"shape": "box",
+								"size": [
+									4.4,
+									0.2,
+									3
+								],
+								"pos": [
+									0,
+									4,
+									0
+								],
+								"color": "#6aa0c8"
+							},
+							{
+								"shape": "cylinder",
+								"h": 4,
+								"rBottom": 0.15,
+								"pos": [
+									-2,
+									0,
+									-1
+								],
+								"color": "#5a4632"
+							},
+							{
+								"shape": "cylinder",
+								"h": 4,
+								"rBottom": 0.15,
+								"pos": [
+									2,
+									0,
+									-1
+								],
+								"color": "#5a4632"
+							}
+						]
+					},
+					{
+						"id": "farol_plaza_1",
+						"label": "farol de fiesta",
+						"type": "prop",
+						"at": [
+							40,
+							33
+						],
+						"shape": "cylinder",
+						"h": 7,
+						"color": "#ffcf6a"
+					},
+					{
+						"id": "farol_plaza_2",
+						"label": "farol de fiesta",
+						"type": "prop",
+						"at": [
+							80,
+							33
+						],
+						"shape": "cylinder",
+						"h": 7,
+						"color": "#ffcf6a"
+					},
+					{
+						"id": "farol_plaza_3",
+						"label": "farol de fiesta",
+						"type": "prop",
+						"at": [
+							40,
+							52
+						],
+						"shape": "cylinder",
+						"h": 7,
+						"color": "#ffcf6a"
+					},
+					{
+						"id": "farol_plaza_4",
+						"label": "farol de fiesta",
+						"type": "prop",
+						"at": [
+							80,
+							52
+						],
+						"shape": "cylinder",
+						"h": 7,
+						"color": "#ffcf6a"
+					},
+					{
+						"id": "farol_embarcadero",
+						"label": "farol del embarcadero",
+						"type": "prop",
+						"at": [
+							104,
+							91
+						],
+						"shape": "cylinder",
+						"h": 6,
+						"color": "#bfe8ff"
+					},
+					{
+						"id": "cerca_huerto_no",
+						"label": "cerca del huerto",
+						"type": "wall",
+						"points": [
+							[
+								4,
+								27
+							],
+							[
+								34,
+								27
+							],
+							[
+								34,
+								6
+							]
+						],
+						"width": 1,
+						"h": 2
+					},
+					{
+						"id": "cerca_huerto_so",
+						"label": "cerca del huerto",
+						"type": "wall",
+						"points": [
+							[
+								4,
+								95
+							],
+							[
+								38,
+								95
+							]
+						],
+						"width": 1,
+						"h": 2
+					},
+					{
+						"id": "pozo",
+						"label": "pozo",
+						"type": "prop",
+						"at": [
+							30,
+							70
+						],
+						"shape": "cylinder",
+						"h": 2,
+						"color": "#8a8a80",
+						"surface_desc": "weathered stone well curb, mossy mortar joints"
+					},
+					{
+						"id": "carro",
+						"label": "carro de caravana andante",
+						"type": "custom",
+						"at": [
+							112,
+							36
+						],
+						"angle": 10,
+						"parts": [
+							{
+								"shape": "box",
+								"size": [
+									8,
+									3,
+									4
+								],
+								"pos": [
+									0,
+									1.5,
+									0
+								],
+								"color": "#9a5a3a",
+								"desc": "painted wooden caravan wagon side, bright floral patterns, small shuttered window"
+							},
+							{
+								"shape": "gable",
+								"size": [
+									8,
+									2,
+									4
+								],
+								"pos": [
+									0,
+									4.5,
+									0
+								],
+								"color": "#c9b48a"
+							},
+							{
+								"shape": "cylinder",
+								"h": 0.5,
+								"rBottom": 1.3,
+								"pos": [
+									-3,
+									0,
+									2
+								],
+								"rotX": 1.5708,
+								"color": "#4a3a2a"
+							},
+							{
+								"shape": "cylinder",
+								"h": 0.5,
+								"rBottom": 1.3,
+								"pos": [
+									3,
+									0,
+									2
+								],
+								"rotX": 1.5708,
+								"color": "#4a3a2a"
+							}
+						]
+					},
+					{
+						"id": "roca_remanso_1",
+						"label": "roca",
+						"type": "rock",
+						"at": [
+							114,
+							74
+						],
+						"s": 1.3
+					},
+					{
+						"id": "roca_remanso_2",
+						"label": "roca",
+						"type": "rock",
+						"at": [
+							88,
+							112
+						],
+						"s": 1
+					},
+					{
+						"id": "arbusto_1",
+						"label": "arbusto florido",
+						"type": "bush",
+						"at": [
+							36,
+							58
+						],
+						"s": 1.2
+					},
+					{
+						"id": "arbusto_2",
+						"label": "arbusto florido",
+						"type": "bush",
+						"at": [
+							70,
+							58
+						],
+						"s": 1.1
+					},
+					{
+						"id": "arbusto_3",
+						"label": "arbusto florido",
+						"type": "bush",
+						"at": [
+							92,
+							30
+						],
+						"s": 1
+					}
+				],
+				"vegetation_zones": [
+					{
+						"type": "manzano",
+						"area": [
+							0,
+							0,
+							36,
+							4
+						],
+						"density": 0.02
+					},
+					{
+						"type": "manzano",
+						"area": [
+							108,
+							0,
+							20,
+							16
+						],
+						"density": 0.03
+					},
+					{
+						"type": "aliso",
+						"area": [
+							108,
+							56,
+							20,
+							20
+						],
+						"density": 0.03
+					},
+					{
+						"type": "matorral",
+						"area": [
+							0,
+							104,
+							4,
+							24
+						],
+						"density": 0.08
+					},
+					{
+						"type": "abedul",
+						"area": [
+							70,
+							112,
+							24,
+							16
+						],
+						"density": 0.03
+					}
+				],
+				"scatter_generators": {
+					"col": {
+						"materials": {
+							"hoja": {
+								"color": "#6f9a4a",
+								"hslJitter": [
+									0.05,
+									0.15,
+									0.1
+								]
+							}
+						},
+						"parts": [
+							{
+								"shape": "sphere",
+								"mat": "hoja",
+								"r": [
+									0.35,
+									0.6
+								],
+								"scale": [
+									1,
+									[
+										0.6,
+										0.9
+									],
+									1
+								]
+							}
+						]
+					},
+					"flor": {
+						"materials": {
+							"tallo": {
+								"color": "#4f7a3a"
+							},
+							"petalo": {
+								"color": "#f2a2c0",
+								"hslJitter": [
+									0.3,
+									0.2,
+									0.1
+								]
+							}
+						},
+						"parts": [
+							{
+								"shape": "cylinder",
+								"mat": "tallo",
+								"rTop": 0.04,
+								"rBottom": 0.06,
+								"h": [
+									0.6,
+									1.2
+								]
+							},
+							{
+								"shape": "sphere",
+								"mat": "petalo",
+								"r": [
+									0.2,
+									0.35
+								],
+								"pos": [
+									0,
+									[
+										0.6,
+										1.1
+									],
+									0
+								]
+							}
+						]
+					},
+					"farolillo": {
+						"materials": {
+							"luz": {
+								"color": "#ffe08a",
+								"hslJitter": [
+									0.08,
+									0.1,
+									0.05
+								]
+							}
+						},
+						"parts": [
+							{
+								"shape": "sphere",
+								"mat": "luz",
+								"r": [
+									0.2,
+									0.35
+								],
+								"pos": [
+									0,
+									[
+										0.2,
+										0.6
+									],
+									0
+								]
+							}
+						]
+					}
+				},
+				"scatter_zones": [
+					{
+						"kind": "col",
+						"shape": {
+							"type": "rect",
+							"x0": 6,
+							"z0": 8,
+							"x1": 32,
+							"z1": 25
+						},
+						"density": 0.6
+					},
+					{
+						"kind": "col",
+						"shape": {
+							"type": "rect",
+							"x0": 6,
+							"z0": 98,
+							"x1": 36,
+							"z1": 116
+						},
+						"density": 0.5
+					},
+					{
+						"kind": "flor",
+						"shape": {
+							"type": "ellipse",
+							"cx": 84,
+							"cz": 66,
+							"rx": 10,
+							"rz": 8
+						},
+						"density": 0.5
+					},
+					{
+						"kind": "flor",
+						"shape": {
+							"type": "ellipse",
+							"cx": 30,
+							"cz": 44,
+							"rx": 8,
+							"rz": 3
+						},
+						"density": 0.6
+					},
+					{
+						"kind": "flor",
+						"shape": {
+							"type": "rect",
+							"x0": 98,
+							"z0": 64,
+							"x1": 112,
+							"z1": 78
+						},
+						"density": 0.4
+					},
+					{
+						"kind": "farolillo",
+						"shape": {
+							"type": "rect",
+							"x0": 88,
+							"z0": 84,
+							"x1": 96,
+							"z1": 92
+						},
+						"density": 0.4
+					}
+				],
+				"entities": [
+					{
+						"id": "player",
+						"kind": "player",
+						"name": "Viajero",
+						"cell": [
+							56,
+							64
+						],
+						"footprint": [
+							1,
+							1
+						]
+					},
+					{
+						"id": "mostrador",
+						"kind": "prop",
+						"name": "mostrador de la posada",
+						"cell": [
+							48,
+							58
+						],
+						"footprint": [
+							8,
+							2
+						],
+						"h": 1.1
+					},
+					{
+						"id": "mesa_1",
+						"kind": "prop",
+						"name": "mesa de roble",
+						"cell": [
+							60,
+							63
+						],
+						"footprint": [
+							3,
+							3
+						],
+						"h": 0.75
+					},
+					{
+						"id": "mesa_2",
+						"kind": "prop",
+						"name": "mesa de roble",
+						"cell": [
+							49,
+							65
+						],
+						"footprint": [
+							3,
+							3
+						],
+						"h": 0.75
+					},
+					{
+						"id": "barril_1",
+						"kind": "prop",
+						"name": "barril de sidra de sedal",
+						"cell": [
+							63,
+							58
+						],
+						"footprint": [
+							2,
+							2
+						],
+						"shape": "cylinder",
+						"h": 0.9
+					},
+					{
+						"id": "maela",
+						"kind": "npc",
+						"name": "Maela Cebada",
+						"cell": [
+							51,
+							61
+						],
+						"footprint": [
+							1,
+							1
+						],
+						"role": "merchant",
+						"description": "posadera humana de mediana edad, robusta, delantal blanco manchado de harina, trenza castaña y mejillas coloradas",
+						"style_ref": "commoner"
+					},
+					{
+						"id": "sael",
+						"kind": "npc",
+						"name": "Sael Vidrio-en-Ayunas",
+						"cell": [
+							87,
+							49
+						],
+						"footprint": [
+							1,
+							1
+						],
+						"role": "merchant",
+						"description": "vadelio lamparero alto y delgado, piel translúcida como vidrio con reflejos azulados, delantal de cuero con herramientas de soplador y lentes al cuello",
+						"style_ref": "commoner"
+					},
+					{
+						"id": "senora_vado",
+						"kind": "npc",
+						"name": "la Señora del Vado",
+						"cell": [
+							98,
+							93
+						],
+						"footprint": [
+							1,
+							1
+						],
+						"role": "villager",
+						"description": "espíritu vestido de mujer serena, vestido largo azul pálido que gotea luz como agua, cabello plateado suelto y pies descalzos",
+						"style_ref": "noble"
+					},
+					{
+						"id": "tello",
+						"kind": "npc",
+						"name": "Tello Siete-Postas",
+						"cell": [
+							110,
+							42
+						],
+						"footprint": [
+							1,
+							1
+						],
+						"role": "villager",
+						"description": "andante curtido de barba gris, sombrero de ala ancha con cintas de colores, chaleco de parches y botas de camino",
+						"style_ref": "commoner"
+					},
+					{
+						"id": "guarda_ines",
+						"kind": "npc",
+						"name": "Inés de la Torre",
+						"cell": [
+							98,
+							28
+						],
+						"footprint": [
+							1,
+							1
+						],
+						"role": "guard",
+						"description": "medidora de la Guarda del Caudal, mujer joven con capa gris azulada, cinturón de cuerdas de medir y un bastón con lente de vidrio",
+						"style_ref": "warrior"
+					}
+				],
+				"__expanded": true
+			},
+			"loaded_at": "2026-09-30T13:01:26.287Z",
+			"asset_refs": [
+				"28ddc20a2da61757",
+				"1567489056a425a7",
+				"61c02ddc989d1b3a",
+				"cd3d710cc36fefd8",
+				"630118ea023bc8b9",
+				"0b6f7797086db437",
+				"377feaadd6fb6b03",
+				"3ae6eebfb31de6da",
+				"859efe57026a565d",
+				"600a18c2a1c205e0",
+				"bfa401315445e7a0",
+				"dab5c80772fc3c4d",
+				"1af026c61bac3aa9",
+				"eb22426fe8f9210f",
+				"da4f3936bfdaf5da",
+				"22648588ce81e41e"
+			],
+			"tile": {
+				"tx": 0,
+				"ty": 0
+			},
+			"edges": {
+				"north": {
+					"biome": "meadow",
+					"crossings": [
+						{
+							"type": "path",
+							"at": 62,
+							"width": 5
+						}
+					]
+				},
+				"south": {
+					"biome": "meadow",
+					"crossings": [
+						{
+							"type": "path",
+							"at": 52,
+							"width": 6
+						},
+						{
+							"type": "river",
+							"at": 112,
+							"width": 31
+						}
+					]
+				},
+				"east": {
+					"biome": "meadow",
+					"crossings": [
+						{
+							"type": "path",
+							"at": 42,
+							"width": 6
+						},
+						{
+							"type": "river",
+							"at": 103,
+							"width": 49
+						}
+					]
+				},
+				"west": {
+					"biome": "meadow",
+					"crossings": [
+						{
+							"type": "path",
+							"at": 50,
+							"width": 6
+						}
+					]
+				}
+			}
+		},
+		"tile_0_-1": {
+			"scene_data": {
+				"scene_id": "tile_0_-1",
+				"scene_description": "La Escalinata de Sien al atardecer: un anfiteatro de gradas de piedra clara que abraza el estrado donde los Vestidos de la comarca reciben peticiones. Los braseros de rescoldo ya arden, los faroles de peregrinos bordean la senda y el arco del Umbral brilla en lo alto de la escalinata.",
+				"place_id": "escalinata_sien",
+				"tile": {
+					"tx": 0,
+					"ty": -1
+				},
+				"biome": "meadow",
+				"size": {
+					"cols": 128,
+					"rows": 128,
+					"meters_per_cell": 0.5
+				},
+				"terrain": [
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"___________ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"__________________ggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"_________________________gggggggg_________________gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggg_______________________________________________gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggg_______________________________________ggggggggggggggggggggggggggggwwwwwwggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggg__________________________gggggggggggggggggggggggggggggggggwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggg_________ggggggggggggggggggggggggggggggggggggggggggwwwwwwwwwwggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____gggggggggwwwwwwwwwwggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg____ggggggggggwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggwwwwwwggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg_____ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+					"ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg______ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+				],
+				"ground": [
+					{
+						"id": "senda_sur",
+						"label": "senda de peregrinos",
+						"kind": "path",
+						"points": [
+							[
+								62,
+								128
+							],
+							[
+								62,
+								110
+							],
+							[
+								63,
+								92
+							],
+							[
+								64,
+								76
+							]
+						],
+						"w": 5,
+						"material": "gravel"
+					},
+					{
+						"id": "orquesta",
+						"label": "explanada de las audiencias",
+						"kind": "area",
+						"ellipse": {
+							"center": [
+								64,
+								66
+							],
+							"rx": 16,
+							"ry": 10
+						},
+						"material": "stone"
+					},
+					{
+						"id": "pasillo",
+						"label": "pasillo de la escalinata",
+						"kind": "path",
+						"points": [
+							[
+								64,
+								58
+							],
+							[
+								64,
+								40
+							],
+							[
+								64,
+								22
+							]
+						],
+						"w": 6,
+						"material": "stone"
+					},
+					{
+						"id": "senda_norte",
+						"label": "senda del altiplano",
+						"kind": "path",
+						"points": [
+							[
+								64,
+								22
+							],
+							[
+								64,
+								10
+							],
+							[
+								66,
+								0
+							]
+						],
+						"w": 4,
+						"material": "gravel"
+					},
+					{
+						"id": "senda_oeste",
+						"label": "vereda del bosque",
+						"kind": "path",
+						"points": [
+							[
+								48,
+								70
+							],
+							[
+								28,
+								72
+							],
+							[
+								0,
+								68
+							]
+						],
+						"w": 4,
+						"material": "dirt"
+					},
+					{
+						"id": "estanque",
+						"label": "estanque de peticiones",
+						"kind": "water",
+						"ellipse": {
+							"center": [
+								80,
+								74
+							],
+							"rx": 5,
+							"ry": 3
+						}
+					},
+					{
+						"id": "loma_e",
+						"label": "loma",
+						"kind": "hill",
+						"ellipse": {
+							"center": [
+								112,
+								60
+							],
+							"rx": 14,
+							"ry": 20
+						},
+						"h": 3
+					},
+					{
+						"id": "loma_o",
+						"label": "loma",
+						"kind": "hill",
+						"ellipse": {
+							"center": [
+								14,
+								30
+							],
+							"rx": 14,
+							"ry": 18
+						},
+						"h": 2.5
+					}
+				],
+				"volumes": [
+					{
+						"id": "grada_o_0",
+						"label": "grada de piedra",
+						"type": "prism",
+						"points": [
+							[
+								60,
+								39.3
+							],
+							[
+								56.4,
+								40.3
+							],
+							[
+								52.9,
+								41.8
+							],
+							[
+								49.8,
+								43.9
+							],
+							[
+								47,
+								46.5
+							],
+							[
+								44.7,
+								49.4
+							],
+							[
+								42.9,
+								52.7
+							],
+							[
+								41.7,
+								56.3
+							],
+							[
+								41.1,
+								60
+							],
+							[
+								46.1,
+								60.4
+							],
+							[
+								46.6,
+								57.5
+							],
+							[
+								47.5,
+								54.8
+							],
+							[
+								48.9,
+								52.2
+							],
+							[
+								50.7,
+								49.8
+							],
+							[
+								52.9,
+								47.8
+							],
+							[
+								55.3,
+								46.2
+							],
+							[
+								58,
+								45
+							],
+							[
+								60.9,
+								44.3
+							]
+						],
+						"h": 2,
+						"color": "#d8cbb0",
+						"surface_desc": "pale weathered limestone steps with worn edges, moss in the joints and small offerings of flowers"
+					},
+					{
+						"id": "grada_e_0",
+						"label": "grada de piedra",
+						"type": "prism",
+						"points": [
+							[
+								86.9,
+								60
+							],
+							[
+								86.3,
+								56.3
+							],
+							[
+								85.1,
+								52.7
+							],
+							[
+								83.3,
+								49.4
+							],
+							[
+								81,
+								46.5
+							],
+							[
+								78.2,
+								43.9
+							],
+							[
+								75.1,
+								41.8
+							],
+							[
+								71.6,
+								40.3
+							],
+							[
+								68,
+								39.3
+							],
+							[
+								67.1,
+								44.3
+							],
+							[
+								70,
+								45
+							],
+							[
+								72.7,
+								46.2
+							],
+							[
+								75.1,
+								47.8
+							],
+							[
+								77.3,
+								49.8
+							],
+							[
+								79.1,
+								52.2
+							],
+							[
+								80.5,
+								54.8
+							],
+							[
+								81.4,
+								57.5
+							],
+							[
+								81.9,
+								60.4
+							]
+						],
+						"h": 2,
+						"color": "#d8cbb0",
+						"surface_desc": "pale weathered limestone steps with worn edges, moss in the joints and small offerings of flowers"
+					},
+					{
+						"id": "grada_o_1",
+						"label": "grada de piedra",
+						"type": "prism",
+						"points": [
+							[
+								59.1,
+								34.4
+							],
+							[
+								54.7,
+								35.6
+							],
+							[
+								50.5,
+								37.5
+							],
+							[
+								46.7,
+								40
+							],
+							[
+								43.4,
+								43.1
+							],
+							[
+								40.6,
+								46.7
+							],
+							[
+								38.4,
+								50.7
+							],
+							[
+								36.9,
+								55
+							],
+							[
+								36.1,
+								59.6
+							],
+							[
+								41.1,
+								60
+							],
+							[
+								41.7,
+								56.3
+							],
+							[
+								42.9,
+								52.7
+							],
+							[
+								44.7,
+								49.4
+							],
+							[
+								47,
+								46.5
+							],
+							[
+								49.8,
+								43.9
+							],
+							[
+								52.9,
+								41.8
+							],
+							[
+								56.4,
+								40.3
+							],
+							[
+								60,
+								39.3
+							]
+						],
+						"h": 4,
+						"color": "#cfc1a3",
+						"surface_desc": "pale weathered limestone steps with worn edges, moss in the joints and small offerings of flowers"
+					},
+					{
+						"id": "grada_e_1",
+						"label": "grada de piedra",
+						"type": "prism",
+						"points": [
+							[
+								91.9,
+								59.6
+							],
+							[
+								91.1,
+								55
+							],
+							[
+								89.6,
+								50.7
+							],
+							[
+								87.4,
+								46.7
+							],
+							[
+								84.6,
+								43.1
+							],
+							[
+								81.3,
+								40
+							],
+							[
+								77.5,
+								37.5
+							],
+							[
+								73.3,
+								35.6
+							],
+							[
+								68.9,
+								34.4
+							],
+							[
+								68,
+								39.3
+							],
+							[
+								71.6,
+								40.3
+							],
+							[
+								75.1,
+								41.8
+							],
+							[
+								78.2,
+								43.9
+							],
+							[
+								81,
+								46.5
+							],
+							[
+								83.3,
+								49.4
+							],
+							[
+								85.1,
+								52.7
+							],
+							[
+								86.3,
+								56.3
+							],
+							[
+								86.9,
+								60
+							]
+						],
+						"h": 4,
+						"color": "#cfc1a3",
+						"surface_desc": "pale weathered limestone steps with worn edges, moss in the joints and small offerings of flowers"
+					},
+					{
+						"id": "grada_o_2",
+						"label": "grada de piedra",
+						"type": "prism",
+						"points": [
+							[
+								58.3,
+								29.5
+							],
+							[
+								53.1,
+								30.9
+							],
+							[
+								48.1,
+								33.1
+							],
+							[
+								43.6,
+								36
+							],
+							[
+								39.7,
+								39.7
+							],
+							[
+								36.4,
+								44
+							],
+							[
+								33.8,
+								48.7
+							],
+							[
+								32,
+								53.8
+							],
+							[
+								31.1,
+								59.1
+							],
+							[
+								36.1,
+								59.6
+							],
+							[
+								36.9,
+								55
+							],
+							[
+								38.4,
+								50.7
+							],
+							[
+								40.6,
+								46.7
+							],
+							[
+								43.4,
+								43.1
+							],
+							[
+								46.7,
+								40
+							],
+							[
+								50.5,
+								37.5
+							],
+							[
+								54.7,
+								35.6
+							],
+							[
+								59.1,
+								34.4
+							]
+						],
+						"h": 6,
+						"color": "#c6b796",
+						"surface_desc": "pale weathered limestone steps with worn edges, moss in the joints and small offerings of flowers"
+					},
+					{
+						"id": "grada_e_2",
+						"label": "grada de piedra",
+						"type": "prism",
+						"points": [
+							[
+								96.9,
+								59.1
+							],
+							[
+								96,
+								53.8
+							],
+							[
+								94.2,
+								48.7
+							],
+							[
+								91.6,
+								44
+							],
+							[
+								88.3,
+								39.7
+							],
+							[
+								84.4,
+								36
+							],
+							[
+								79.9,
+								33.1
+							],
+							[
+								74.9,
+								30.9
+							],
+							[
+								69.7,
+								29.5
+							],
+							[
+								68.9,
+								34.4
+							],
+							[
+								73.3,
+								35.6
+							],
+							[
+								77.5,
+								37.5
+							],
+							[
+								81.3,
+								40
+							],
+							[
+								84.6,
+								43.1
+							],
+							[
+								87.4,
+								46.7
+							],
+							[
+								89.6,
+								50.7
+							],
+							[
+								91.1,
+								55
+							],
+							[
+								91.9,
+								59.6
+							]
+						],
+						"h": 6,
+						"color": "#c6b796",
+						"surface_desc": "pale weathered limestone steps with worn edges, moss in the joints and small offerings of flowers"
+					},
+					{
+						"id": "grada_o_3",
+						"label": "grada de piedra",
+						"type": "prism",
+						"points": [
+							[
+								57.6,
+								25.6
+							],
+							[
+								51.7,
+								27.1
+							],
+							[
+								46.2,
+								29.6
+							],
+							[
+								41.2,
+								32.9
+							],
+							[
+								36.7,
+								37
+							],
+							[
+								33,
+								41.8
+							],
+							[
+								30.1,
+								47.1
+							],
+							[
+								28.2,
+								52.8
+							],
+							[
+								27.1,
+								58.8
+							],
+							[
+								31.1,
+								59.1
+							],
+							[
+								32,
+								53.8
+							],
+							[
+								33.8,
+								48.7
+							],
+							[
+								36.4,
+								44
+							],
+							[
+								39.7,
+								39.7
+							],
+							[
+								43.6,
+								36
+							],
+							[
+								48.1,
+								33.1
+							],
+							[
+								53.1,
+								30.9
+							],
+							[
+								58.3,
+								29.5
+							]
+						],
+						"h": 8,
+						"color": "#bcae8c",
+						"surface_desc": "pale weathered limestone steps with worn edges, moss in the joints and small offerings of flowers"
+					},
+					{
+						"id": "grada_e_3",
+						"label": "grada de piedra",
+						"type": "prism",
+						"points": [
+							[
+								100.9,
+								58.8
+							],
+							[
+								99.8,
+								52.8
+							],
+							[
+								97.9,
+								47.1
+							],
+							[
+								95,
+								41.8
+							],
+							[
+								91.3,
+								37
+							],
+							[
+								86.8,
+								32.9
+							],
+							[
+								81.8,
+								29.6
+							],
+							[
+								76.3,
+								27.1
+							],
+							[
+								70.4,
+								25.6
+							],
+							[
+								69.7,
+								29.5
+							],
+							[
+								74.9,
+								30.9
+							],
+							[
+								79.9,
+								33.1
+							],
+							[
+								84.4,
+								36
+							],
+							[
+								88.3,
+								39.7
+							],
+							[
+								91.6,
+								44
+							],
+							[
+								94.2,
+								48.7
+							],
+							[
+								96,
+								53.8
+							],
+							[
+								96.9,
+								59.1
+							]
+						],
+						"h": 8,
+						"color": "#bcae8c",
+						"surface_desc": "pale weathered limestone steps with worn edges, moss in the joints and small offerings of flowers"
+					},
+					{
+						"id": "columna_0",
+						"label": "columna votiva",
+						"type": "prop",
+						"at": [
+							103,
+							55
+						],
+						"shape": "cylinder",
+						"h": 10,
+						"color": "#e6dcc6"
+					},
+					{
+						"id": "columna_1",
+						"label": "columna votiva",
+						"type": "prop",
+						"at": [
+							97,
+							39
+						],
+						"shape": "cylinder",
+						"h": 10,
+						"color": "#e6dcc6"
+					},
+					{
+						"id": "columna_2",
+						"label": "columna votiva",
+						"type": "prop",
+						"at": [
+							84,
+							27
+						],
+						"shape": "cylinder",
+						"h": 10,
+						"color": "#e6dcc6"
+					},
+					{
+						"id": "columna_3",
+						"label": "columna votiva",
+						"type": "prop",
+						"at": [
+							44,
+							27
+						],
+						"shape": "cylinder",
+						"h": 10,
+						"color": "#e6dcc6"
+					},
+					{
+						"id": "columna_4",
+						"label": "columna votiva",
+						"type": "prop",
+						"at": [
+							31,
+							39
+						],
+						"shape": "cylinder",
+						"h": 10,
+						"color": "#e6dcc6"
+					},
+					{
+						"id": "columna_5",
+						"label": "columna votiva",
+						"type": "prop",
+						"at": [
+							25,
+							55
+						],
+						"shape": "cylinder",
+						"h": 10,
+						"color": "#e6dcc6"
+					},
+					{
+						"id": "umbral",
+						"label": "arco del Umbral",
+						"type": "custom",
+						"at": [
+							64,
+							20
+						],
+						"parts": [
+							{
+								"shape": "box",
+								"size": [
+									2,
+									12,
+									2
+								],
+								"pos": [
+									-5,
+									0,
+									0
+								],
+								"color": "#e3d7bd",
+								"desc": "carved pale stone pillar with flowing river knotwork and faint glowing blue runes"
+							},
+							{
+								"shape": "box",
+								"size": [
+									2,
+									12,
+									2
+								],
+								"pos": [
+									5,
+									0,
+									0
+								],
+								"color": "#e3d7bd",
+								"desc": "carved pale stone pillar with flowing river knotwork and faint glowing blue runes"
+							},
+							{
+								"shape": "box",
+								"size": [
+									12,
+									2,
+									2.4
+								],
+								"pos": [
+									0,
+									12,
+									0
+								],
+								"color": "#d9ccb0",
+								"desc": "carved stone lintel with a relief of a winding river of light and small hanging paper lanterns"
+							}
+						]
+					},
+					{
+						"id": "estrado",
+						"label": "estrado de las audiencias",
+						"type": "prism",
+						"points": [
+							[
+								56,
+								58
+							],
+							[
+								72,
+								58
+							],
+							[
+								74,
+								64
+							],
+							[
+								64,
+								68
+							],
+							[
+								54,
+								64
+							]
+						],
+						"h": 1,
+						"solid": false,
+						"color": "#e8dfc8"
+					},
+					{
+						"id": "sitial_vestido",
+						"label": "sitial del Vestido",
+						"type": "custom",
+						"at": [
+							64,
+							56
+						],
+						"parts": [
+							{
+								"shape": "box",
+								"size": [
+									4,
+									1.2,
+									3
+								],
+								"color": "#d2c4a6"
+							},
+							{
+								"shape": "box",
+								"size": [
+									4,
+									5,
+									0.8
+								],
+								"pos": [
+									0,
+									0,
+									-1.2
+								],
+								"color": "#cdbf9f",
+								"desc": "high stone chair back carved with a flowing river and a crescent of small glowing glass lamps"
+							}
+						]
+					},
+					{
+						"id": "brasero_o",
+						"label": "brasero de rescoldo",
+						"type": "prop",
+						"at": [
+							52,
+							64
+						],
+						"shape": "cylinder",
+						"h": 2,
+						"color": "#8a6a4a"
+					},
+					{
+						"id": "brasero_e",
+						"label": "brasero de rescoldo",
+						"type": "prop",
+						"at": [
+							76,
+							64
+						],
+						"shape": "cylinder",
+						"h": 2,
+						"color": "#8a6a4a"
+					},
+					{
+						"id": "mesa_escribana",
+						"label": "mesa de la escribana",
+						"type": "prop",
+						"rect": [
+							38,
+							76,
+							6,
+							3
+						],
+						"shape": "box",
+						"h": 2,
+						"color": "#7a5a3a"
+					},
+					{
+						"id": "farol_s1",
+						"label": "farol de peregrinos",
+						"type": "prop",
+						"at": [
+							58,
+							100
+						],
+						"shape": "cylinder",
+						"h": 6,
+						"color": "#ffd27a"
+					},
+					{
+						"id": "farol_s2",
+						"label": "farol de peregrinos",
+						"type": "prop",
+						"at": [
+							68,
+							100
+						],
+						"shape": "cylinder",
+						"h": 6,
+						"color": "#ffd27a"
+					},
+					{
+						"id": "farol_s3",
+						"label": "farol de peregrinos",
+						"type": "prop",
+						"at": [
+							57,
+							84
+						],
+						"shape": "cylinder",
+						"h": 6,
+						"color": "#ffd27a"
+					},
+					{
+						"id": "farol_s4",
+						"label": "farol de peregrinos",
+						"type": "prop",
+						"at": [
+							70,
+							84
+						],
+						"shape": "cylinder",
+						"h": 6,
+						"color": "#ffd27a"
+					},
+					{
+						"id": "cabana_guarda",
+						"label": "caseta de los peregrinos",
+						"type": "building",
+						"rect": [
+							92,
+							90,
+							12,
+							9
+						],
+						"wall_h": 5,
+						"roof": {
+							"kind": "gable",
+							"axis": "x",
+							"material": "thatch"
+						},
+						"walls": {
+							"material": "plaster",
+							"color": "#efe2c6"
+						},
+						"doors": [
+							{
+								"edge": "w",
+								"at": 3
+							}
+						],
+						"surface_desc": "cottage front of lime-washed plaster over dark timber framing, a small shuttered window with a loaf of bread left on the sill, an iron horseshoe nailed beside the door"
+					},
+					{
+						"id": "cerezo_1",
+						"label": "cerezo en flor",
+						"type": "tree",
+						"at": [
+							40,
+							90
+						],
+						"s": 1.4,
+						"species": "cerezo"
+					},
+					{
+						"id": "cerezo_2",
+						"label": "cerezo en flor",
+						"type": "tree",
+						"at": [
+							86,
+							80
+						],
+						"s": 1.3,
+						"species": "cerezo"
+					},
+					{
+						"id": "roca_1",
+						"label": "roca",
+						"type": "rock",
+						"at": [
+							108,
+							40
+						],
+						"s": 1.5
+					},
+					{
+						"id": "roca_2",
+						"label": "roca",
+						"type": "rock",
+						"at": [
+							16,
+							70
+						],
+						"s": 1.2
+					}
+				],
+				"vegetation_zones": [
+					{
+						"type": "ciprés",
+						"area": [
+							0,
+							0,
+							26,
+							50
+						],
+						"density": 0.03
+					},
+					{
+						"type": "olmo",
+						"area": [
+							100,
+							0,
+							28,
+							50
+						],
+						"density": 0.03
+					},
+					{
+						"type": "matorral",
+						"area": [
+							0,
+							80,
+							40,
+							48
+						],
+						"density": 0.05
+					},
+					{
+						"type": "olmo",
+						"area": [
+							96,
+							100,
+							32,
+							28
+						],
+						"density": 0.02
+					}
+				],
+				"scatter_generators": {
+					"flor": {
+						"materials": {
+							"tallo": {
+								"color": "#4f7a3a"
+							},
+							"petalo": {
+								"color": "#f5e6a0",
+								"hslJitter": [
+									0.3,
+									0.2,
+									0.1
+								]
+							}
+						},
+						"parts": [
+							{
+								"shape": "cylinder",
+								"mat": "tallo",
+								"rTop": 0.04,
+								"rBottom": 0.06,
+								"h": [
+									0.6,
+									1.2
+								]
+							},
+							{
+								"shape": "sphere",
+								"mat": "petalo",
+								"r": [
+									0.2,
+									0.35
+								],
+								"pos": [
+									0,
+									[
+										0.6,
+										1.1
+									],
+									0
+								]
+							}
+						]
+					},
+					"ofrenda": {
+						"materials": {
+							"vela": {
+								"color": "#fff0c0",
+								"hslJitter": [
+									0.05,
+									0.1,
+									0.05
+								]
+							},
+							"cuenco": {
+								"color": "#b08a60"
+							}
+						},
+						"parts": [
+							{
+								"shape": "cylinder",
+								"mat": "cuenco",
+								"rTop": 0.35,
+								"rBottom": 0.25,
+								"h": 0.25
+							},
+							{
+								"shape": "cylinder",
+								"mat": "vela",
+								"rTop": 0.08,
+								"rBottom": 0.08,
+								"h": [
+									0.3,
+									0.7
+								],
+								"pos": [
+									0,
+									0.25,
+									0
+								]
+							}
+						]
+					}
+				},
+				"scatter_zones": [
+					{
+						"kind": "flor",
+						"shape": {
+							"type": "ellipse",
+							"cx": 64,
+							"cz": 96,
+							"rx": 20,
+							"rz": 10
+						},
+						"density": 0.5
+					},
+					{
+						"kind": "flor",
+						"shape": {
+							"type": "rect",
+							"x0": 30,
+							"z0": 80,
+							"x1": 50,
+							"z1": 100
+						},
+						"density": 0.4
+					},
+					{
+						"kind": "ofrenda",
+						"shape": {
+							"type": "ellipse",
+							"cx": 64,
+							"cz": 70,
+							"rx": 12,
+							"rz": 4
+						},
+						"density": 0.3
+					}
+				],
+				"entities": [
+					{
+						"id": "lumen_sien",
+						"kind": "npc",
+						"name": "Lumen de Sien",
+						"cell": [
+							64,
+							60
+						],
+						"footprint": [
+							1,
+							1
+						],
+						"role": "villager",
+						"description": "Vestido de aspecto de joven altísimo y delgado, túnica blanca con bordados de hilo de luz que se mueven como agua, ojos dorados sin pupila y una corona de juncos",
+						"style_ref": "noble"
+					},
+					{
+						"id": "nogala",
+						"kind": "npc",
+						"name": "Nogala Tres-Tratos",
+						"cell": [
+							41,
+							81
+						],
+						"footprint": [
+							1,
+							1
+						],
+						"role": "merchant",
+						"description": "escribana raiceña de piel como corteza clara y cabello de hojas ocres, capa marrón de la Mesa del Umbral, tintero colgado del cuello y pergaminos bajo el brazo",
+						"style_ref": "commoner"
+					},
+					{
+						"id": "peregrina",
+						"kind": "npc",
+						"name": "peregrina cendria",
+						"cell": [
+							60,
+							90
+						],
+						"footprint": [
+							1,
+							1
+						],
+						"role": "peasant",
+						"description": "mujer cendria de piel gris cálida y ojos de brasa, pañuelo color ceniza y hatillo al hombro con una lámpara de rescoldo",
+						"style_ref": "commoner"
+					}
+				],
+				"__expanded": true
+			},
+			"loaded_at": "2026-09-30T13:16:23.397Z",
+			"asset_refs": [
+				"28ddc20a2da61757",
+				"1567489056a425a7",
+				"61c02ddc989d1b3a",
+				"cd3d710cc36fefd8",
+				"630118ea023bc8b9",
+				"0b6f7797086db437",
+				"3ae6eebfb31de6da",
+				"859efe57026a565d",
+				"600a18c2a1c205e0",
+				"1af026c61bac3aa9",
+				"eb22426fe8f9210f",
+				"da4f3936bfdaf5da",
+				"22648588ce81e41e"
+			],
+			"tile": {
+				"tx": 0,
+				"ty": -1
+			},
+			"edges": {
+				"north": {
+					"biome": "meadow",
+					"crossings": [
+						{
+							"type": "path",
+							"at": 66,
+							"width": 4
+						}
+					]
+				},
+				"south": {
+					"biome": "meadow",
+					"crossings": [
+						{
+							"type": "path",
+							"at": 62,
+							"width": 6
+						}
+					]
+				},
+				"east": {
+					"biome": "meadow",
+					"crossings": []
+				},
+				"west": {
+					"biome": "meadow",
+					"crossings": [
+						{
+							"type": "path",
+							"at": 68,
+							"width": 4
+						}
+					]
+				}
+			}
+		}
+	},
+	"entities": [
+		{
+			"id": "maela",
+			"type": "npc",
+			"scene_id": "tile_0_0",
+			"spawned_at": "2026-09-30T13:01:26.288Z",
+			"spawn_reason": "scene_init",
+			"spawn_event_id": "",
+			"position": [
+				-7.314201712439702,
+				0,
+				-0.6955028793944644
+			],
+			"data": {
+				"name": "Maela Cebada",
+				"role": "merchant",
+				"description": "posadera humana de mediana edad, robusta, delantal blanco manchado de harina, trenza castaña y mejillas coloradas",
+				"style_ref": "commoner"
+			},
+			"asset_refs": []
+		},
+		{
+			"id": "sael",
+			"type": "npc",
+			"scene_id": "tile_0_0",
+			"spawned_at": "2026-09-30T13:01:26.288Z",
+			"spawn_reason": "scene_init",
+			"spawn_event_id": "",
+			"position": [
+				10.579602366500787,
+				0,
+				0.7468553973909797
+			],
+			"data": {
+				"name": "Sael Vidrio-en-Ayunas",
+				"role": "merchant",
+				"description": "vadelio lamparero alto y delgado, piel translúcida como vidrio con reflejos azulados, delantal de cuero con herramientas de soplador y lentes al cuello",
+				"style_ref": "commoner"
+			},
+			"asset_refs": []
+		},
+		{
+			"id": "senora_vado",
+			"type": "npc",
+			"scene_id": "tile_0_0",
+			"spawned_at": "2026-09-30T13:01:26.288Z",
+			"spawn_reason": "scene_init",
+			"spawn_event_id": "",
+			"position": [
+				14.026724247421754,
+				0,
+				16.01170959383046
+			],
+			"data": {
+				"name": "la Señora del Vado",
+				"role": "villager",
+				"description": "espíritu vestido de mujer serena, vestido largo azul pálido que gotea luz como agua, cabello plateado suelto y pies descalzos",
+				"style_ref": "noble"
+			},
+			"asset_refs": []
+		},
+		{
+			"id": "tello",
+			"type": "npc",
+			"scene_id": "tile_0_0",
+			"spawned_at": "2026-09-30T13:01:26.288Z",
+			"spawn_reason": "scene_init",
+			"spawn_event_id": "",
+			"position": [
+				25.275361087920118,
+				0,
+				-0.06726849545151715
+			],
+			"data": {
+				"name": "Tello Siete-Postas",
+				"role": "villager",
+				"description": "andante curtido de barba gris, sombrero de ala ancha con cintas de colores, chaleco de parches y botas de camino",
+				"style_ref": "commoner"
+			},
+			"asset_refs": []
+		},
+		{
+			"id": "guarda_ines",
+			"type": "npc",
+			"scene_id": "tile_0_0",
+			"spawned_at": "2026-09-30T13:01:26.288Z",
+			"spawn_reason": "scene_init",
+			"spawn_event_id": "",
+			"position": [
+				15.588364348125577,
+				0,
+				-16.873914495095487
+			],
+			"data": {
+				"name": "Inés de la Torre",
+				"role": "guard",
+				"description": "medidora de la Guarda del Caudal, mujer joven con capa gris azulada, cinturón de cuerdas de medir y un bastón con lente de vidrio",
+				"style_ref": "warrior"
+			},
+			"asset_refs": []
+		},
+		{
+			"id": "narr_npc_1790773725_0",
+			"type": "npc",
+			"scene_id": "tile_0_0",
+			"spawned_at": "2026-09-30T13:08:45.945Z",
+			"spawn_reason": "narrative_request",
+			"spawn_event_id": "evt_0005",
+			"position": [
+				-5.451611117928915,
+				0,
+				-14.34961968486028
+			],
+			"data": {
+				"type": "spawn_entity",
+				"entity_kind": "npc",
+				"name": "Orio Candil",
+				"description": "corredor de lámparas humano, delgado y sonriente, casaca verde botella con botones de vidrio, bandolera llena de lámparas con lacre verde y sombrero bajo",
+				"position_hint": "en la plaza, junto al puesto de semillas, mirando hacia la lamparería",
+				"role": "merchant",
+				"style_ref": "commoner"
+			},
+			"asset_refs": []
+		},
+		{
+			"id": "narr_npc_1790773948_0",
+			"type": "npc",
+			"scene_id": "tile_0_0",
+			"spawned_at": "2026-09-30T13:12:28.848Z",
+			"spawn_reason": "narrative_request",
+			"spawn_event_id": "evt_0010",
+			"position": [
+				11.745712033630737,
+				0,
+				-27.566796581537247
+			],
+			"data": {
+				"type": "spawn_entity",
+				"entity_kind": "npc",
+				"name": "Brasco el del Remo",
+				"description": "matón humano corpulento de hombros anchos, chaleco de cuero sin mangas, brazos tatuados con espirales, remo de barquero reforzado con hierro como garrote",
+				"position_hint": "sale de detrás del puesto de semillas, junto a Orio Candil",
+				"role": "hostile",
+				"style_ref": "warrior",
+				"combat": {
+					"health": 60,
+					"max_health": 60,
+					"weapon_id": "unarmed",
+					"personality": {
+						"reaction_time": 0.5,
+						"aggression": 0.6,
+						"move_speed": 2,
+						"attack_cooldown_mult": 0.6,
+						"block_chance": 0.1,
+						"preferred_distance": 1.5,
+						"preferred_attacks": [
+							"quick",
+							"medium",
+							"heavy"
+						],
+						"combat_range": 4,
+						"aggro_radius": 10
+					}
+				}
+			},
+			"asset_refs": []
+		},
+		{
+			"id": "lumen_sien",
+			"type": "npc",
+			"scene_id": "tile_0_-1",
+			"spawned_at": "2026-09-30T13:16:23.398Z",
+			"spawn_reason": "scene_init",
+			"spawn_event_id": "",
+			"position": [
+				0.25,
+				0,
+				-65.75
+			],
+			"data": {
+				"name": "Lumen de Sien",
+				"role": "villager",
+				"description": "Vestido de aspecto de joven altísimo y delgado, túnica blanca con bordados de hilo de luz que se mueven como agua, ojos dorados sin pupila y una corona de juncos",
+				"style_ref": "noble"
+			},
+			"asset_refs": []
+		},
+		{
+			"id": "nogala",
+			"type": "npc",
+			"scene_id": "tile_0_-1",
+			"spawned_at": "2026-09-30T13:16:23.398Z",
+			"spawn_reason": "scene_init",
+			"spawn_event_id": "",
+			"position": [
+				-8.873598103081,
+				0,
+				-54.79189274467861
+			],
+			"data": {
+				"name": "Nogala Tres-Tratos",
+				"role": "merchant",
+				"description": "escribana raiceña de piel como corteza clara y cabello de hojas ocres, capa marrón de la Mesa del Umbral, tintero colgado del cuello y pergaminos bajo el brazo",
+				"style_ref": "commoner"
+			},
+			"asset_refs": []
+		},
+		{
+			"id": "peregrina",
+			"type": "npc",
+			"scene_id": "tile_0_-1",
+			"spawned_at": "2026-09-30T13:16:23.398Z",
+			"spawn_reason": "scene_init",
+			"spawn_event_id": "",
+			"position": [
+				-3.37759374403127,
+				0,
+				-49.777096270352665
+			],
+			"data": {
+				"name": "peregrina cendria",
+				"role": "peasant",
+				"description": "mujer cendria de piel gris cálida y ojos de brasa, pañuelo color ceniza y hatillo al hombro con una lámpara de rescoldo",
+				"style_ref": "commoner"
+			},
+			"asset_refs": []
+		}
+	],
+	"dialogue_history": [
+		{
+			"id": "evt_0001",
+			"timestamp": "2026-09-30T13:03:02.749Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Maela Cebada",
+			"text": "(el jugador se acerca y saluda)",
+			"choices": [],
+			"chosen_index": -1,
+			"free_text": "Saludos. ¿Puedes hablar conmigo un momento?",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Maela Cebada",
+					"text": "Buen paso, forastero. Hablar, hablo, pero con las manos ocupadas: media comarca viene a la fiesta de llegada y yo sin lumbre en la cocina. Esta mañana abrí una lámpara del Gremio recién comprada y el caudal salió agrio, como leche cortada; se me murieron los fogones y el pan a medio subir. Y tú no traes ni un fanal en la bolsa, se te nota en los andares. ¿Buscas cama, trabajo o las dos cosas?",
+					"choices": [
+						"Busco trabajo. ¿Qué es eso de una lámpara agria?",
+						"Una cama y algo caliente; ya pagaré.",
+						"Solo estoy de paso. ¿Quién manda en Ondahonda?"
+					]
+				},
+				{
+					"type": "story_update",
+					"delta": "El viajero (pícaro, sin un fanal) llega a Ondahonda en la fiesta de llegada de la Vena y habla con Maela Cebada, posadera del Farol Quieto. Maela ha abierto esa mañana una lámpara del Gremio de la Lámpara que salió 'agria' y le ha dejado la cocina sin lumbre."
+				}
+			]
+		},
+		{
+			"id": "evt_0002",
+			"timestamp": "2026-09-30T13:06:19.993Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Maela Cebada",
+			"text": "(el jugador se acerca y saluda)",
+			"choices": [],
+			"chosen_index": -1,
+			"free_text": "Saludos. ¿Puedes hablar conmigo un momento?",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Maela Cebada",
+					"text": "¿Otra vez con el saludo? Ya te he oído, criatura, que no estoy sorda: estoy sin fuego. Mira, te lo pongo fácil: el lamparero Sael tiene su taller al otro lado de la plaza, bajo el toldo de las lámparas. Llévale esta lámpara agria y que te diga qué le pasa. Si me traes respuesta, cena y cama por esta noche corren de mi cuenta. Queda dicho.",
+					"choices": [
+						"Trato hecho. Voy a ver a Sael.",
+						"¿Por qué no vas tú misma?",
+						"¿Y si la lámpara la agrió alguien a propósito?"
+					]
+				}
+			]
+		},
+		{
+			"id": "evt_0003",
+			"timestamp": "2026-09-30T13:06:27.205Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Maela Cebada",
+			"text": "Trato hecho. Voy a ver a Sael.",
+			"choices": [],
+			"chosen_index": 0,
+			"free_text": "",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Maela Cebada",
+					"text": "Así me gusta. Toma, y no la abras: el caudal agrio escuece en los ojos. Fíjate en el lacre verde del Gremio; me la vendió un corredor de paso, no el de siempre. Sael es vadelio, te hablará con ironía y con todo el tiempo del mundo, pero sabe lo que se hace. Vuelve antes de que cierre la cocina... si es que hoy la abro.",
+					"choices": [
+						"Hasta el cauce, Maela."
+					]
+				},
+				{
+					"type": "story_update",
+					"delta": "Trato con Maela: el viajero lleva la lámpara agria (lacre verde del Gremio, vendida por un corredor de paso desconocido) al lamparero Sael Vidrio-en-Ayunas; a cambio, cena y cama gratis esa noche en el Farol Quieto."
+				}
+			]
+		},
+		{
+			"id": "evt_0004",
+			"timestamp": "2026-09-30T13:07:02.766Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Maela Cebada",
+			"text": "Hasta el cauce, Maela.",
+			"choices": [],
+			"chosen_index": 0,
+			"free_text": "",
+			"narrative_consequences": [
+				{
+					"type": "schedule_event",
+					"description": "El corredor de lámparas de lacre verde (un tal Orio Candil, falso agente del Gremio) sigue en Ondahonda vendiendo en la fiesta; cuando el viajero enseñe la lámpara agria en público o hable con Sael, Orio se enterará y tratará de recuperarla o comprar su silencio.",
+					"trigger": "El viajero muestra la lámpara agria a Sael o a otro vecino"
+				}
+			]
+		},
+		{
+			"id": "evt_0005",
+			"timestamp": "2026-09-30T13:08:35.986Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Sael Vidrio-en-Ayunas",
+			"text": "(el jugador se acerca y saluda)",
+			"choices": [],
+			"chosen_index": -1,
+			"free_text": "Saludos. ¿Puedes hablar conmigo un momento?",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Sael Vidrio-en-Ayunas",
+					"text": "Buen paso. Un momento tengo; lo que no tengo es paciencia para el caudal agrio... y eso que llevas en la mano huele a él desde el toldo. Déjame ver. Mm. El lacre verde es del Gremio, sí, pero el sello está puesto al revés: la espiga mira al poniente. Y este caudal no se agrió por viejo. Se usó para dañar a alguien antes de embotellarlo. Eso, forastero, no es una lámpara mala: es una prueba. Con todo el tiempo del mundo, o el que me quede, preferiría no saber de quién.",
+					"choices": [
+						"¿Quién podría hacer algo así?",
+						"¿Cuánto me darías por la lámpara?",
+						"Maela solo quiere saber si puede encender su cocina."
+					]
+				},
+				{
+					"type": "spawn_entity",
+					"entity_kind": "npc",
+					"name": "Orio Candil",
+					"description": "corredor de lámparas humano, delgado y sonriente, casaca verde botella con botones de vidrio, bandolera llena de lámparas con lacre verde y sombrero bajo",
+					"position_hint": "en la plaza, junto al puesto de semillas, mirando hacia la lamparería",
+					"role": "merchant",
+					"style_ref": "commoner"
+				},
+				{
+					"type": "story_update",
+					"delta": "Sael examina la lámpara: el sello de lacre verde del Gremio está falsificado (la espiga mira al poniente) y el caudal fue usado para DAÑAR a alguien antes de embotellarse — una 'lámpara agria' como las que inquietan al Gremio. Mientras hablan, el corredor Orio Candil (quien vendió la lámpara a Maela) aparece en la plaza vigilando la lamparería."
+				}
+			]
+		},
+		{
+			"id": "evt_0006",
+			"timestamp": "2026-09-30T13:09:39.737Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Sael Vidrio-en-Ayunas",
+			"text": "¿Quién podría hacer algo así?",
+			"choices": [],
+			"chosen_index": 0,
+			"free_text": "",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Sael Vidrio-en-Ayunas",
+					"text": "Quién, no lo sé. Qué, sí: alguien pide caudal prestado para hacer daño —y el caudal se agria, porque el herido no había roto ningún trato—, lo embotella y lo vende como bueno para no cargar él con la deuda. Así la deuda se reparte entre quien enciende la lámpara. Entre Maela, por ejemplo. No mires ahora, pero el de la casaca verde junto al puesto de semillas lleva un rato contando cuántas veces te miro las manos. Es el que vende ese lacre.",
+					"choices": [
+						"Voy a hablar con él.",
+						"¿Qué hago con la lámpara?",
+						"¿A quién se denuncia esto?"
+					]
+				},
+				{
+					"type": "story_update",
+					"delta": "Sael explica: el caudal agrio viene de alguien que usó magia prestada para dañar a un inocente y embotelló el caudal para repartir la deuda entre los compradores (Maela puede cargar parte de esa deuda si la usa). Sael señala a Orio Candil como el vendedor del lacre verde."
+				}
+			]
+		},
+		{
+			"id": "evt_0007",
+			"timestamp": "2026-09-30T13:10:01.809Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Sael Vidrio-en-Ayunas",
+			"text": "Voy a hablar con él.",
+			"choices": [],
+			"chosen_index": 0,
+			"free_text": "",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Sael Vidrio-en-Ayunas",
+					"text": "Ve, pero no le enseñes la lámpara de buenas a primeras: quien vende deudas embotelladas sabe cuánto vale una prueba. Y si te ofrece fanales por ella, recuerda que aceptar un pago por callar también es un trato con nombre. Hasta el cauce, forastero.",
+					"choices": [
+						"Hasta el cauce."
+					]
+				}
+			]
+		},
+		{
+			"id": "evt_0008",
+			"timestamp": "2026-09-30T13:10:31.598Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Sael Vidrio-en-Ayunas",
+			"text": "Hasta el cauce.",
+			"choices": [],
+			"chosen_index": 0,
+			"free_text": "",
+			"narrative_consequences": []
+		},
+		{
+			"id": "evt_0009",
+			"timestamp": "2026-09-30T13:10:57.937Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Orio Candil",
+			"text": "(el jugador se acerca y saluda)",
+			"choices": [],
+			"chosen_index": -1,
+			"free_text": "Saludos. ¿Puedes hablar conmigo un momento?",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Orio Candil",
+					"text": "¡Buen paso, buen paso! Para ti siempre tengo un momento, amigo del lamparero. Orio Candil, corredor del Gremio, lámparas de lacre verde a mitad de precio por la fiesta. Aunque me da en la nariz que tú no vienes a comprar... Esa lámpara que asoma de tu zurrón es mía, ¿verdad? Una partida defectuosa, qué vergüenza. Te la cambio ahora mismo por dos nuevas y cinco fanales por la molestia. Y aquí no ha pasado nada.",
+					"choices": [
+						"Acepto: dame los fanales y las lámparas.",
+						"¿Defectuosa? Sael dice que ese caudal se usó para dañar a alguien.",
+						"Enséñame tu carta del Gremio primero."
+					]
+				},
+				{
+					"type": "story_update",
+					"delta": "Orio Candil, que se presenta como corredor del Gremio, reconoce la lámpara agria en el zurrón del viajero y le ofrece cambiarla por dos lámparas nuevas y cinco fanales 'y aquí no ha pasado nada' — un pago por silencio."
+				}
+			]
+		},
+		{
+			"id": "evt_0010",
+			"timestamp": "2026-09-30T13:12:18.607Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Orio Candil",
+			"text": "Eres un estafador. Te llevo ante la Guarda del Caudal ahora mismo, por las buenas o por las malas. Desenvaina si te atreves.",
+			"choices": [],
+			"chosen_index": -1,
+			"free_text": "Eres un estafador. Te llevo ante la Guarda del Caudal ahora mismo, por las buenas o por las malas. Desenvaina si te atreves.",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Orio Candil",
+					"text": "¿Desenvainar yo? Por el granero de mi madre, qué ordinariez en plena fiesta. Yo no peleo, forastero: yo pago a quien pelea. ¡Brasco! El caballero quiere acompañarme a la Guarda... enséñale el camino corto. Y tú, cuidado con esa lámpara: si se rompe en la trifulca, el caudal agrio es tuyo.",
+					"choices": [
+						"Me encargo de tu matón y luego de ti.",
+						"¡Inés! ¡Guarda del Caudal, aquí!"
+					]
+				},
+				{
+					"type": "spawn_entity",
+					"entity_kind": "npc",
+					"name": "Brasco el del Remo",
+					"description": "matón humano corpulento de hombros anchos, chaleco de cuero sin mangas, brazos tatuados con espirales, remo de barquero reforzado con hierro como garrote",
+					"position_hint": "sale de detrás del puesto de semillas, junto a Orio Candil",
+					"role": "hostile",
+					"style_ref": "warrior"
+				},
+				{
+					"type": "story_update",
+					"delta": "El viajero acusa a Orio Candil de estafador y le amenaza con llevarlo ante la Guarda del Caudal. Orio rehúsa pelear y lanza contra él a su matón a sueldo, Brasco el del Remo (hostil), mientras intenta escabullirse. La guarda Inés de la Torre está cerca, junto a la torre-caudal."
+				},
+				{
+					"type": "schedule_event",
+					"description": "Tras la pelea con Brasco, Orio Candil intentará huir de Ondahonda por el camino de la ribera hacia Vado Almar antes del anochecer; la guarda Inés de la Torre querrá interrogar al viajero sobre la lámpara agria, y hacer pública la prueba incomoda a la Guarda (que calla sus propios secretos).",
+					"trigger": "Cuando termine el combate con Brasco o el viajero hable con Inés"
+				}
+			]
+		},
+		{
+			"id": "evt_0011",
+			"timestamp": "2026-09-30T13:12:48.105Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Orio Candil",
+			"text": "Me encargo de tu matón y luego de ti.",
+			"choices": [],
+			"chosen_index": 0,
+			"free_text": "",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Orio Candil",
+					"text": "¡Eso, eso, encárgate de Brasco! Tiene la cabeza dura y el remo más dura todavía. Yo te espero... en algún sitio. ¡Buen paso, forastero, y cuida esa lámpara!"
+				},
+				{
+					"type": "story_update",
+					"delta": "Empieza la pelea: Brasco el del Remo ataca al viajero en la plaza; Inés de la Torre acude a la trifulca y Orio Candil se escabulle entre los puestos."
+				}
+			]
+		},
+		{
+			"id": "evt_0012",
+			"timestamp": "2026-09-30T13:14:18.085Z",
+			"scene_id": "tile_0_0",
+			"speaker": "Maela Cebada",
+			"text": "Que es un estafador. Y lo es: la lámpara está agriada a propósito.",
+			"choices": [],
+			"chosen_index": 0,
+			"free_text": "",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Maela Cebada",
+					"text": "¿A propósito? Por el granero de mi madre... Entonces si la hubiera encendido en la cocina, esa deuda de daño se me habría pegado a los fogones. A mí y a todo el que comiera mi pan. Mira, forastero: tu cena y tu cama están ganadas, queda dicho y queda debido. Pero no vuelvas a la plaza a pecho descubierto. Inés de la Torre te sacó de allí; ella es de la Guarda y sabe más de lo que cuenta. Y ese Orio... un chico de los establos lo ha visto rondar el huerto del norte, como quien espera a alguien.",
+					"choices": [
+						"Iré a hablar con Inés.",
+						"Voy a buscar a Orio al huerto del norte.",
+						"Antes, esa cena. ¿Qué hay en la olla?"
+					]
+				},
+				{
+					"type": "story_update",
+					"delta": "Maela comprende que la lámpara agria le habría cargado una deuda de daño; da por cumplido el trato (cena y cama ganadas esa noche). Cuenta que Orio Candil sigue en el pueblo, rondando el huerto del norte (noroeste) como quien espera a alguien, y que Inés de la Torre 'sabe más de lo que cuenta'."
+				}
+			]
+		},
+		{
+			"id": "evt_0013",
+			"timestamp": "2026-09-30T13:16:51.359Z",
+			"scene_id": "tile_0_-1",
+			"speaker": "Maela Cebada",
+			"text": "Iré a hablar con Inés.",
+			"choices": [],
+			"chosen_index": 0,
+			"free_text": "",
+			"narrative_consequences": [
+				{
+					"type": "dialogue",
+					"speaker": "Maela Cebada",
+					"text": "Bien pensado. Inés suele subir a la torre-caudal al caer la tarde a apuntar sus medidas; no le gusta que la interrumpan, así que llévale algo más que quejas. Hasta el cauce, y vuelve entero."
+				},
+				{
+					"type": "story_update",
+					"delta": "El viajero decide buscar a Inés de la Torre, que al atardecer suele subir a la torre-caudal de Ondahonda a apuntar sus medidas."
+				}
+			]
+		}
+	],
+	"world_map": {
+		"schema_version": 1,
+		"places": {
+			"world": {
+				"id": "world",
+				"kind": "world",
+				"parent_id": null,
+				"name": "Mundo",
+				"description": "",
+				"attrs": {},
+				"triggers": [],
+				"visited": false
+			},
+			"miravanda": {
+				"id": "miravanda",
+				"kind": "world",
+				"parent_id": null,
+				"name": "Miravanda",
+				"description": "Mundo de alta fantasía luminosa recorrido por la Vena Errante.",
+				"attrs": {},
+				"triggers": [],
+				"visited": false
+			},
+			"girial": {
+				"id": "girial",
+				"kind": "region",
+				"parent_id": "miravanda",
+				"name": "El Girial",
+				"description": "La cuenca del circuito anual de la Vena. Ahora mismo las Riberas Vivas pasan por su franja central.",
+				"approx_position": [
+					0,
+					0
+				],
+				"attrs": {},
+				"triggers": [],
+				"visited": false
+			},
+			"ondahonda": {
+				"id": "ondahonda",
+				"kind": "settlement",
+				"parent_id": "girial",
+				"name": "Ondahonda",
+				"description": "Aldea ribereña de huertos y lámparas donde estos días pasa la Vena Errante: fiesta de llegada, mercado de puestos, Vestidos de visita. Tiene la posada del Farol Quieto junto a la plaza y un vado con puente de tablas.",
+				"approx_position": [
+					0,
+					0
+				],
+				"attrs": {
+					"population": 260,
+					"estacion": "riberas_vivas",
+					"faction": "Concierto de Vado Almar"
+				},
+				"realized_scene_id": "tile_0_0",
+				"triggers": [],
+				"visited": true,
+				"anchor": {
+					"tx": 0,
+					"ty": 0,
+					"rect": [
+						16,
+						14,
+						100,
+						100
+					]
+				}
+			},
+			"vado_almar": {
+				"id": "vado_almar",
+				"kind": "settlement",
+				"parent_id": "girial",
+				"name": "Vado Almar",
+				"description": "Ciudad-puente bajo la que pasa la Vena; sede del Concierto. A una jornada río abajo, al este.",
+				"approx_position": [
+					10,
+					1
+				],
+				"attrs": {},
+				"triggers": [],
+				"visited": false
+			},
+			"escalinata_sien": {
+				"id": "escalinata_sien",
+				"kind": "landmark",
+				"parent_id": "girial",
+				"name": "La Escalinata de Sien",
+				"description": "Anfiteatro de piedra donde los Vestidos de la comarca reciben peticiones en audiencia al paso de la Vena. Al norte de Ondahonda.",
+				"approx_position": [
+					1,
+					-6
+				],
+				"attrs": {},
+				"realized_scene_id": "tile_0_-1",
+				"triggers": [],
+				"visited": true,
+				"anchor": {
+					"tx": 0,
+					"ty": -1
+				}
+			},
+			"bosque_anteayer": {
+				"id": "bosque_anteayer",
+				"kind": "landmark",
+				"parent_id": "girial",
+				"name": "El Bosque de Anteayer",
+				"description": "Arboleda de árboles-madre raiceños que sueña más despacio que el exterior. Al oeste.",
+				"approx_position": [
+					-8,
+					1
+				],
+				"attrs": {},
+				"triggers": [],
+				"visited": false
+			},
+			"postas_sedal": {
+				"id": "postas_sedal",
+				"kind": "settlement",
+				"parent_id": "girial",
+				"name": "Postas del Sedal",
+				"description": "Posta de caminos en tierras de sedal, donde paran caravanas Andantes y el correo de dirigible. Al sur.",
+				"approx_position": [
+					0,
+					7
+				],
+				"attrs": {},
+				"triggers": [],
+				"visited": false
+			},
+			"posada_farol_quieto": {
+				"id": "posada_farol_quieto",
+				"kind": "site",
+				"parent_id": "ondahonda",
+				"name": "Posada del Farol Quieto",
+				"description": "Posada de yeso cálido con un gran farol en la puerta que nunca se apaga; la regenta Maela Cebada.",
+				"attrs": {},
+				"triggers": [],
+				"visited": true,
+				"anchor": {
+					"tx": 0,
+					"ty": 0,
+					"rect": [
+						44,
+						54,
+						24,
+						18
+					]
+				}
+			},
+			"lamparería_sael": {
+				"id": "lamparería_sael",
+				"kind": "site",
+				"parent_id": "ondahonda",
+				"name": "Lamparería de Sael",
+				"description": "Taller del vadelio Sael Vidrio-en-Ayunas, lámparas de rescoldo y vidrio-caudal colgando del toldo.",
+				"attrs": {},
+				"triggers": [],
+				"visited": false,
+				"anchor": {
+					"tx": 0,
+					"ty": 0,
+					"rect": [
+						80,
+						34,
+						16,
+						14
+					]
+				}
+			}
+		},
+		"links": [
+			{
+				"from": "ondahonda",
+				"to": "vado_almar",
+				"kind": "road",
+				"travel_hours": 9,
+				"description": "Camino de la ribera, siguiendo la Vena río abajo.",
+				"bidirectional": true,
+				"edge": "east"
+			},
+			{
+				"from": "ondahonda",
+				"to": "escalinata_sien",
+				"kind": "path",
+				"travel_hours": 4,
+				"description": "Senda de peregrinos que sube entre huertos floridos.",
+				"bidirectional": true,
+				"edge": "north"
+			},
+			{
+				"from": "ondahonda",
+				"to": "bosque_anteayer",
+				"kind": "path",
+				"travel_hours": 8,
+				"bidirectional": true,
+				"edge": "west"
+			},
+			{
+				"from": "ondahonda",
+				"to": "postas_sedal",
+				"kind": "road",
+				"travel_hours": 6,
+				"bidirectional": true,
+				"edge": "south"
+			}
+		],
+		"root_id": "world",
+		"active_place_id": "escalinata_sien"
+	},
+	"plugins": [
+		{
+			"id": "043a4598e089b769e07103ab33c52abad8aff8f3f45b508578a105da4b8304ff",
+			"name": "economy",
+			"version": 1,
+			"slice": {
+				"debts": {},
+				"ledger": [],
+				"ledger_seq": 0
+			},
+			"origin": {
+				"author": "developer",
+				"rationale": "Plugin economy v1: surgido del playtest narrativo de toledo_1200 (pagos de NPCs, robo, deuda con Yishaq) — el motor no podía tocar player.gold fuera de las compras de commerce."
+			},
+			"activated_at": "2026-09-30T12:56:45.108Z"
+		}
+	],
+	"ambient_log": [
+		"Inés de la Torre intervino en una pelea cercana",
+		"Orio Candil huyó de una pelea en (11.7, -19.4)",
+		"Tello Siete-Postas huyó de una pelea en (11.7, -19.5)",
+		"Sael Vidrio-en-Ayunas huyó de una pelea en (11.7, -18.4)",
+		"Tello Siete-Postas retomó su rutina al calmarse la pelea",
+		"Sael Vidrio-en-Ayunas retomó su rutina al calmarse la pelea",
+		"Inés de la Torre retomó su rutina al calmarse la pelea",
+		"Orio Candil retomó su rutina al calmarse la pelea",
+		"Maela Cebada huyó de una pelea en (-4.0, -0.5)",
+		"Maela Cebada retomó su rutina al calmarse la pelea"
+	],
+	"scheduled_events": [
+		{
+			"id": "sched_0002",
+			"description": "Tras la pelea con Brasco, Orio Candil intentará huir de Ondahonda por el camino de la ribera hacia Vado Almar antes del anochecer; la guarda Inés de la Torre querrá interrogar al viajero sobre la lámpara agria, y hacer pública la prueba incomoda a la Guarda (que calla sus propios secretos).",
+			"trigger": "Cuando termine el combate con Brasco o el viajero hable con Inés",
+			"created_at": "2026-09-30T13:12:28.848Z",
+			"event_id": "evt_0010"
+		}
+	],
+	"_next_event_seq": 13,
+	"_next_sched_seq": 2
+}

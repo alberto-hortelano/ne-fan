@@ -24,7 +24,7 @@ import type { AssetByHashResponse, AssetKind } from "../src/contracts/asset-stor
 import { AssetStoreApi, refDeArteDePersonaje } from "../src/contracts/asset-store.js";
 import { fillPath } from "../src/contracts/http.js";
 import { casarRuta, matchStylesRoute, parseRequestPath } from "../services/asset-store/http-wire.js";
-import { RUTAS, type AssetStoreRouteKey } from "../services/asset-store/rutas.js";
+import { leerConsultaDeListado, RUTAS, type AssetStoreRouteKey } from "../services/asset-store/rutas.js";
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { loadAssetStoreConfig } from "../services/asset-store/config.js";
 import { createAssetStoreServer } from "../services/asset-store/http-server.js";
@@ -635,6 +635,59 @@ describe("registro e índice", () => {
     assert.deepEqual(fresh.listAssets(undefined, 50).map((e) => e.hash), ["c", "b", "a"]);
     assert.equal(fresh.findByHash("a").length, 1);
     fresh.close();
+  });
+
+  it("GET /assets filtra por el estilo de la CLAVE y el kind de celda, ANTES de la ventana (tanda BZ)", async () => {
+    // El motor de una partida de acuarela veía 28 de 30 descripciones de otros
+    // estilos. El filtro va en el SQL y antes del LIMIT: 30 filas de otro
+    // estilo más recientes no pueden expulsar a las 2 del estilo pedido.
+    const fresh = new ManifestDb(join(root, "list-estilo.sqlite3"));
+    const ACUARELA = "acuarela_luminosa:watercolor";
+    const NEON = "acero_neon:neon";
+    const reg = (hash: string, style: string, kind: string): void =>
+      fresh.register({ hash, type: "surface", subtype: "surface", prompt: `p-${hash}`, size_bytes: 1, extra: { style, kind } });
+    reg("a1", ACUARELA, "unique");
+    reg("a2", ACUARELA, "unique");
+    reg("at", ACUARELA, "tile");
+    for (let i = 0; i < 30; i++) reg(`n${i}`, NEON, "unique");
+    // Mismo estilo_id con OTRO token: ya no es un acierto de caché.
+    reg("ax", "acuarela_luminosa:otro token", "unique");
+    assert.deepEqual(
+      fresh.listAssets("surface", 3, { style: ACUARELA, surfaceKind: "unique" }).map((e) => e.hash),
+      ["a2", "a1"],
+      "solo las unique del estilo exacto, y la ventana de 3 no la llenan las 30 de neón",
+    );
+    assert.deepEqual(fresh.listAssets("surface", 50, { style: ACUARELA }).map((e) => e.hash), ["at", "a2", "a1"]);
+    assert.deepEqual(fresh.listAssets("surface", 2, { surfaceKind: "tile" }).map((e) => e.hash), ["at"]);
+    assert.equal(fresh.listAssets("surface", 100).length, 34, "sin filtro, todas");
+    fresh.close();
+  });
+
+  it("leerConsultaDeListado: filtros presentes pero vacíos o fuera del enum son 400, no «sin filtro»", async () => {
+    const q = (s: string) => leerConsultaDeListado(new URLSearchParams(s));
+    assert.deepEqual(q(""), { ok: true, assetType: undefined, limit: 50, filtro: {} });
+    assert.deepEqual(q("asset_type=surface&limit=7&style=a%3Ab&surface_kind=unique"), {
+      ok: true,
+      assetType: "surface",
+      limit: 7,
+      filtro: { style: "a:b", surfaceKind: "unique" },
+    });
+    assert.deepEqual(q("surface_kind=tile"), { ok: true, assetType: undefined, limit: 50, filtro: { surfaceKind: "tile" } });
+    for (const mala of ["style=", "style=%20", "surface_kind=foo", "surface_kind=", "limit=-1", "limit=x"]) {
+      const r = q(mala);
+      assert.equal(r.ok, false, mala);
+    }
+    // Y por el cable: el mismo rechazo es un 400 con ErrorResponse.
+    const http = await getJson("/assets?surface_kind=foo");
+    assert.equal(http.status, 400);
+    assert.match(String(http.body.error), /surface_kind "foo"/);
+    await post("/assets", {
+      hash: "5e5e5e5e5e5e5e5e", type: "surface", subtype: "surface", prompt: "muro de adobe", size_bytes: 1,
+      extra: { style: "acuarela_luminosa:w", kind: "unique" },
+    });
+    const ok = await getJson<{ assets: Array<{ hash: string }> }>("/assets?asset_type=surface&style=acuarela_luminosa%3Aw&surface_kind=unique");
+    assert.equal(ok.status, 200);
+    assert.deepEqual(ok.body.assets.map((a) => a.hash), ["5e5e5e5e5e5e5e5e"]);
   });
 
   it("kind surface: blob servido con touch y by_hash con cache_url", async () => {
