@@ -1191,7 +1191,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
     assert.deepEqual(exitsOf(broadcasts), ["molino"]);
     // La escena PERSISTIDA sigue siendo Format D crudo: las salidas no se sellan.
-    assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.exits, undefined, "scene_data sin exits");
+    assert.equal("exits" in narrative.scenes_loaded["tile_0_0"].scene_data, false, "scene_data sin exits");
 
     // El motor crea un lugar y un enlace a mitad de sesión (lo que hace
     // `map_link` por el State API), y el bridge difunde SOLO las salidas.
@@ -1207,7 +1207,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
       ["ermita", "La Ermita", "north"],
     ]);
     assert.equal(broadcasts.some((m) => m.type === "narrative_event"), false, "ni una escena re-difundida");
-    assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.exits, undefined, "y el save sigue sin sello");
+    assert.equal("exits" in narrative.scenes_loaded["tile_0_0"].scene_data, false, "y el save sigue sin sello");
 
     // Y el RESUME re-calcula: la escena que sirve `sessionDataForClient` trae
     // el destino nuevo, que es lo que hasta #179 se quedaba congelado.

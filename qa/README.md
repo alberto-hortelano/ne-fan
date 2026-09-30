@@ -742,7 +742,7 @@ Vive fuera de `guiones/` por la razón contraria a `presets.mjs`: el runner leva
 Su hermano `qa/las-fixtures-solo-chocan-con-el-agua.mjs` (QA de #407) recorre el mismo preset
 y mide la COLISIÓN en las tres fixtures: `solid_chars` es exactamente `["w"]`, ninguna celda trae el
 muro retirado `W`, el agua y los edificios del plan bloquean y el arranque del jugador no. Es el
-otro camino legítimo hasta la world scene (`addTileRaw` → `formatDToWorld` en el cliente), que los
+otro camino legítimo hasta la world scene (`addTileRaw` → `escenaCargable` → `formatDToWorld` en el cliente), que los
 guiones 05 y 06 —con bridge— no pisan. Mismo grupo: corrida local, mismas banderas.
 
 Su hermano `qa/fixtures-las-tres-se-caminan.mjs` (QA-F de T13, #405) mide lo mismo sobre las

@@ -230,7 +230,7 @@ Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
 
 Posiciones y escalas en METROS (anclaje por BASE: `position.y` es la base del objeto). La monta `FpsRenderer` en el cliente. El cliente NUNCA porta la conversión celdas→metros: normalizar es trabajo del bridge, y hay candado (`cliente-no-convierte-celdas-a-metros`).
 
-**Fixtures de test** (`nefan-core/data/scenes/*.json`): escenas **Format D** commiteadas que ofrece el selector «Room» del cliente, para iterar renderer y UI sin backend (preset `html-fixtures`). Van por el mismo camino que una escena del motor —`formatDToWorld` y a pintar—, así que una fixture que no valdría en partida tampoco vale aquí: `test/scene-fixtures.test.ts` canda que solo haya Format D vivo.
+**Fixtures de test** (`nefan-core/data/scenes/*.json`): escenas **Format D** commiteadas que ofrece el selector «Room» del cliente, para iterar renderer y UI sin backend (preset `html-fixtures`). Van por el mismo camino que una escena del motor —la puerta `escenaCargable` (el mismo zod), `formatDToWorld` y a pintar—, así que una fixture que no valdría en partida tampoco vale aquí: `test/scene-fixtures.test.ts` canda que solo haya Format D vivo.
 
 **Reuse de assets**: la librería que ve el motor (`available_assets`) son las SUPERFICIES pintadas, y se reusan por DESCRIPCIÓN, no por hash: repetir verbatim una `surface_desc` ya pintada es un cache-hit. La cadena por hash (`texture_hash`/`model_hash`) murió con el gpu-worker (#199) y tiene candado de reaparición en `arch-rules.json`.
 

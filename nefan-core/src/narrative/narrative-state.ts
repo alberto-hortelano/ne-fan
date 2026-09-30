@@ -28,7 +28,7 @@ import { neighborTile, tileKey, type TileCoord } from "../scene/tile.js";
 import { computeTileEdges } from "../scene/tile-edges.js";
 import type { PluginRecord, PluginManifest, PluginOrigin } from "../plugins/types.js";
 import { computePluginId } from "../plugins/hash.js";
-import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";
+import { gateEscenaExpandida, type ExpandedScene } from "../contract/model-io/scene-schema.js";
 import { InventoryListSchema, describirInventarioInvalido } from "../contracts/request-schemas.js";
 import { WorldMapSchema } from "../contracts/world-map-schema.js";
 import { formatZodError } from "../contract/model-io/validate.js";
@@ -124,15 +124,16 @@ const DEFAULT_PLAYER: NarrativePlayerState = {
  *  (`recordSceneLoaded`) y la carga (`loadSession`). */
 function describeSceneContractViolation(
   sceneId: string,
-  sceneData: Record<string, unknown>,
+  sceneData: unknown,
   error: ZodError,
 ): string {
   const issue = error.issues[0];
   const path = issue.path;
   let donde = "";
   if (path[0] === "entities" && typeof path[1] === "number") {
-    const ents = Array.isArray(sceneData.entities)
-      ? (sceneData.entities as Array<{ id?: unknown } | null>)
+    const entities = (sceneData as { entities?: unknown } | null)?.entities;
+    const ents = Array.isArray(entities)
+      ? (entities as Array<{ id?: unknown } | null>)
       : [];
     const rawId = ents[path[1]]?.id;
     const id = typeof rawId === "string" && rawId ? `"${rawId}"` : `#${path[1]}`;
@@ -560,20 +561,24 @@ export class NarrativeState {
     // Es la puerta de #334-A: el save con `footprint:[8,8]` en un kind móvil
     // (el caso #300) cargaba, se conservaba y el NPC se pintaba a 1,75 m de
     // donde el sim lo tenía.
+    // Las escenas se quedan con lo que dice su GATE, no con lo que dice el
+    // tipo de `data` (#782): el disco no promete `ExpandedScene`, el gate sí.
+    const escenasCargadas: Record<string, SceneRecord> = {};
     for (const [sceneId, rec] of Object.entries(data.scenes_loaded)) {
-      const parsed = ExpandedSceneSchema.safeParse(rec.scene_data);
-      if (!parsed.success) {
+      const g = gateEscenaExpandida(rec.scene_data);
+      if (!g.ok) {
         throw new Error(
-          `save "${sessionId}": ${describeSceneContractViolation(sceneId, rec.scene_data, parsed.error)}`,
+          `save "${sessionId}": ${describeSceneContractViolation(sceneId, rec.scene_data, g.error)}`,
         );
       }
+      escenasCargadas[sceneId] = { ...rec, scene_data: g.escena };
       // El registro lleva las coords del tile al lado de su escena (#405), y
       // de ellas sale el `tileIndex`. Un save cuyo registro no las trae —o las
       // trae distintas de las de la escena— es de antes o está corrupto: se
       // rechaza, no se re-deriva en silencio (sería la migración que #336
       // prohíbe). El tipo dice que están; el disco no lo promete.
       const declarado = rec.tile as TileCoord | undefined;
-      const t = parsed.data.tile;
+      const t = g.escena.tile;
       if (declarado?.tx !== t.tx || declarado?.ty !== t.ty) {
         const motivo = declarado
           ? `es ${JSON.stringify(declarado)} y su escena dice ${JSON.stringify(t)}`
@@ -718,7 +723,7 @@ export class NarrativeState {
     // inventory → crash). Mismo criterio aditivo que world.
     this.player = { ...structuredClone(DEFAULT_PLAYER), ...data.player };
     this.story_so_far = data.story_so_far;
-    this.scenes_loaded = data.scenes_loaded;
+    this.scenes_loaded = escenasCargadas;
     this.entities = data.entities;
     this.dialogue_history = data.dialogue_history;
     this.worldMap = new WorldMapManager(data.world_map);
@@ -776,22 +781,25 @@ export class NarrativeState {
 
   // ── Recording mutations ──
 
+  /** Registra la escena y DEVUELVE la que quedó registrada, ya con su tipo
+   *  (#782): quien la difunde después difunde esa, no el `Record` que traía. */
   recordSceneLoaded(
     sceneId: string,
-    sceneData: Record<string, unknown>,
+    sceneData: unknown,
     assetRefs: string[] = [],
     opts: { activate?: boolean } = {},
-  ): void {
+  ): ExpandedScene {
     // La puerta de ESCRITURA (#334): todo lo que entra en `scenes_loaded` es
     // población EXPANDIDA (los 5 callers de producción expanden antes), así
     // que su gate es `ExpandedSceneSchema`. Sin él, lo inválido se persistía
     // en el save y volvía en cada resume — el estado corrupto de #300.
-    const gate = ExpandedSceneSchema.safeParse(sceneData);
-    if (!gate.success) {
+    const gate = gateEscenaExpandida(sceneData);
+    if (!gate.ok) {
       throw new Error(
         `recordSceneLoaded: ${describeSceneContractViolation(sceneId, sceneData, gate.error)}`,
       );
     }
+    const escena = gate.escena;
     const activate = opts.activate ?? true;
     // Primer registro vs re-broadcast de escena cacheada: decide la semántica
     // de "mismo id en otra escena" de registerSceneNpcs (mover vs conservar).
@@ -799,13 +807,13 @@ export class NarrativeState {
     // Coords del tile derivadas del propio scene_data (el gate de arriba ya
     // las exige) y costuras computadas del grid expandido — el registro es
     // autosuficiente.
-    const tile: TileCoord = gate.data.tile;
+    const tile: TileCoord = escena.tile;
     const record: SceneRecord = {
-      scene_data: sceneData,
+      scene_data: escena,
       loaded_at: nowIso(),
       asset_refs: assetRefs,
       tile,
-      edges: computeTileEdges(sceneData),
+      edges: computeTileEdges(escena),
     };
     this.tileIndex.set(tileKey(tile.tx, tile.ty), sceneId);
     this.scenes_loaded[sceneId] = record;
@@ -813,7 +821,7 @@ export class NarrativeState {
       this.world.active_scene_id = sceneId;
       this.player.current_scene_id = sceneId;
     }
-    const placeId = typeof sceneData.place_id === "string" ? sceneData.place_id : sceneId;
+    const placeId = escena.place_id ?? sceneId;
     if (this.worldMap.get(placeId)) {
       this.worldMap.attachRealizedScene(placeId, sceneId);
       if (activate) {
@@ -821,7 +829,8 @@ export class NarrativeState {
         this.worldMap.setActivePlace(placeId);
       }
     }
-    registerSceneNpcs(this, sceneId, sceneData, { firstRegistration });
+    registerSceneNpcs(this, sceneId, escena, { firstRegistration });
+    return escena;
   }
 
   /** Append ADITIVO con dedupe a asset_refs de una escena cargada: los

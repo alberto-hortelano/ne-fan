@@ -21,6 +21,7 @@
  *  (`sesion-efimera.ts`), así que el tile nuevo se genera con `story_so_far`
  *  vacío — igual que sus ocho hermanos de la pre-generación, y no improvisado
  *  dentro de la partida de alguien. */
+import type { ExpandedScene } from "../../src/contract/model-io/scene-schema.js";
 import { createHash } from "node:crypto";
 
 import { loadGameMeta, loadWorldDoc } from "../../src/games/loader.js";
@@ -67,7 +68,7 @@ export type PlanDeCura =
       worldMap: WorldMap;
       /** Lo que la puerta de carga SÍ sirve hoy: el vecindario con el que el
        *  motor tiene que casar las costuras de lo que se cura. */
-      servibles: Record<string, Record<string, unknown>>;
+      servibles: Record<string, ExpandedScene>;
       cribadas: Cribada[];
     }
   | { ok: false; error: string };

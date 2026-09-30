@@ -23,8 +23,10 @@
  *   2. BRIDGE (`validateScene`, la red de `handlers/tile.ts` y la tool
  *      `scene_validate`): mismos veredictos. Un tile con seed entero es
  *      jugable.
- *   3. LO QUE SE PINTA (`formatDToWorld` del bridge → `__plan` →
- *      `buildFpsTileSpec` del cliente): con seed entero el bosque SE PLANTA
+ *   3. LO QUE SE PINTA (`escenaCargable` → `formatDToWorld` → `__plan` →
+ *      `buildFpsTileSpec` del cliente; la puerta es la del selector «Room»
+ *      desde #782, y rechaza con la ruta lo mismo que el pre-flight — el seed
+ *      malo ya no llega a pintarse): con seed entero el bosque SE PLANTA
  *      (antes del cambio el mismo tile salía con 0 árboles y un aviso), es
  *      determinista (dos normalizaciones = mismos bytes), el seed MANDA (3≠4,
  *      en vegetación y en scatter), y seed 0 ≠ sin seed en vegetación (un
@@ -79,6 +81,7 @@ const TS = `
 import { createHash } from "node:crypto";
 import { bootstrapTile } from ${JSON.stringify(join(RAIZ, "labs/narrative/fake-scenes.ts"))};
 import { formatDToWorld } from ${JSON.stringify(join(CORE, "src/scene/scene-normalize.ts"))};
+import { escenaCargable } from ${JSON.stringify(join(CORE, "src/scene/escena-cargable.ts"))};
 import { buildFpsTileSpec } from ${JSON.stringify(join(CORE, "src/scene/blueprint/fps-spec.ts"))};
 import { validateContract } from ${JSON.stringify(join(CORE, "src/contract/model-io/validate.ts"))};
 import { EmittedSceneSchema } from ${JSON.stringify(join(CORE, "src/contract/model-io/scene-schema.ts"))};
@@ -105,17 +108,27 @@ const out = {};
 for (const [n, raw] of Object.entries(casos)) {
   const pre = validateContract(EmittedSceneSchema, structuredClone(raw));
   const vs = validateScene(structuredClone(raw), { required_crossings: [], bootstrap: true });
-  const w1 = formatDToWorld(structuredClone(raw));
-  const w2 = formatDToWorld(structuredClone(raw));
-  const veg = (w1.__plan?.volumes ?? []).filter((v) => String(v.id).startsWith("derived_veg")).map((v) => [v.id, v.at, v.s]);
-  const f1 = w1.__plan ? spec(w1.__plan) : null;
-  const f2 = w2.__plan ? spec(w2.__plan) : null;
+  // La puerta de lo que se PINTA (#782): lo crudo pasa por \`escenaCargable\`
+  // antes de \`formatDToWorld\`, como en el selector «Room».
+  let puerta = "ok";
+  let w1 = null;
+  let w2 = null;
+  try {
+    w1 = formatDToWorld(escenaCargable(structuredClone(raw)));
+    w2 = formatDToWorld(escenaCargable(structuredClone(raw)));
+  } catch (err) {
+    puerta = err.message;
+  }
+  const veg = (w1?.__plan?.volumes ?? []).filter((v) => String(v.id).startsWith("derived_veg")).map((v) => [v.id, v.at, v.s]);
+  const f1 = w1?.__plan ? spec(w1.__plan) : null;
+  const f2 = w2?.__plan ? spec(w2.__plan) : null;
   out[n] = {
     pre: pre.ok ? "ok" : pre.error,
     bridge: vs.ok ? "ok" : vs.errors.join(" · "),
-    avisos: w1.__plan_warnings ?? [],
+    puerta,
+    avisos: w1?.__plan_warnings ?? [],
     vegN: veg.length, veg: h(veg),
-    mundoIgual: h(w1) === h(w2),
+    mundoIgual: w1 !== null && h(w1) === h(w2),
     prims: f1 ? h(f1.primsM) : null, primsIgual: f1 && f2 ? h(f1.primsM) === h(f2.primsM) : false,
     scatterError: f1?.scatterError ?? null,
   };
@@ -153,27 +166,27 @@ export default async function (ctx) {
     const m = /<<<([\s\S]*?)>>>/.exec(`${rPy.stdout ?? ""}`);
     if (!m) throw new Error(`python3 no devolvió nada:\n${(rPy.stderr ?? "").slice(0, 1500)}`);
     const py = JSON.parse(m[1]);
-    for (const [n, v] of Object.entries(r)) ctx.log(`  ${n}: pre=${v.pre === "ok" ? "ok" : "RECHAZA"} bridge=${v.bridge === "ok" ? "ok" : "RECHAZA"} vegN=${v.vegN} veg=${v.veg} prims=${v.prims}`);
+    for (const [n, v] of Object.entries(r)) ctx.log(`  ${n}: pre=${v.pre === "ok" ? "ok" : "RECHAZA"} bridge=${v.bridge === "ok" ? "ok" : "RECHAZA"} puerta=${v.puerta === "ok" ? "ok" : "RECHAZA"} vegN=${v.vegN} veg=${v.veg} prims=${v.prims}`);
     ctx.log(`  ai_server: ${JSON.stringify(py)}`);
 
     // ── 1 y 2 · las puertas aceptan el entero y rechazan lo demás diciendo QUÉ ──
     const buenos = ["base", "v0", "v3", "v4", "v1e9", "s0", "s34", "s56", "s1e9"];
-    const noPasan = buenos.filter((n) => r[n].pre !== "ok" || r[n].bridge !== "ok");
+    const noPasan = buenos.filter((n) => r[n].pre !== "ok" || r[n].bridge !== "ok" || r[n].puerta !== "ok");
     ctx.expect(
-      "pre-flight y bridge aceptan un seed ENTERO (0, 3, 4, 1e9) en vegetation_zones y en scatter_zones",
+      "pre-flight, bridge y la puerta de lo que se pinta aceptan un seed ENTERO (0, 3, 4, 1e9) en vegetation_zones y en scatter_zones",
       noPasan.length === 0,
-      noPasan.map((n) => `${n}: pre=${r[n].pre} · bridge=${r[n].bridge}`).join(" | "),
+      noPasan.map((n) => `${n}: pre=${r[n].pre} · bridge=${r[n].bridge} · puerta=${r[n].puerta}`).join(" | "),
     );
     const malos = { vStr: "vegetation_zones[0].seed", vTexto: "vegetation_zones[0].seed", vFrac: "vegetation_zones[0].seed", vNeg: "vegetation_zones[0].seed", v1e10: "vegetation_zones[0].seed",
       sStr: "scatter_zones[0].seed", sFrac: "scatter_zones[0].seed", sNeg: "scatter_zones[0].seed", s1e10: "scatter_zones[0].seed" };
     const malDichos = Object.entries(malos).filter(([n, ruta]) => {
       const dice = (s) => s !== "ok" && s.includes(ruta) && /entero/.test(s);
-      return !(dice(r[n].pre) && dice(r[n].bridge));
+      return !(dice(r[n].pre) && dice(r[n].bridge) && dice(r[n].puerta));
     });
     ctx.expect(
-      "lo que no es un entero 0..1e9 vuelve RECHAZADO por las dos puertas, con la ruta del campo y la palabra «entero»",
+      "lo que no es un entero 0..1e9 vuelve RECHAZADO por las TRES puertas (pre-flight, bridge y la de lo que se pinta), con la ruta del campo y la palabra «entero»",
       malDichos.length === 0,
-      malDichos.map(([n]) => `${n}: pre=${r[n].pre} · bridge=${r[n].bridge}`).join(" | "),
+      malDichos.map(([n]) => `${n}: pre=${r[n].pre} · bridge=${r[n].bridge} · puerta=${r[n].puerta}`).join(" | "),
     );
 
     // ── 3 · lo que se pinta ──────────────────────────────────────────────
@@ -182,7 +195,7 @@ export default async function (ctx) {
       ["v0", "v3", "v4", "v1e9"].every((n) => r[n].vegN > 0 && r[n].avisos.length === 0),
       ["v0", "v3", "v4", "v1e9"].map((n) => `${n}: ${r[n].vegN} ejemplares, avisos=${JSON.stringify(r[n].avisos)}`).join(" | "),
     );
-    const noDeterministas = Object.entries(r).filter(([, v]) => !v.mundoIgual || !v.primsIgual).map(([n]) => n);
+    const noDeterministas = buenos.filter((n) => !r[n].mundoIgual || !r[n].primsIgual);
     ctx.expect(
       "determinista: dos normalizaciones del mismo tile dan la misma world scene y la misma spec fps",
       noDeterministas.length === 0,
@@ -195,10 +208,16 @@ export default async function (ctx) {
       r.s34.prims !== r.s56.prims && r.s34.scatterError === null && r.s56.scatterError === null && r.s1e9.scatterError === null,
       `${r.s34.prims} vs ${r.s56.prims} · errores: ${r.s34.scatterError} / ${r.s56.scatterError} / ${r.s1e9.scatterError}`,
     );
+    // Hasta #782 aquí se medía que el seed de scatter inválido llegaba a
+    // PINTARSE y el cliente recibía `scatterError` con la ruta: la entrada
+    // cruda entraba en `formatDToWorld` sin gate. Desde #782 no llega a
+    // pintarse —lo rechaza la puerta de arriba, con la misma ruta—, así que lo
+    // que se mide es que NADA de lo rechazado produce una world scene.
+    const pintados = Object.keys(malos).filter((n) => r[n].prims !== null || r[n].vegN > 0);
     ctx.expect(
-      "un seed de scatter inválido no se pinta a medias: el cliente recibe scatterError con la ruta",
-      typeof r.sStr.scatterError === "string" && r.sStr.scatterError.includes("scatter_zones[0].seed"),
-      String(r.sStr.scatterError),
+      "un seed inválido no se pinta ni a medias: la puerta lo rechaza antes de `formatDToWorld` y no hay world scene",
+      pintados.length === 0,
+      pintados.join(", "),
     );
 
     // ── 4 · sin seed no cambia ───────────────────────────────────────────

@@ -12,6 +12,7 @@ import {
 } from "../src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "../src/scene/terrain-collision.js";
 import { DEFAULT_SOLID_CHARS, formatDToWorld } from "../src/scene/scene-normalize.js";
+import { escenaCargable } from "../src/scene/escena-cargable.js";
 import { GROUND_WATER_CHAR } from "../src/scene/blueprint/ground-collision.js";
 import { tileWorldRect } from "../src/scene/tile.js";
 import { solidoBloquea } from "../src/simulation/salida-del-solido.js";
@@ -121,14 +122,14 @@ describe("planCollisionGrid", () => {
       { id: "rio", kind: "water", rect: [40, 40, 12, 12] },
       { id: "puente", kind: "deck", rect: [40, 44, 12, 3], material: "wood" },
     ];
-    const world = formatDToWorld({
+    const world = formatDToWorld(escenaCargable({
       scene_id: "tile_0_0",
       scene_description: "vega con río y puente",
       tile: { tx: 0, ty: 0 },
       biome: "grass",
       ground: rawGround,
       entities: [],
-    }) as { terrain_grid: TerrainGridData };
+    })) as { terrain_grid: TerrainGridData };
     // Fuente 1: el grid. Los sólidos son exactamente los del engine.
     assert.deepEqual(world.terrain_grid.solid_chars, [...DEFAULT_SOLID_CHARS]);
     assert.ok(world.terrain_grid.solid_chars!.includes(GROUND_WATER_CHAR));

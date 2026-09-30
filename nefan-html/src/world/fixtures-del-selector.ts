@@ -1,9 +1,12 @@
 /** Las fixtures del selector «Room»: las escenas Format D de `data/scenes/`
  *  que el cliente carga en LOCAL, sin bridge (preset `html-fixtures`).
  *
- *  Es la ÚNICA normalización del cliente (`addTileRaw` → `formatDToWorld`):
- *  sin bridge no hay wire que la haga, y las fixtures son JSON que ya está en
- *  el navegador y que ningún cable ha tocado. La puerta está NOMBRADA en
+ *  Es la ÚNICA normalización del cliente (`addTileRaw` → `escenaCargable` →
+ *  `formatDToWorld`): sin bridge no hay wire que la haga, y las fixtures son
+ *  JSON que ya está en el navegador y que ningún cable ha tocado. Por eso
+ *  pasan antes por la MISMA puerta de contrato que una escena del motor
+ *  (`escenaCargable`, core): lo que no valdría en partida no se pinta aquí, y
+ *  el motivo es el del zod (#782). La puerta está NOMBRADA en
  *  `arch-rules.json` (`solo-el-bridge-normaliza-la-escena`): una segunda
  *  llamada en este fichero, o una en cualquier otro del cliente, salta.
  *
@@ -12,6 +15,7 @@
  *  la carga de tile, el vaciado del mundo y la línea del juego. */
 
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
+import { escenaCargable } from "@nefan-core/src/scene/escena-cargable.js";
 import type { EscenaServida } from "@nefan-core/src/protocol/messages.js";
 import { etiquetaDeFixture, motivoDeFixtureParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
 import { paso } from "../ui/async-ui.js";
@@ -20,8 +24,8 @@ import type { CargaDeTile, OpcionesDeCarga } from "./carga-de-tile.js";
 // Glob import all open-world scene JSONs (lazy) — Vite feature.
 // El concepto sala se ha retirado del cliente HTML: estas fixtures son tiles
 // del plano continuo, la única variante de Format D que queda.
-const sceneModules: Record<string, () => Promise<{ default: Record<string, unknown> }>> =
-  (import.meta as unknown as { glob: (pattern: string) => Record<string, () => Promise<{ default: Record<string, unknown> }>> })
+const sceneModules: Record<string, () => Promise<{ default: unknown }>> =
+  (import.meta as unknown as { glob: (pattern: string) => Record<string, () => Promise<{ default: unknown }>> })
     .glob("@nefan-core/data/scenes/*.json");
 
 export interface DepsDeFixturesDelSelector {
@@ -38,10 +42,10 @@ export interface FixturesDelSelector {
   /** Rellena el desplegable con las fixtures del glob, etiquetadas por core. */
   poblar(): void;
   /** Format D crudo → escena servida sin salidas → `addTile`. Es también el
-   *  hook `window.__nefan.addTileRaw` del banco. */
-  addTileRaw(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void>;
+   *  hook `window.__nefan.addTileRaw` del banco. LANZA si no es Format D. */
+  addTileRaw(raw: unknown, opts?: OpcionesDeCarga): Promise<void>;
   /** Vacía el mundo y lo TOMA con una escena Format D cruda. */
-  loadSceneData(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void>;
+  loadSceneData(raw: unknown, opts?: OpcionesDeCarga): Promise<void>;
   /** Conduce el `<select>` real por nombre parcial y DEVUELVE la carga. */
   cargarFixture(name: string): Promise<void>;
 }
@@ -97,16 +101,17 @@ export function crearFixturesDelSelector(deps: DepsDeFixturesDelSelector): Fixtu
   }
 
   /** La puerta: un tile como cualquier otro, sin salidas (sin bridge no las
-   *  hay); la partida usa `addTile` con la escena ya servida. */
-  function normalizarFixture(raw: Record<string, unknown>): EscenaServida {
-    return { ...formatDToWorld(raw), exits: [] };
+   *  hay); la partida usa `addTile` con la escena ya servida. Lo crudo pasa
+   *  antes por `escenaCargable`, que LANZA con el motivo del zod. */
+  function normalizarFixture(raw: unknown): EscenaServida {
+    return { ...formatDToWorld(escenaCargable(raw)), exits: [] };
   }
 
-  function addTileRaw(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void> {
+  function addTileRaw(raw: unknown, opts?: OpcionesDeCarga): Promise<void> {
     return addTile(normalizarFixture(raw), opts);
   }
 
-  async function loadSceneData(rawData: Record<string, unknown>, opts: OpcionesDeCarga = {}): Promise<void> {
+  async function loadSceneData(rawData: unknown, opts: OpcionesDeCarga = {}): Promise<void> {
     const escena = normalizarFixture(rawData);
     resetWorld();
     await addTile(escena, opts);

@@ -388,7 +388,9 @@ describe("plan de mutación · el reparto es TOTAL sobre el perímetro", () => {
   });
 
   it("un suelo `sin medir` caduca en cuanto la huella trae la medida", () => {
-    // EL CANDADO QUE HACE INEXPRESABLE EL GATE PERMANENTEMENTE VERDE.
+    // UNA DE LAS DOS MITADES DEL CANDADO QUE HACE INEXPRESABLE EL GATE
+    // PERMANENTEMENTE VERDE (la otra, «un suelo sin medida no es un número»,
+    // prohíbe el número sin medida; ésta caduca el `sin medir` ya medido).
     //
     // Un módulo estrenado no puede traer su suelo puesto: `permisoLocal`
     // rechaza el coste desconocido, así que su primera medida exige una corrida
@@ -417,6 +419,32 @@ describe("plan de mutación · el reparto es TOTAL sobre el perímetro", () => {
           `permanentemente verde, y eso no es un final`,
       );
     }
+  });
+});
+
+describe("plan de mutación · un suelo sin medida no es un número", () => {
+  it("un módulo del que la huella no trae NINGÚN fichero dice `sin medir`, no un número", () => {
+    // La otra mitad del candado de arriba, y la que faltaba (QA de #782): ése
+    // caduca un `sin medir` que ya tiene medida; éste prohíbe el número que
+    // no la tiene. Sin él, `break: 0` en un módulo recién estrenado pasaba
+    // `npm test` entero en verde — es justo el gate permanentemente verde que
+    // `SIN_MEDIR` existe para hacer inexpresable, y la tanda BU lo escribió
+    // así antes de que nadie lo cazara. «Ningún fichero» y no «alguno falta»:
+    // un módulo medido puede tener un fichero sin fila (un barril sin
+    // mutantes), y su suelo sí sale de una medida.
+    const huella = leer("data/contract/mutacion-huella.json") as {
+      ficheros: Record<string, unknown>;
+    };
+    const sinMedida = plan.modulos
+      .filter((m) => m.break !== SIN_MEDIR)
+      .filter((m) => ficherosMutados(m).every((f) => huella.ficheros[f] === undefined))
+      .map((m) => `${m.id} (break ${m.break})`);
+    assert.deepEqual(
+      sinMedida,
+      [],
+      `estos módulos traen un suelo numérico y la huella no tiene ni un fichero suyo medido: ` +
+        `el número no sale de ninguna medida. Hasta que la corrida pedida lo mida, dice "${SIN_MEDIR}"`,
+    );
   });
 });
 

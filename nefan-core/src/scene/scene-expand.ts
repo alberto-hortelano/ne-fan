@@ -18,8 +18,8 @@
  *  `recordSceneLoaded`): lo persistido y difundido es Format D plano ya
  *  expandido, así los saves y clientes existentes no cambian. La marca
  *  `__expanded` hace la expansión idempotente; las primitivas se conservan
- *  como provenance. `formatDToWorld` expande defensivamente si ve primitivas
- *  sin la marca (fixtures locales).
+ *  como provenance. Una fixture local cruda la expande la puerta de lo crudo
+ *  (`escenaCargable`, #782), no `formatDToWorld`, que solo acepta la expandida.
  *
  *  Fail-loud: una primitiva imposible (rect fuera del grid, puerta fuera de su
  *  lado) lanza con contexto — el pre-flight del motor narrativo la rebota para

@@ -62,6 +62,35 @@ describe("registro directo de NPCs Format D", () => {
 });
 
 describe("las puertas del save (#334, #336)", () => {
+  it("recordSceneLoaded DEVUELVE la escena registrada, que es la salida de su gate y no el objeto del llamante (#782)", () => {
+    // Quien difunde después difunde ESTA, con su tipo. Y como es la salida
+    // del zod, mutar lo que se le pasó después no toca lo registrado (QA de
+    // #782, A3: con la referencia del llamante, una `shape` inventada escrita
+    // DESPUÉS se pintaba en una escena tipada como válida).
+    const s = makeState();
+    s.startNewSession("toledo_1200");
+    const escena = escenaExpandidaDePrueba("s1", {
+      entities: [{ id: "caja", kind: "prop", name: "Caja", cell: [3, 3], footprint: [1, 1] }],
+    });
+    const registrada = s.recordSceneLoaded("s1", escena);
+    assert.equal(s.scenes_loaded["s1"].scene_data, registrada);
+    assert.deepEqual(registrada, escena);
+    (escena.entities as Record<string, unknown>[])[0].shape = "pyramid";
+    assert.equal(registrada.entities[0].shape, undefined);
+  });
+
+  it("la carga reconstruye cada registro con la escena de su gate sin perder campos del registro (#782)", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("toledo_1200");
+    s1.recordSceneLoaded("s1", escenaExpandidaDePrueba("s1"), ["hash_a"]);
+    await s1.establecer();
+    const antes = structuredClone(s1.scenes_loaded["s1"]);
+    const s2 = new NarrativeState(storage);
+    assert.equal(await s2.loadSession(id), true);
+    assert.deepEqual(s2.scenes_loaded["s1"], antes, "tile, edges, asset_refs, loaded_at y la escena vuelven enteros");
+  });
+
   it("recordSceneLoaded rechaza una escena que viola el contrato, nombrando entity y campo", () => {
     const s = makeState();
     s.startNewSession("toledo_1200");

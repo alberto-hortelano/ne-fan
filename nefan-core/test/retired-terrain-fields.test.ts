@@ -79,7 +79,8 @@ describe("los campos de terreno retirados se rechazan por nombre", () => {
     s1.recordSceneLoaded("s1", escenaExpandidaDePrueba("s1"));
     await s1.establecer();
     const data = (await storage.read(id))!;
-    data.scenes_loaded["s1"].scene_data.terrain_legend = { w: "agua del río" };
+    // El disco no promete el tipo: esto es lo que un save anterior trae dentro.
+    (data.scenes_loaded["s1"].scene_data as Record<string, unknown>).terrain_legend = { w: "agua del río" };
     await storage.write(id, data);
     const s2 = new NarrativeState(storage);
     await assert.rejects(

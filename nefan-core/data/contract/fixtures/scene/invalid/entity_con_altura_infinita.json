@@ -1,0 +1,42 @@
+{
+  "description": "`h` FINITA (#782): `1e400` se parsea como Infinity en los dos procesos y pasaba el `> 0`; el zod lo rechaza con `.finite()` y el espejo Python con `math.isfinite` (antes se recortaba a 20 m en silencio).",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      },
+      {
+        "id": "poste",
+        "kind": "prop",
+        "name": "poste",
+        "cell": [
+          60,
+          60
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "h": 1e400
+      }
+    ]
+  }
+}

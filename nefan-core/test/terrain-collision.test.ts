@@ -11,6 +11,7 @@ import {
   type TerrainGridData,
 } from "../src/scene/terrain-collision.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
+import { escenaCargable } from "../src/scene/escena-cargable.js";
 import { TILE_MPC } from "../src/scene/tile.js";
 
 /** Interior de taberna: borde sólido "S" (el char de los grids derivados del
@@ -42,18 +43,24 @@ const desdeElWire = (tg: Record<string, unknown>): TerrainGridData =>
   JSON.parse(JSON.stringify(tg)) as TerrainGridData;
 
 /** Normaliza una escena Format D mínima (el grid va a mano, así que se marca
- *  expandida) y devuelve su `terrain_grid`, que es lo que consume el collider.
- *  Tipado como TerrainGridData para que los tests puedan construir el
- *  collider sin castear. */
-const gridDe = (terrain: string[]): TerrainGridData & { solid_chars: string[] } =>
-  formatDToWorld({
-    tile: { tx: 0, ty: 0 },
-    scene_id: "s",
-    size: { cols: terrain[0].length, rows: terrain.length, meters_per_cell: 1 },
-    terrain,
-    entities: [],
-    __expanded: true,
-  }).terrain_grid as TerrainGridData & { solid_chars: string[] };
+ *  expandida) y devuelve su `terrain_grid`, que es lo que consume el collider,
+ *  con los chars pedidos. Los chars se ponen en el grid que SALE de la
+ *  conversión: desde #782 la escena entra por la puerta, y una `W` o una `P`
+ *  no pasan su alfabeto (#464). Lo que se mide aquí es el collider. */
+const gridDe = (terrain: string[]): TerrainGridData & { solid_chars: string[] } => {
+  const w = formatDToWorld(
+    escenaCargable({
+      tile: { tx: 0, ty: 0 },
+      scene_id: "s",
+      scene_description: "sonda del collider",
+      size: { cols: terrain[0].length, rows: terrain.length, meters_per_cell: 1 },
+      terrain: terrain.map((fila) => "g".repeat(fila.length)),
+      entities: [],
+      __expanded: true,
+    }),
+  );
+  return { ...w.terrain_grid, grid: terrain, solid_chars: [...(w.terrain_grid.solid_chars ?? [])] };
+};
 
 describe("createTerrainCollider", () => {
   it("returns null without grid or without solid chars", () => {

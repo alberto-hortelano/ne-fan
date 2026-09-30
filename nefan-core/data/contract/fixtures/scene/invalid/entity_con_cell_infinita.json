@@ -1,0 +1,41 @@
+{
+  "description": "`cell` son dos números FINITOS (#782): JSON no tiene Infinity, pero `1e400` se parsea como tal en los dos procesos. El zod lo rechaza con `.finite()` y el espejo Python con `math.isfinite` (antes `int(inf)` reventaba con un OverflowError sin nombrar la entity).",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      },
+      {
+        "id": "poste",
+        "kind": "prop",
+        "name": "poste",
+        "cell": [
+          1e400,
+          60
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      }
+    ]
+  }
+}

@@ -2,6 +2,7 @@
  *  generados (re-render sin LLM) y generación encolada de tiles nuevos con el
  *  contexto de costuras de sus vecinos. */
 
+import type { ExpandedScene } from "../../src/contract/model-io/scene-schema.js";
 import {
   attachWorldVocabulary,
   broadcastScene,
@@ -62,9 +63,9 @@ export function buildGenerateTileCtx(
     const shared = rec.edges?.[oppositeEdge(edge)];
     neighbors[edge] = {
       tile: [rec.tile.tx, rec.tile.ty],
-      scene_id: String(rec.scene_data.scene_id ?? ""),
-      description: String(rec.scene_data.scene_description ?? ""),
-      biome: shared?.biome ?? String(rec.scene_data.biome ?? "grass"),
+      scene_id: rec.scene_data.scene_id,
+      description: rec.scene_data.scene_description,
+      biome: shared?.biome ?? rec.scene_data.biome ?? "grass",
       crossings: shared?.crossings ?? [],
     };
   }
@@ -154,7 +155,7 @@ export async function generateTileScene(
   ty: number,
   approachEdge?: Edge,
   opts: { placeId?: string; arranque?: { gameId: string } } = {},
-): Promise<{ sceneId: string; scene: Record<string, unknown> } | "exists"> {
+): Promise<{ sceneId: string; scene: ExpandedScene } | "exists"> {
   const key = tileKey(tx, ty);
   // El tile pudo generarse mientras esperaba en la cola.
   if (ctx.narrative.hasTile(tx, ty)) return "exists";
@@ -212,10 +213,12 @@ export async function generateTileScene(
   const expanded = expandScenePrimitives(res.scene);
   // Sin activar: la escena activa la decide la POSICIÓN del jugador (el
   // prefetch no roba el tile actual). La ENTRADA sí: es donde está el jugador.
-  if (opts.arranque) ctx.narrative.recordSceneLoaded(key, expanded);
-  else ctx.narrative.recordSceneLoaded(key, expanded, [], { activate: false });
+  // Se difunde la escena REGISTRADA, que es la que tiene tipo (#782).
+  const escena = opts.arranque
+    ? ctx.narrative.recordSceneLoaded(key, expanded)
+    : ctx.narrative.recordSceneLoaded(key, expanded, [], { activate: false });
   await ctx.narrative.save();
-  return { sceneId: key, scene: expanded };
+  return { sceneId: key, scene: escena };
 }
 
 /** Genera el tile (tx,ty) — corre DENTRO de la cola (un job a la vez). Captura

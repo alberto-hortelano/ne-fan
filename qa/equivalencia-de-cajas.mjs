@@ -30,6 +30,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { formatDToWorld } from "../nefan-core/dist/src/scene/scene-normalize.js";
+import { escenaCargable } from "../nefan-core/dist/src/scene/escena-cargable.js";
 import { aabbBloquea } from "../nefan-core/dist/src/simulation/obstaculos-del-jugador.js";
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -92,7 +93,7 @@ const filas = [];
 
 for (const fichero of readdirSync(ESCENAS).filter((f) => f.endsWith(".json")).sort()) {
   const escena = JSON.parse(readFileSync(path.join(ESCENAS, fichero), "utf8"));
-  const world = formatDToWorld(escena);
+  const world = formatDToWorld(escenaCargable(escena));
   // Como los monta el cliente: cada objeto de la world scene es una entity que
   // DECLARA este tile (`carga-de-tile.ts`), con su huella en metros.
   const objetos = (world.objects ?? []).map((o) => ({

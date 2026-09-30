@@ -1,0 +1,42 @@
+{
+  "description": "`shape` fuera del enum (#782): el zod la rechaza, y hasta #782 el espejo Python la DESCARTABA en silencio y `formatDToWorld` la toleraba cayendo a caja. Los dos gates la rechazan.",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      },
+      {
+        "id": "poste",
+        "kind": "prop",
+        "name": "poste",
+        "cell": [
+          60,
+          60
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "shape": "pyramid"
+      }
+    ]
+  }
+}

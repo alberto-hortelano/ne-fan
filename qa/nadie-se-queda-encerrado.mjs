@@ -93,6 +93,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { formatDToWorld } from "../nefan-core/dist/src/scene/scene-normalize.js";
+import { escenaCargable } from "../nefan-core/dist/src/scene/escena-cargable.js";
 import { planCollisionGrid } from "../nefan-core/dist/src/scene/blueprint/plan-collision.js";
 import { createTerrainCollider, PLAYER_RADIUS_M } from "../nefan-core/dist/src/scene/terrain-collision.js";
 import { penetracionEnSolido, solidoBloquea, TOPE_MARCHA_M } from "../nefan-core/dist/src/simulation/salida-del-solido.js";
@@ -223,7 +224,7 @@ function penetracionDeReferencia(suelo, x, z, radio) {
  *  PASO, que es la que se sabotea. */
 function mundoDeLaFixture(nombre) {
   const crudo = JSON.parse(readFileSync(path.join(RAIZ, "nefan-core/data/scenes", `${nombre}.json`), "utf8"));
-  const w = formatDToWorld(crudo);
+  const w = formatDToWorld(escenaCargable(crudo));
   const rect = w.world_rect;
   // EL PLAN COMPUESTO (`__plan`), que es el que instala el cliente
   // (`world/carga-de-tile.ts:335`) y el que rasteriza el bridge — NO los

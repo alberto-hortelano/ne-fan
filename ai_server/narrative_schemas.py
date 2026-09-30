@@ -674,6 +674,19 @@ def validate_volumes(raw, *, field: str = "volumes"):
     return clean
 
 
+def _es_finito(v) -> bool:
+    """¿Es `v` un número FINITO tal como lo vería el zod (#782)?
+
+    `math.isfinite` no basta: un entero de 401 cifras es JSON válido, `json`
+    lo lee como `int` EXACTO y `math.isfinite`/`float()` lanzan
+    `OverflowError` sin nombrar la entity. En JS ese mismo texto es `Infinity`
+    y el zod lo rechaza con su motivo: aquí también, con el mismo."""
+    try:
+        return math.isfinite(float(v))
+    except OverflowError:
+        return False
+
+
 def validate_scene_response(data: dict) -> dict:
     """Valida y normaliza una escena Map Format D del LLM.
 
@@ -877,6 +890,13 @@ def validate_scene_response(data: dict) -> dict:
             and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in cell)
         ):
             raise ValueError(f"entity '{eid}': `cell` debe ser [col, row] numérico")
+        # FINITA (#782, espejo del `.finite()` del zod): `1e400` se lee como
+        # `inf`, y aquí `int(inf)` reventaba con un OverflowError sin decir de
+        # qué entity. La MISMA frase que MOTIVO_CELL_FINITA.
+        if not all(_es_finito(v) for v in cell):
+            raise ValueError(
+                f"entity '{eid}': `cell` son dos números FINITOS [col,row] (1e400 se lee como Infinity)"
+            )
         col = max(0, min(int(cell[0]), cols - 1))
         row = max(0, min(int(cell[1]), rows - 1))
 
@@ -918,9 +938,18 @@ def validate_scene_response(data: dict) -> dict:
             "cell": [col, row],
             "footprint": [w, h],
         }
-        if ent.get("shape") in ("box", "cylinder", "sphere", "cone"):
+        # Forma: espejo del `z.enum` del zod. Hasta #782 una `shape` fuera del
+        # enum se DESCARTABA aquí en silencio (y `formatDToWorld` la toleraba
+        # cayendo a caja): el zod la rechaza, así que por esta vía también.
+        if "shape" in ent:
+            if ent["shape"] not in ("box", "cylinder", "sphere", "cone"):
+                raise ValueError(
+                    # La MISMA frase que `motivoDeShapeInvalida` en el zod.
+                    f"entity '{eid}': `shape` '{ent['shape']}' no es una forma; "
+                    "las únicas son box | cylinder | sphere | cone"
+                )
             clean_ent["shape"] = ent["shape"]
-        # Altura en METROS. Espejo exacto del zod (`h: z.number().positive()`):
+        # Altura en METROS. Espejo exacto del zod (`h: z.number().finite().positive()`):
         # `h ≤ 0` o no numérica LANZA, y una altura grande se CONSERVA tal cual
         # — el recorte a 20 m lo hace `formatDToWorld` al normalizar, en las
         # dos vías por igual. Hasta la QA de #400 esto descartaba en silencio
@@ -928,6 +957,13 @@ def validate_scene_response(data: dict) -> dict:
         # la altura se perdía solo por la vía de API directa.
         if "h" in ent:
             altura = ent["h"]
+            # FINITA (#782, espejo del `.finite()` del zod): `1e400` se lee como
+            # `inf` y pasaba el `> 0`. La MISMA frase que MOTIVO_H_FINITA.
+            if isinstance(altura, (int, float)) and not isinstance(altura, bool) and not _es_finito(altura):
+                raise ValueError(
+                    f"entity '{eid}': `h` es la altura en metros y debe ser un número FINITO > 0 "
+                    "(1e400 se lee como Infinity)"
+                )
             if not isinstance(altura, (int, float)) or isinstance(altura, bool) or altura <= 0:
                 raise ValueError(f"entity '{eid}': `h` es la altura en metros y debe ser un número > 0 ({altura!r})")
             clean_ent["h"] = float(altura)
