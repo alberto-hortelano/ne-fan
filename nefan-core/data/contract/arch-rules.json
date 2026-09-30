@@ -354,11 +354,12 @@
     },
     {
       "id": "handlers-sin-servidor",
-      "desc": "Los handlers del State API y su despacho no conocen el transporte HTTP",
-      "why": "Es el criterio de aceptación de #225 convertido en checker. `handle` era una cadena de 441 líneas con ocho parámetros posicionales que empezaban por `IncomingMessage`: para ejercer una sola ruta había que abrir un puerto, y por eso las tres tandas que iban a editar ahí (#179, #195, #224) habrían aterrizado todas en el mismo fichero. La definición FALSABLE de «probable sola» es que la pieza se invoque sin levantar un servidor, y hace falta un checker porque `bridge/` NO está en el reparto de data/contract/mutation-targets.json: no hay score de mutación que lo demuestre por nosotros. El patrón caza las cuatro formas de volver a atarlo al transporte —importar node:http, nombrar IncomingMessage o ServerResponse, o llamar a createServer—; la primera es también un import, pero el motor de reglas solo admite `imports` o `text`, nunca los dos, y como `node:http` aparece igualmente en el texto del import, el patrón de texto las cubre todas. `state-http-server.ts` NO entra en `files`: ahí es donde el transporte tiene que vivir, y es su único sitio.",
+      "desc": "Los handlers del State API y su despacho, y los del asset-store, no conocen el transporte HTTP",
+      "why": "Es el criterio de aceptación de #225 convertido en checker. `handle` era una cadena de 441 líneas con ocho parámetros posicionales que empezaban por `IncomingMessage`: para ejercer una sola ruta había que abrir un puerto, y por eso las tres tandas que iban a editar ahí (#179, #195, #224) habrían aterrizado todas en el mismo fichero. La definición FALSABLE de «probable sola» es que la pieza se invoque sin levantar un servidor, y hace falta un checker porque `bridge/` NO está en el reparto de data/contract/mutation-targets.json: no hay score de mutación que lo demuestre por nosotros. El patrón caza las cuatro formas de volver a atarlo al transporte —importar node:http, nombrar IncomingMessage o ServerResponse, o llamar a createServer—; la primera es también un import, pero el motor de reglas solo admite `imports` o `text`, nunca los dos, y como `node:http` aparece igualmente en el texto del import, el patrón de texto las cubre todas. `state-http-server.ts` NO entra en `files`: ahí es donde el transporte tiene que vivir, y es su único sitio. `services/asset-store/rutas.ts` entra con la tanda BR, por el mismo criterio: el router del store dejó de ser trece `if` sobre un `IncomingMessage` para ser una tabla derivada de `AssetStoreApi`, y sus handlers se invocan sin socket; el transporte del store vive en `services/asset-store/http-server.ts`, que tampoco entra.",
       "severity": "error",
       "files": [
-        "nefan-core/bridge/state-http/**/*.ts"
+        "nefan-core/bridge/state-http/**/*.ts",
+        "nefan-core/services/asset-store/rutas.ts"
       ],
       "text": {
         "pattern": "node:http|\\bIncomingMessage\\b|\\bServerResponse\\b|\\bcreateServer\\s*\\("

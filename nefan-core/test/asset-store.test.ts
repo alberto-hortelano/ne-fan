@@ -21,7 +21,10 @@ import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 
 import type { AssetByHashResponse, AssetKind } from "../src/contracts/asset-store.js";
-import { refDeArteDePersonaje } from "../src/contracts/asset-store.js";
+import { AssetStoreApi, refDeArteDePersonaje } from "../src/contracts/asset-store.js";
+import { fillPath } from "../src/contracts/http.js";
+import { casarRuta, matchStylesRoute, parseRequestPath } from "../services/asset-store/http-wire.js";
+import { RUTAS, type AssetStoreRouteKey } from "../services/asset-store/rutas.js";
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { loadAssetStoreConfig } from "../services/asset-store/config.js";
 import { createAssetStoreServer } from "../services/asset-store/http-server.js";
@@ -365,6 +368,59 @@ describe("cable de rutas del store: las URL raras (caracterizadas antes del rout
     const falta = await getRaw("/styles/medievo_crudo/faces/no-existe.jpg");
     assert.equal(falta.status, 404);
     assert.doesNotMatch(falta.body.toString(), /no route/);
+  });
+});
+
+/** El router del store ES su contrato (tanda BR): la tabla de handlers es un
+ *  `Record` sobre las claves de `AssetStoreApi`, y qué clave contesta una URL
+ *  lo decide `matchRoute` por especificidad. */
+describe("el router del store es AssetStoreApi", () => {
+  it("cada endpoint, rellenado con fillPath, vuelve a SU clave: ninguna URL del contrato es ambigua", () => {
+    // `getSpriteHero` es el caso que lo justifica: `/cache/sprite_hero/abc`
+    // casa también `getBlob` (`/cache/{kind}/{hash}`), que va ANTES en la
+    // tabla. Con la precedencia por orden este bucle se pone rojo ahí.
+    for (const [nombre, ep] of Object.entries(AssetStoreApi)) {
+      const params: Record<string, string> = {};
+      for (const m of ep.path.matchAll(/\{(\w+)\}/g)) params[m[1]] = "abc";
+      const match = casarRuta(AssetStoreApi, ep.method, parseRequestPath(fillPath(ep.path, params)));
+      assert.ok(match, `${nombre}: ${ep.method} ${ep.path} no casa consigo mismo`);
+      assert.equal(match.key, nombre);
+      assert.deepEqual(match.params, params);
+    }
+  });
+
+  it("la tabla de handlers cubre el contrato entero, y nada más", () => {
+    // En compilación: falta una clave o sobra una, y esto no compila (lo
+    // mismo que la anotación de `RUTAS`; aquí queda a la vista del test).
+    const exhaustiva: Record<AssetStoreRouteKey, unknown> = RUTAS;
+    // En ejecución, por si alguien lo afloja con un cast.
+    assert.deepEqual(Object.keys(exhaustiva).sort(), Object.keys(AssetStoreApi).sort());
+    for (const handler of Object.values(RUTAS)) assert.equal(typeof handler, "function");
+  });
+
+  it("una literal casa con el path ENTERO; una con {param}, con los segmentos", () => {
+    const literal = casarRuta(AssetStoreApi, "POST", parseRequestPath("/cache//prune"));
+    assert.equal(literal, null, "la barra doble no se colapsa en una literal");
+    assert.equal(casarRuta(AssetStoreApi, "POST", parseRequestPath("/cache/prune/"))?.key, "prune");
+    assert.deepEqual(casarRuta(AssetStoreApi, "GET", parseRequestPath("/cache//surface/h")), {
+      key: "getBlob",
+      params: { kind: "surface", hash: "h" },
+    });
+    assert.equal(casarRuta(AssetStoreApi, "GET", parseRequestPath("/")), null);
+  });
+
+  it("matchStylesRoute (el que usa el motor falso) sale de la misma tabla: 3 o 4 segmentos", () => {
+    assert.deepEqual(matchStylesRoute("GET", ["styles", "x", "cover.jpg"]), { styleId: "x", file: "cover.jpg" });
+    assert.deepEqual(matchStylesRoute("GET", ["styles", "x", "faces", "f.jpg"]), {
+      styleId: "x",
+      file: "faces/f.jpg",
+    });
+    assert.equal(matchStylesRoute("GET", ["styles", "x", "a", "b", "c"]), null);
+    assert.equal(matchStylesRoute("GET", ["styles", "x"]), null);
+    assert.equal(matchStylesRoute("POST", ["styles", "x", "cover.jpg"]), null);
+    // Solo las de estilos: una URL de otra ruta del store no es de estilos.
+    assert.equal(matchStylesRoute("GET", ["cache", "surface", "h"]), null);
+    assert.equal(matchStylesRoute("GET", ["health"]), null);
   });
 });
 

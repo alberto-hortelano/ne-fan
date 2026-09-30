@@ -597,6 +597,10 @@
         {
           "test": "test/bridge-despertar.test.ts",
           "porque": "Importa `dispatchStateRequest` solo para llamar a UNA ruta, `POST /despertar/validar`, por el mismo despachador que el servidor (#613, tanda BN). Lo que afirma es la regla del despertar y el zod de su cuerpo, no el despacho: un mutante de `dispatch.ts` que rompiera el enrutado ya lo matan los tests de esta batería, y meterlo aquí haría pagar a cada mutante tres partidas del bridge con su motor falso."
+        },
+        {
+          "test": "test/asset-store.test.ts",
+          "porque": "Importa `fillPath` para probar que cada endpoint de `AssetStoreApi` vuelve a su clave por el router del store (tanda BR). Lo que afirma es el contrato del asset-store y su cable HTTP, no la regla del matcher: la precedencia por especificidad —lo único que el store le pidió a `matchRoute`— la matan los tests sintéticos de `test/state-http-dispatch.test.ts`, en los dos órdenes y con empate. Meterlo aquí haría pagar a cada mutante de `http.ts` un servidor HTTP y una base SQLite con sus 49 casos. Sigue en la batería de `asset-store-contrato`, que es la suya."
         }
       ],
       "break": 100,
