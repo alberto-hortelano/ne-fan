@@ -23,8 +23,8 @@
  *       tabernero con su texto.
  *   3 · SE PUSO A PELEAR: de vuelta al lado del tabernero, texto libre con la
  *       marca, el jugador ATACA (un golpe al aire, quieto a su lado) antes de
- *       que llegue, se suelta → registro, con la pista «cuando acabe la
- *       pelea». Es el caso de H1a: Brasco bajó de 60 a 21 antes de la réplica.
+ *       que llegue, se suelta → registro. Es el caso de H1a (Brasco bajó de 60
+ *       a 21 antes de la réplica); sin hostil enganchado, con la pista neutra.
 
  *  El motor falso RETIENE la réplica (`MARCA_REPLICA_TARDIA`, `POST
  *  /dev/soltar-replica`) en vez de tardar un tiempo fijo: el jugador tiene que
@@ -235,9 +235,12 @@ export default async function (ctx) {
   }));
   ctx.log(`línea (pelea): ${JSON.stringify(lineaPelea)} · tras llegar: ${JSON.stringify(trasPelear)}`);
   ctx.expect("haber ATACADO mientras el motor pensaba: la réplica NO abre el panel", trasPelear.panel === false, JSON.stringify(trasPelear));
+  // El golpe es al aire y el bandido está muerto: no hay nadie con quien
+  // pelear, así que la pista es la NEUTRA (QA de BW, hallazgo 4). La de «cuando
+  // acabe la pelea» exige un hostil enganchado; la mide `bridge-dialogue`.
   ctx.expect(
-    "…va al registro con la pista de volver cuando acabe la pelea",
-    typeof lineaPelea === "string" && lineaPelea.includes("(vuelve a hablarle cuando acabe la pelea)"),
+    "…va al registro con la pista neutra: sin nadie enganchado no se habla de una pelea",
+    typeof lineaPelea === "string" && lineaPelea.includes("(vuelve a hablarle con E)") && !lineaPelea.includes("pelea)"),
     JSON.stringify(lineaPelea),
   );
   await ctx.shot("replica-tras-atacar-en-el-registro");

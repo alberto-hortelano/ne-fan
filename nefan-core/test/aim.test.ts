@@ -239,20 +239,28 @@ describe("barra de vida del enemigo en el HUD", () => {
     assert.equal(ALCANCE_DEL_NOMBRE_M, 18);
   });
 
-  it("lejos y suelto (otro tile, o tras despertar) → oculta", () => {
-    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, distanciaM: 64 }), false);
+  it("lejos y suelto (tras despertar) → oculta", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, mismoTile: true, distanciaM: 30 }), false);
   });
 
-  it("lejos pero enganchado (la pelea es con él) → visible", () => {
-    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: true, distanciaM: 64 }), true);
+  it("lejos pero enganchado en el MISMO tile (la pelea es con él) → visible", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: true, mismoTile: true, distanciaM: 30 }), true);
+  });
+
+  it("enganchado pero en OTRO tile y lejos (huiste por «Salidas») → oculta", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: true, mismoTile: false, distanciaM: 54 }), false);
+  });
+
+  it("en otro tile pero al alcance del nombre (al otro lado del borde) → visible", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, mismoTile: false, distanciaM: 10 }), true);
   });
 
   it("suelto justo al alcance del nombre → visible; un palmo más allá → oculta", () => {
-    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, distanciaM: 18 }), true);
-    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, distanciaM: 18.01 }), false);
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, mismoTile: true, distanciaM: 18 }), true);
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, mismoTile: true, distanciaM: 18.01 }), false);
   });
 
-  it("muerto → oculta, aunque esté enganchado y al lado", () => {
-    assert.equal(barraDeEnemigoVisible({ vivo: false, enganchado: true, distanciaM: 1 }), false);
+  it("muerto → oculta, aunque esté enganchado, en el tile y al lado", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: false, enganchado: true, mismoTile: true, distanciaM: 1 }), false);
   });
 });

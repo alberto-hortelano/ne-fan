@@ -450,7 +450,7 @@ const fixtures = crearFixturesDelSelector({
 });
 
 /** Las barras de vida de los enemigos: `ui/barras-de-enemigo.ts`. */
-const barrasDeEnemigo = crearBarrasDeEnemigo({ contenedor: enemyBarsContainer, mundo });
+const barrasDeEnemigo = crearBarrasDeEnemigo({ contenedor: enemyBarsContainer, mundo, tiles: tileStore });
 const rebuildEnemyBars = (): void => barrasDeEnemigo.reconstruir();
 
 // --- Collision (lógica en world/collision.ts; aquí solo el cableado) ---
@@ -594,14 +594,14 @@ function gameLoop(now: number): void {
     // peticiones al motor. Es el único sitio del juego donde una tecla GASTA,
     // así que no se auto-dispara: el jugador confirma.
     frontera.tick(playerPos.x, playerPos.z);
+  }
 
-    // Activación por posición: al pisar otro tile, refrescar la "escena
-    // activa" del cliente (imagen IA, exits). El bridge hace lo propio con
-    // NarrativeState en su handler de input.
-    const under = tileStore.getAt(playerPos.x, playerPos.z);
-    if (under && under.key !== mundo.tileActivo) {
-      setActiveClientTile(under.key);
-    }
+  // Activación por posición (el bridge hace lo propio en su input), FUERA del
+  // movimiento: un viaje te pone en el tile nuevo sin andar, y con un panel
+  // abierto el cliente se quedaba en el de salida (QA de BW, guion 344).
+  const under = tileStore.getAt(playerPos.x, playerPos.z);
+  if (under && under.key !== mundo.tileActivo) {
+    setActiveClientTile(under.key);
   }
 
   // Con quién se puede hablar aquí: el NPC vivo más cercano dentro del alcance

@@ -6,13 +6,15 @@
  *  OCULTARSE cuando su enemigo no le importa al jugador —lo que salió jugando:
  *  la de Brasco seguía arriba tras despertar en la posada y tras viajar a otro
  *  tile—, y esa regla es de core (`barraDeEnemigoVisible`, el mismo alcance
- *  que el nombre flotante). Aquí solo se pinta.
+ *  que el nombre flotante, más «enganchado y en el mismo tile»). Aquí solo se
+ *  pinta; el tile de cada cuerpo se pregunta al almacén de tiles.
  *
  *  Se oculta y no se borra: `#hp-text-<id>` sigue en el DOM para quien lo lea
  *  por id (los guiones del banco y `qa/lib/combate.mjs`). */
 
 import { barraDeEnemigoVisible } from "@nefan-core/src/scene/aim.js";
 import type { MundoDelCliente } from "../world/mundo-del-cliente.js";
+import type { Entity } from "../renderer/types.js";
 
 export interface BarrasDeEnemigo {
   /** Rehace una barra por enemigo del mundo (al cargar un tile o un spawn). */
@@ -25,8 +27,11 @@ export interface BarrasDeEnemigo {
 export function crearBarrasDeEnemigo(deps: {
   contenedor: HTMLElement;
   mundo: MundoDelCliente;
+  /** Qué tile hay bajo un punto (`undefined` fuera del mundo cargado). */
+  tiles: { getAt(x: number, z: number): { key: string } | undefined | null };
 }): BarrasDeEnemigo {
-  const { contenedor, mundo } = deps;
+  const { contenedor, mundo, tiles } = deps;
+  const tileEn = (x: number, z: number): string | null => tiles.getAt(x, z)?.key ?? null;
   return {
     reconstruir(): void {
       contenedor.innerHTML = "";
@@ -61,20 +66,33 @@ export function crearBarrasDeEnemigo(deps: {
     },
 
     actualizar(jugador): void {
+      const tileDelJugador = tileEn(jugador.x, jugador.z);
       for (const ee of mundo.enemigos) {
-        const bar = document.getElementById(`hp-${ee.id}`);
-        const text = document.getElementById(`hp-text-${ee.id}`);
-        if (bar) bar.style.width = Math.max(0, (ee.hp ?? 0) / (ee.maxHp ?? 1) * 100) + "%";
-        if (text) text.textContent = Math.ceil(ee.hp ?? 0).toString();
+        const text = pintarCifras(ee);
         const vital = text?.parentElement;
-        if (vital) {
-          vital.hidden = !barraDeEnemigoVisible({
-            vivo: ee.alive,
-            enganchado: ee.enganchado === true,
-            distanciaM: Math.hypot(ee.pos.x - jugador.x, ee.pos.z - jugador.z),
-          });
-        }
+        if (vital) vital.hidden = !visible(ee, jugador, tileDelJugador);
       }
     },
   };
+
+  /** Si se ve la barra de `ee`: la regla es de core; aquí solo se le dan los
+   *  datos, con el tile de cada uno preguntado al almacén. */
+  function visible(ee: Entity, jugador: { x: number; z: number }, tileDelJugador: string | null): boolean {
+    return barraDeEnemigoVisible({
+      vivo: ee.alive,
+      enganchado: ee.enganchado === true,
+      mismoTile: tileDelJugador !== null && tileEn(ee.pos.x, ee.pos.z) === tileDelJugador,
+      distanciaM: Math.hypot(ee.pos.x - jugador.x, ee.pos.z - jugador.z),
+    });
+  }
+}
+
+/** El ancho del relleno y la cifra de la barra de `ee`; devuelve la cifra (de
+ *  su padre cuelga la visibilidad). */
+function pintarCifras(ee: Entity): HTMLElement | null {
+  const bar = document.getElementById(`hp-${ee.id}`);
+  const text = document.getElementById(`hp-text-${ee.id}`);
+  if (bar) bar.style.width = Math.max(0, (ee.hp ?? 0) / (ee.maxHp ?? 1) * 100) + "%";
+  if (text) text.textContent = Math.ceil(ee.hp ?? 0).toString();
+  return text;
 }

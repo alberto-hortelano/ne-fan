@@ -54,6 +54,12 @@
       "llamada": "waitFor",
       "desc": "\"el error de kind tile llegó a un cable abierto de la página\"",
       "porque": "Otro cable pide el tile (1,0) con el fake en `mode:\"error\"`: el BRIDGE corre la generación del tile, falla y difunde el `narrative_status/error` de kind `tile`, que es el sujeto de la espera. Llevaba el mismo literal de 20 s (QA de #694, H3)."
+    },
+    {
+      "fichero": "qa/guiones/344-la-replica-que-llega-con-el-viaje-en-marcha.mjs",
+      "llamada": "waitFor",
+      "desc": "\"el viaje al Molino llega\"",
+      "porque": "El viaje por «Salidas» al Molino: lo que se espera es que el BRIDGE genere y difunda el tile del lugar (con el motor falso retrasado 15 s a propósito, para que la réplica llegue con el viaje en marcha) y que el cliente lo dé por llegado. El sujeto es el tile, no el jugador. Guion de la QA de la tanda BW."
     }
   ],
   "lectores": [

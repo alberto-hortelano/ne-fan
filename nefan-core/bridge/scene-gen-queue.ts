@@ -122,6 +122,15 @@ export class SceneGenQueue {
     }
   }
 
+  /** ¿Hay un VIAJE en curso? = un job BLOQUEANTE en vuelo o en cola: lo que el
+   *  jugador está esperando para llegar a otro sitio (salida de «Salidas»,
+   *  frontera confirmada, el tile de arranque). Los prefetch no cuentan. Lo lee
+   *  la entrega de la réplica del motor (`narrative/entrega-de-la-replica.ts`,
+   *  tanda BW): la réplica que llega con el viaje en marcha no abre el panel. */
+  get viajeEnCurso(): boolean {
+    return (this.inFlight?.blocking ?? false) || this.queue.some((j) => j.blocking);
+  }
+
   /** Keys pendientes (sin contar el job en vuelo), en orden de despacho. */
   get pending(): string[] {
     return this.queue.map((j) => j.key);

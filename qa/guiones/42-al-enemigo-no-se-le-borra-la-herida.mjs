@@ -238,18 +238,22 @@ export default async function (ctx) {
     typeof vidaTrasViajar === "number",
     `#hp-text-${BANDIDO} = ${JSON.stringify(vidaTrasViajar)}`,
   );
-  // Y se VE (tanda BW, H2): desde que la barra se oculta cuando su enemigo no
-  // le importa al jugador, leer la cifra por id ya no dice que el jugador la
-  // vea. El bandido le tiene enganchado —la pelea es con él—, así que sigue
-  // a la vista aunque se haya quedado lejos, en el otro tile.
-  const barraVisible = await ctx.page.evaluate(
-    (eid) => document.getElementById(`hp-text-${eid}`)?.parentElement?.hidden === false,
-    BANDIDO,
-  );
+  // Y se VE si le importa al jugador (tanda BW, H2): enganchado, su barra se
+  // ve si está al alcance del nombre (18 m) o en el MISMO tile. Leer la cifra
+  // por id ya no dice que el jugador la vea. Aquí se afirma la mitad que no
+  // depende de por dónde fue la persecución (a ≤ 18 m, se ve); la otra —en otro
+  // tile y lejos, no— la mide el guion 345.
+  const vista = await ctx.page.evaluate((eid) => {
+    const e = window.__nefan.enemies().find((x) => x.id === eid);
+    const p = window.__nefan.state().pos;
+    const d = e ? Math.hypot(e.pos.x - p.x, e.pos.z - p.z) : null;
+    return { d, oculta: document.getElementById(`hp-text-${eid}`)?.parentElement?.hidden ?? null };
+  }, BANDIDO);
+  ctx.log(`barra de ${BANDIDO} tras el viaje: ${JSON.stringify(vista)}`);
   ctx.expect(
-    "la barra del enemigo que te tiene enganchado se VE tras cambiar de tile (no solo está en el DOM)",
-    barraVisible,
-    `.nf-vital de ${BANDIDO} hidden=${!barraVisible}`,
+    "al alcance del nombre, la barra del enemigo enganchado se VE tras cambiar de tile",
+    vista.d === null || vista.d > 18 || vista.oculta === false,
+    JSON.stringify(vista),
   );
   const trasViajar = await medir(ctx, BANDIDO);
   ctx.log(`${BANDIDO} tras el viaje: ${JSON.stringify(trasViajar)}`);

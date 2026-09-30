@@ -355,7 +355,7 @@ describe("bridge: la réplica tardía no abre el panel (tanda BW)", () => {
   it("el jugador se aleja más allá del alcance del nombre → replica_diferida «lejos»", async () => {
     const effects = await replicaCon(({ store }) => store.dispatch("player_moved", { pos: [0, 0, 40] }));
     assert.deepEqual(effects, [
-      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "lejos" },
+      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "lejos", hayPelea: false },
     ]);
   });
 
@@ -364,8 +364,27 @@ describe("bridge: la réplica tardía no abre el panel (tanda BW)", () => {
       narrative.world.active_scene_id = "tile_0_-1";
     });
     assert.deepEqual(effects, [
-      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "otro_tile" },
+      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "otro_tile", hayPelea: false },
     ]);
+  });
+
+  it("el jugador pide un VIAJE mientras el motor piensa y aún no ha llegado → replica_diferida «viaje» (QA, 344)", async () => {
+    const effects = await replicaCon(({ ctx }) => {
+      // Un viaje bloqueante que no termina durante el test: el tile y la
+      // posición son aún los de salida, como en el guion 344.
+      ctx.sceneGen.enqueue({ key: "place_molino", blocking: true, run: () => new Promise(() => {}) });
+      assert.equal(ctx.sceneGen.viajeEnCurso, true, "premisa: hay un viaje en curso");
+    });
+    assert.deepEqual(effects, [
+      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "viaje", hayPelea: false },
+    ]);
+  });
+
+  it("un PREFETCH en curso no es un viaje: el panel se abre", async () => {
+    const effects = await replicaCon(({ ctx }) => {
+      ctx.sceneGen.enqueue({ key: "tile_1_0", blocking: false, run: () => new Promise(() => {}) });
+    });
+    assert.equal(effects[0]?.kind, "show_dialogue");
   });
 
   const input = (atacar: boolean) => ({
@@ -382,7 +401,18 @@ describe("bridge: la réplica tardía no abre el panel (tanda BW)", () => {
       assert.equal(sim.ataquesDelJugador, antes + 1, "premisa: el ataque empezó");
     });
     assert.deepEqual(effects, [
-      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "combate" },
+      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "combate", hayPelea: false },
+    ]);
+  });
+
+  it("atacar CON un hostil enganchado → «combate» con hayPelea (la pista de la pelea)", async () => {
+    const effects = await replicaCon(({ sim }) => {
+      sim.addCombatant(createCombatant("brasco", 60, "short_sword", { x: 0, y: 0, z: 2 }), bravucon);
+      sim.tick(0.016, input(true));
+      assert.equal(sim.jugadorEnCombate, true, "premisa: Brasco le tiene enganchado");
+    });
+    assert.deepEqual(effects, [
+      { kind: "replica_diferida", speaker: "Orio", text: TEXTO, speakerId: "orio", motivo: "combate", hayPelea: true },
     ]);
   });
 

@@ -24,8 +24,15 @@
  *      HUECO CONOCIDO, y no se cierra aquí: si un hostil te pega y TÚ no has
  *      atacado, la réplica abre el panel igual. Cerrarlo pide rehacer el banco:
  *      21 guiones hablan hoy con el tabernero con el bandido enganchado;
- *   2. el jugador está en OTRO TILE que cuando se pidió (`active_scene_id`);
- *   3. el hablante está más LEJOS que el alcance del nombre del HUD
+ *   2. hay un VIAJE EN CURSO al llegar la réplica: el jugador pidió ir a otro
+ *      sitio y el motor aún lo está generando (un job BLOQUEANTE en la cola de
+ *      generación del bridge: salida de «Salidas», frontera confirmada). Es el
+ *      orden más probable con un motor real (la réplica tarda segundos, el
+ *      tile minutos) y lo cazó la QA de la tanda (guion 344): el tile y la
+ *      posición son aún los de salida, así que sin esto la réplica abría el
+ *      panel detrás del «Viajando…» y seguía abierta en el destino;
+ *   3. el jugador está en OTRO TILE que cuando se pidió (`active_scene_id`);
+ *   4. el hablante está más LEJOS que el alcance del nombre del HUD
  *      (`ALCANCE_DEL_NOMBRE_M`). Sin posición del hablante —el narrador, o un
  *      nombre sin entidad detrás— esta pregunta no se hace.
  *
@@ -45,7 +52,7 @@ import { ALCANCE_DEL_NOMBRE_M } from "../scene/aim.js";
 import type { ConsequenceEffect } from "./types.js";
 
 /** Por qué la réplica ya no era la conversación actual. */
-export type MotivoDeDiferir = "combate" | "otro_tile" | "lejos";
+export type MotivoDeDiferir = "combate" | "viaje" | "otro_tile" | "lejos";
 
 /** El effect de una réplica que llegó tarde: lo que dijo el hablante, sin
  *  panel. Es un kind PROPIO y no un `show_dialogue` con una bandera a
@@ -60,6 +67,11 @@ export interface ReplicaDiferidaEffect {
   /** La entidad que habla, si el bridge la resolvió. */
   speakerId?: string;
   motivo: MotivoDeDiferir;
+  /** ¿Hay una pelea DE VERDAD al llegar (algún hostil vivo le tiene
+   *  enganchado)? Solo elige la pista: un golpe al aire cuenta como «se puso
+   *  a pelear» (motivo `combate`), pero sin nadie enfrente decirle «cuando
+   *  acabe la pelea» le habla de una pelea que no existe. */
+  hayPelea: boolean;
 }
 
 interface PuntoXZ {
@@ -74,6 +86,10 @@ export interface ContextoDeLaReplica {
   escenaAhora: string | null;
   /** ¿Ha empezado el jugador algún ataque entre el pedir y el llegar? */
   atacoDesdeQuePidio: boolean;
+  /** ¿Hay un viaje pedido y todavía sin llegar? */
+  viajeEnCurso: boolean;
+  /** ¿Algún hostil vivo le tiene enganchado al llegar? Solo elige la pista. */
+  hayPelea: boolean;
   jugador: PuntoXZ;
 }
 
@@ -82,6 +98,7 @@ export type Vigencia = { vigente: true } | { vigente: false; motivo: MotivoDeDif
 /** ¿Sigue siendo la conversación actual? Ver el orden en la cabecera. */
 export function vigenciaDeLaReplica(ctx: ContextoDeLaReplica, hablante?: PuntoXZ): Vigencia {
   if (ctx.atacoDesdeQuePidio) return { vigente: false, motivo: "combate" };
+  if (ctx.viajeEnCurso) return { vigente: false, motivo: "viaje" };
   if (ctx.escenaAlPedir !== ctx.escenaAhora) return { vigente: false, motivo: "otro_tile" };
   if (hablante && Math.hypot(hablante.x - ctx.jugador.x, hablante.z - ctx.jugador.z) > ALCANCE_DEL_NOMBRE_M) {
     return { vigente: false, motivo: "lejos" };
@@ -108,18 +125,20 @@ export function entregarReplica(
       text: e.text,
       ...(e.speakerId ? { speakerId: e.speakerId } : {}),
       motivo: v.motivo,
+      hayPelea: ctx.hayPelea,
     };
   });
 }
 
 /** La línea del registro con la que el cliente pinta una réplica diferida.
  *  Aquí y no en el cliente porque la pista depende del motivo, y esa es una
- *  decisión: si el jugador está peleando, «vuelve a hablarle con E» le
- *  invita a soltar la pelea a medias; se dice «cuando acabe la pelea». Sin
+ *  decisión: si el jugador está peleando CON ALGUIEN, «vuelve a hablarle con
+ *  E» le invita a soltar la pelea a medias; se dice «cuando acabe la pelea».
+ *  Un golpe al aire sin nadie enganchado lleva la pista neutra. Sin
  *  entidad detrás no hay a quién volver a hablarle. */
 export function lineaDeReplicaDiferida(r: ReplicaDiferidaEffect): string {
   const dicho = `💬 ${r.speaker}: «${r.text}»`;
   if (!r.speakerId) return dicho;
-  if (r.motivo === "combate") return `${dicho} (vuelve a hablarle cuando acabe la pelea)`;
+  if (r.motivo === "combate" && r.hayPelea) return `${dicho} (vuelve a hablarle cuando acabe la pelea)`;
   return `${dicho} (vuelve a hablarle con E)`;
 }

@@ -723,7 +723,9 @@ pause_for_claude_code() {
 
        "Eres el motor narrativo del juego. Llama a narrative_listen
         en bucle: cada petición trae su tipo, sus instrucciones y su
-        schema. Respóndela con narrative_respond y vuelve a escuchar."
+        schema. Respóndela con narrative_respond y vuelve a escuchar.
+        Si narrative_listen expira o falla, vuelve a llamarlo: no
+        pares el bucle."
 
   If you skip:
     · With ANTHROPIC_API_KEY set — ai_server falls back to direct API.

@@ -111,7 +111,7 @@ async function reportAndDispatch(
   // vida ambiental sin esperar al siguiente cambio de tile.
   npcSync(ctx);
   // La réplica que llega cuando la conversación ya no es la actual (el
-  // jugador se puso a pelear, otro tile, hablante lejos) NO abre el panel: va al registro, entera. Se
+  // jugador se puso a pelear, hay un viaje en curso, otro tile, hablante lejos) NO abre el panel: va al registro, entera. Se
   // decide aquí, con la foto de AHORA, y no en el cliente, que no sabe casar
   // la réplica con su elección ni si hay un hostil enganchado. El despertar y
   // los `map_trigger` difunden por otro camino y no pasan por aquí.
@@ -124,6 +124,8 @@ async function reportAndDispatch(
       // «En combate» = el jugador ha ATACADO mientras el motor pensaba: la
       // conversación dejó de ser lo que estaba haciendo (decisión 2026-09-30).
       atacoDesdeQuePidio: ctx.sim.ataquesDelJugador > ataquesAlPedir,
+      viajeEnCurso: ctx.sceneGen.viajeEnCurso,
+      hayPelea: ctx.sim.jugadorEnCombate,
       jugador: { x: ahora[0], z: ahora[2] },
     },
     (id) => {

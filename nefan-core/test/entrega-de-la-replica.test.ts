@@ -33,6 +33,8 @@ const QUIETO: ContextoDeLaReplica = {
   escenaAlPedir: "tile_0_0",
   escenaAhora: "tile_0_0",
   atacoDesdeQuePidio: false,
+  viajeEnCurso: false,
+  hayPelea: false,
   jugador: { x: 0, z: 0 },
 };
 
@@ -48,6 +50,23 @@ describe("vigencia de la réplica", () => {
       vigente: false,
       motivo: "combate",
     });
+  });
+
+  it("un viaje en curso → no vigente por viaje, aunque el tile y la posición sean aún los de salida (QA, 344)", () => {
+    assert.deepEqual(vigenciaDeLaReplica({ ...QUIETO, viajeEnCurso: true }, { x: 1, z: 0 }), {
+      vigente: false,
+      motivo: "viaje",
+    });
+  });
+
+  it("el orden: atacar > viaje > tile", () => {
+    const todo = { ...QUIETO, atacoDesdeQuePidio: true, viajeEnCurso: true, escenaAhora: "tile_1_0" };
+    assert.deepEqual(vigenciaDeLaReplica(todo), { vigente: false, motivo: "combate" });
+    assert.deepEqual(vigenciaDeLaReplica({ ...todo, atacoDesdeQuePidio: false }), { vigente: false, motivo: "viaje" });
+  });
+
+  it("hayPelea sola NO degrada la réplica (opción B: te pegan y no atacas → panel)", () => {
+    assert.deepEqual(vigenciaDeLaReplica({ ...QUIETO, hayPelea: true }, { x: 1, z: 0 }), { vigente: true });
   });
 
   it("otro tile → no vigente por otro_tile, aunque el hablante no tenga posición", () => {
@@ -93,6 +112,7 @@ describe("entregarReplica", () => {
 
   for (const [nombre, ctx, pos, motivo] of [
     ["atacó", { ...QUIETO, atacoDesdeQuePidio: true }, aTres, "combate"],
+    ["viaje", { ...QUIETO, viajeEnCurso: true }, aTres, "viaje"],
     ["otro tile", { ...QUIETO, escenaAhora: "tile_0_-1" }, aTres, "otro_tile"],
     ["lejos", QUIETO, () => ({ x: 0, z: 40 }), "lejos"],
   ] as const) {
@@ -104,6 +124,7 @@ describe("entregarReplica", () => {
         text: TEXTO,
         speakerId: "orio",
         motivo,
+        hayPelea: false,
       };
       assert.deepEqual(out, [esperado]);
     });
@@ -125,7 +146,7 @@ describe("entregarReplica", () => {
       return { x: 0, z: 99 };
     });
     assert.equal(preguntas, 0);
-    assert.deepEqual(out, [{ kind: "replica_diferida", speaker: "Orio Candil", text: TEXTO, motivo: "combate" }]);
+    assert.deepEqual(out, [{ kind: "replica_diferida", speaker: "Orio Candil", text: TEXTO, motivo: "combate", hayPelea: false }]);
     assert.equal("speakerId" in out[0]!, false);
   });
 
@@ -159,6 +180,7 @@ describe("la línea del registro", () => {
     text: "Vuelve cuando quieras.",
     speakerId: "maela",
     motivo: "otro_tile",
+    hayPelea: false,
   };
 
   it("lleva el texto entero del hablante y la pista de volver a hablarle con E", () => {
@@ -169,10 +191,24 @@ describe("la línea del registro", () => {
     );
   });
 
-  it("en combate la pista no promete la E (volvería al registro): cuando acabe la pelea", () => {
+  it("se puso a pelear CON ALGUIEN enganchado: la pista es cuando acabe la pelea", () => {
     assert.equal(
-      lineaDeReplicaDiferida({ ...base, motivo: "combate" }),
+      lineaDeReplicaDiferida({ ...base, motivo: "combate", hayPelea: true }),
       "💬 Maela: «Vuelve cuando quieras.» (vuelve a hablarle cuando acabe la pelea)",
+    );
+  });
+
+  it("un golpe al aire sin nadie enganchado: la pista NEUTRA, no habla de una pelea que no existe (QA)", () => {
+    assert.equal(
+      lineaDeReplicaDiferida({ ...base, motivo: "combate", hayPelea: false }),
+      "💬 Maela: «Vuelve cuando quieras.» (vuelve a hablarle con E)",
+    );
+  });
+
+  it("con un viaje en curso, la pista neutra (aunque haya pelea: no es lo que la difirió)", () => {
+    assert.equal(
+      lineaDeReplicaDiferida({ ...base, motivo: "viaje", hayPelea: true }),
+      "💬 Maela: «Vuelve cuando quieras.» (vuelve a hablarle con E)",
     );
   });
 

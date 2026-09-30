@@ -115,6 +115,9 @@ describe("el encargo al motor no enumera kinds", () => {
   it("start.sh: el heredoc de pause_for_claude_code no nombra ningún kind", () => {
     const texto = encargoDeStartSh(readFileSync(`${REPO}start.sh`, "utf8"));
     assert.ok(texto.includes("narrative_listen"), "el encargo sigue diciendo a qué tool llamar");
+    // Y qué hacer cuando la llamada expira o falla (QA de la tanda): un
+    // Claude recién abierto puede parar el bucle ante el primer error.
+    assert.match(texto, /expira o falla, vuelve a llamarlo/);
     assert.deepEqual(kindsNombrados(texto, kinds), []);
   });
 
