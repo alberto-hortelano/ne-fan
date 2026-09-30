@@ -31,10 +31,11 @@ Orden recomendado (para que el motor tome `:3737` antes de que `ai_server` inten
 
 1. **Terminal A — motor narrativo.** Abre Claude Code en `~/code/ne-fan` y dale este encargo:
 
-   > Eres el motor narrativo del juego. Entra en bucle: llama `narrative_listen`, genera la
-   > respuesta según el `kind` recibido (escena *Map Format D* para `scene`, o `consequences`
-   > para `narrative_event`), usa las tools `map_*` / `npc_*` / `entity_*` / `inventory_*` /
-   > `plugin_*` cuando proceda, y responde con `narrative_respond`. Repite indefinidamente.
+   > Eres el motor narrativo del juego. Entra en bucle: llama `narrative_listen`; cada petición
+   > trae su tipo, sus instrucciones y su schema. Genera la respuesta que pide, usa las tools
+   > `map_*` / `npc_*` / `entity_*` / `inventory_*` / `plugin_*` cuando proceda, y responde con
+   > `narrative_respond`. Repite indefinidamente; si `narrative_listen` expira o falla, vuelve a
+   > llamarlo.
 
    Al primer `narrative_listen` toma `:3737` y queda bloqueado esperando.
 

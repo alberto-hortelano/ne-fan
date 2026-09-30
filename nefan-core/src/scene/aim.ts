@@ -163,3 +163,33 @@ export function pickNearestTarget(
   }
   return best;
 }
+
+/** Alcance, en METROS y en el suelo (XZ), al que el HUD nombra a un personaje.
+ *
+ *  Es UN número para todo el HUD: el rótulo flotante de un NPC
+ *  (`ui/etiquetas-del-mundo.ts`), la barra de vida de un enemigo y la
+ *  vigencia de la réplica del motor (`narrative/entrega-de-la-replica.ts`)
+ *  contestan la misma pregunta —«¿está a mi alcance como para que me
+ *  importe?»— y con dos números distintos acabarían contestándola distinto.
+ *  Vivía en el cliente como `LABEL_RANGE_M`; subió aquí con la tanda BW. */
+export const ALCANCE_DEL_NOMBRE_M = 18;
+
+/** ¿Se enseña la barra de vida de este enemigo? (tanda BW, H2)
+ *
+ *  Solo si está VIVO y además le importa al jugador: o está al alcance del
+ *  nombre, o le tiene enganchado Y está en el MISMO TILE que él (la pelea es
+ *  con él: un hostil que persigue desde 25 m no puede perder su barra). El
+ *  «mismo tile» es de la QA de la tanda: el enganche del sim no se suelta
+ *  hasta que el jugador muere, así que quien huía por «Salidas» a dos horas de
+ *  camino se llevaba la barra del hostil al destino. No se toca el enganche
+ *  (lo usa el punto seguro); se mira dónde está cada uno. Una barra de un
+ *  enemigo de otro tile, o de uno que soltó al jugador al morir este, es
+ *  información que no pinta nada — que es lo que salió jugando. */
+export function barraDeEnemigoVisible(e: {
+  vivo: boolean;
+  enganchado: boolean;
+  mismoTile: boolean;
+  distanciaM: number;
+}): boolean {
+  return e.vivo && (e.distanciaM <= ALCANCE_DEL_NOMBRE_M || (e.enganchado && e.mismoTile));
+}

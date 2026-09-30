@@ -97,6 +97,21 @@ describe("bridge routing básico", () => {
     assert.equal(update.enemies.length, 1);
     assert.equal(update.enemies[0].id, "skel_1");
     assert.equal(store.state.enemies.length, 1);
+    // Tanda BW, H2: el HUD decide la barra con esto. Sin un tick nadie ha
+    // enganchado a nadie; al primer input, el esqueleto (radio infinito) sí.
+    assert.equal(update.enemies[0].enganchado, false);
+    sent.length = 0;
+    await porElBorde(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: { playerPosition: { x: 0, y: 0, z: 0 }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: false },
+      },
+      socket,
+      ctx,
+    );
+    const tras = sent.find((m): m is StateUpdateMessage => m.type === "state_update");
+    assert.equal(tras?.enemies[0]?.enganchado, true, "el state_update dice que el esqueleto le tiene enganchado");
   });
 
   it("respawn sin partida (fixtures) levanta al caído en el punto seguro, con HP restaurado", async () => {

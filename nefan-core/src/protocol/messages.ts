@@ -13,6 +13,7 @@ import type {
   SessionData,
   SessionMetadata,
 } from "../narrative/types.js";
+import type { ReplicaDiferidaEffect } from "../narrative/entrega-de-la-replica.js";
 
 /** UNA ESCENA CARGADA, tal cual la pinta el cliente: el effect que el BRIDGE
  *  emite (y solo él: `broadcastScene`) con el `eventId: "scene_init"` cuando
@@ -35,8 +36,10 @@ export interface SceneLoadedEffect {
 }
 
 /** Lo que va en `effects[]` de un `narrative_event`: los effects de las
- *  consequences más el de escena, que solo emite el bridge. */
-export type EfectoEnElWire = ConsequenceEffect | SceneLoadedEffect;
+ *  consequences más los dos que solo emite el bridge — el de escena y la
+ *  réplica que llegó cuando la conversación ya no era la actual
+ *  (`narrative/entrega-de-la-replica.ts`, tanda BW). */
+export type EfectoEnElWire = ConsequenceEffect | SceneLoadedEffect | ReplicaDiferidaEffect;
 
 // ── Frontend → Logic ──
 
@@ -353,6 +356,11 @@ export interface StateUpdateMessage {
     hp: number;
     state: string;
     alive: boolean;
+    /** ¿Le tiene enganchado al jugador? (`GameSimulation.enganchado`). Lo
+     *  necesita el HUD para decidir si su barra se ve (tanda BW, H2):
+     *  un hostil que persigue desde lejos es la pelea, uno suelto de otro
+     *  tile no. Requerido: el cliente no puede deducirlo. */
+    enganchado: boolean;
     pos?: { x: number; y: number; z: number };
     forward?: { x: number; y: number; z: number };
     attackType?: string;

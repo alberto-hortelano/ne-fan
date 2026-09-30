@@ -270,15 +270,23 @@ export default async function (ctx) {
   // volvía, aunque el jugador lo tuviera capturado antes de hablar. Se pide con
   // la marca del motor falso en el texto libre.
   await plantarse(ctx);
+  // Click SOLO si el ratón no está ya capturado: con el lock puesto, un click
+  // sobre el mundo es LMB = un ATAQUE (tanda BW). Ese golpe al aire justo antes
+  // de hablar cuenta como «el jugador se puso a pelear» y manda la réplica al
+  // registro; además despierta la pelea con el Secuaz, que mataba al jugador a
+  // mitad del bloque. La precondición de abajo afirma el lock igual.
   const caja4 = await (await ctx.page.$("canvas")).boundingBox();
-  await ctx.page.mouse.click(caja4.x + caja4.width / 2, caja4.y + caja4.height / 2);
+  const yaCapturado4 = await ctx.page.evaluate(() => document.pointerLockElement !== null);
+  if (!yaCapturado4) await ctx.page.mouse.click(caja4.x + caja4.width / 2, caja4.y + caja4.height / 2);
   await ctx.expectEspera(
     "precondición del bloque 4: el click sobre el mundo captura el ratón",
     true,
     () => (document.pointerLockElement !== null ? { lock: true } : null),
     { ms: 10_000 },
   );
-  await ctx.waitFor("el pointerlockchange del click queda anotado", () => (window.__g83.lock.length > 0 ? { n: window.__g83.lock.length } : null), 5_000);
+  if (!yaCapturado4) {
+    await ctx.waitFor("el pointerlockchange del click queda anotado", () => (window.__g83.lock.length > 0 ? { n: window.__g83.lock.length } : null), 5_000);
+  }
   await cronologia();
   const abierto4 = await hablar(ctx);
   await panelPintado(ctx);
@@ -322,8 +330,14 @@ export default async function (ctx) {
   // los `pointer-events`—. Esc lo salvaba y nada en pantalla lo decía.
   // El motor se mata en el BORDE (`page.route`), no dentro del cliente.
   await plantarse(ctx);
+  // Click SOLO si el ratón no está ya capturado: con el lock puesto, un click
+  // sobre el mundo es LMB = un ATAQUE (tanda BW). Ese golpe al aire justo antes
+  // de hablar cuenta como «el jugador se puso a pelear» y manda la réplica al
+  // registro; además despierta la pelea con el Secuaz, que mataba al jugador a
+  // mitad del bloque. La precondición de abajo afirma el lock igual.
   const caja5 = await (await ctx.page.$("canvas")).boundingBox();
-  await ctx.page.mouse.click(caja5.x + caja5.width / 2, caja5.y + caja5.height / 2);
+  const yaCapturado5 = await ctx.page.evaluate(() => document.pointerLockElement !== null);
+  if (!yaCapturado5) await ctx.page.mouse.click(caja5.x + caja5.width / 2, caja5.y + caja5.height / 2);
   await ctx.expectEspera(
     "precondición del bloque 5: el jugador vuelve a tener el ratón capturado",
     true,

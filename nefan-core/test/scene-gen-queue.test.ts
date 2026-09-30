@@ -24,6 +24,29 @@ function makeJob(key: string, blocking: boolean, ran: string[]) {
 const tick = () => new Promise((r) => setTimeout(r, 5));
 
 describe("SceneGenQueue", () => {
+  /** Tanda BW (QA, guion 344): la réplica del motor que llega con un viaje
+   *  en marcha no abre el panel. «Viaje» = un job BLOQUEANTE en vuelo o en
+   *  cola; un prefetch no lo es. */
+  it("viajeEnCurso: solo con un bloqueante en vuelo o en cola, y se apaga al terminar", async () => {
+    const q = new SceneGenQueue();
+    const ran: string[] = [];
+    assert.equal(q.viajeEnCurso, false, "cola vacía");
+    const pre = makeJob("prefetch", false, ran);
+    q.enqueue(pre.job);
+    await tick();
+    assert.equal(q.viajeEnCurso, false, "un prefetch en vuelo no es un viaje");
+    const viaje = makeJob("place_molino", true, ran);
+    q.enqueue(viaje.job);
+    assert.equal(q.viajeEnCurso, true, "bloqueante EN COLA (detrás del prefetch)");
+    pre.release();
+    await tick();
+    assert.deepEqual(ran, ["prefetch", "place_molino"]);
+    assert.equal(q.viajeEnCurso, true, "bloqueante EN VUELO");
+    viaje.release();
+    await tick();
+    assert.equal(q.viajeEnCurso, false, "llegó: ya no hay viaje");
+  });
+
   it("despacha en FIFO con un solo job en vuelo", async () => {
     const q = new SceneGenQueue();
     const ran: string[] = [];

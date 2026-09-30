@@ -238,6 +238,23 @@ export default async function (ctx) {
     typeof vidaTrasViajar === "number",
     `#hp-text-${BANDIDO} = ${JSON.stringify(vidaTrasViajar)}`,
   );
+  // Y se VE si le importa al jugador (tanda BW, H2): enganchado, su barra se
+  // ve si está al alcance del nombre (18 m) o en el MISMO tile. Leer la cifra
+  // por id ya no dice que el jugador la vea. Aquí se afirma la mitad que no
+  // depende de por dónde fue la persecución (a ≤ 18 m, se ve); la otra —en otro
+  // tile y lejos, no— la mide el guion 345.
+  const vista = await ctx.page.evaluate((eid) => {
+    const e = window.__nefan.enemies().find((x) => x.id === eid);
+    const p = window.__nefan.state().pos;
+    const d = e ? Math.hypot(e.pos.x - p.x, e.pos.z - p.z) : null;
+    return { d, oculta: document.getElementById(`hp-text-${eid}`)?.parentElement?.hidden ?? null };
+  }, BANDIDO);
+  ctx.log(`barra de ${BANDIDO} tras el viaje: ${JSON.stringify(vista)}`);
+  ctx.expect(
+    "al alcance del nombre, la barra del enemigo enganchado se VE tras cambiar de tile",
+    vista.d === null || vista.d > 18 || vista.oculta === false,
+    JSON.stringify(vista),
+  );
   const trasViajar = await medir(ctx, BANDIDO);
   ctx.log(`${BANDIDO} tras el viaje: ${JSON.stringify(trasViajar)}`);
   await ctx.shot("enemigo-tras-cambiar-de-tile");

@@ -443,8 +443,11 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     assert.deepEqual(sinLectura, [], `lector(es) sin ninguna comparación con ${NOMBRE}: ${sinLectura.join(" | ")}`);
   });
 
-  it("el padrón cubre los OCHO sitios del censo por árbol: seis esperas + los dos defaults", () => {
-    // Seis en el padrón + los dos que heredan el default (120, 127) = 8.
+  it("el padrón cubre los NUEVE sitios del censo por árbol: siete esperas + los dos defaults", () => {
+    // Siete en el padrón + los dos que heredan el default (120, 127) = 9.
+    //  · OCHO → NUEVE (QA de la tanda BW): el guion 344 espera el viaje al
+    //    Molino con el motor falso RETRASADO a propósito (la réplica tiene que
+    //    llegar con el viaje en marcha), y lo presupuesta con `MS_DEL_TILE`.
     //  · DIECIOCHO → OCHO (#693): las once esperas de viaje por «Salidas» son
     //    UNA, `viajarPorSalidas` en `qa/lib/viaje.mjs`. Bajar no es perder
     //    sitios: los once guiones siguen viajando, por la misma función, y (d)
@@ -465,7 +468,7 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     //    leyendo su guion, no este contrato — el mismo agujero, tercera vez.
     // El número se fija para que cualquier movimiento se VEA: si una espera se
     // muda a `pedirYEsperarTile` sale de aquí y entra en (c).
-    assert.equal(contrato.esperas.length, 6, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
+    assert.equal(contrato.esperas.length, 7, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
   });
 
   it("(d) el botón del panel «Salidas» tiene UN dueño: nadie más lo pulsa, y los eximidos lo nombran las veces exactas", () => {

@@ -1039,6 +1039,17 @@
       "porque": "DÓNDE cae cada cosa que el motor pone en el mismo turno (#524). Entra con la PR 3 de la tanda B, que retira el `SEPARACION_M = 1.8` que no miraba el tamaño de lo que separaba: con las cajas sólidas (#489) dos edificios de un turno se solapaban 2,2 m y un `npc` caía dentro de la caja del edificio. Módulo propio y no dentro de `consequence-handler` (break 59) porque es aritmética con casos y merece batería y medida propias: su test afirma una PROPIEDAD sobre todos los pares del turno —entre dos cualesquiera cabe el jugador— y no tres números sueltos. Batería de un fichero, derivada del árbol de imports. Medido por primera vez en la corrida 34872537438 (2026-09-14): 29 mutantes, 2 vivos, score 93,10 % → suelo 93."
     },
     {
+      "id": "entrega-de-la-replica",
+      "mutate": [
+        "src/narrative/entrega-de-la-replica.ts"
+      ],
+      "tests": [
+        "test/entrega-de-la-replica.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "CÓMO se entrega la réplica del motor a un turno del jugador (tanda BW, H1): si la conversación ya no es la actual —combate, otro tile, hablante más allá del alcance del nombre— el `show_dialogue` pasa a `replica_diferida` y va al registro en vez de abrir el panel modal. Salió jugando: la réplica de Orio abrió el panel en mitad de la pelea con Brasco y el jugador murió sin poder atacar. Módulo propio y no dentro de `consequence-handler` porque es la decisión entera de H1 en un fichero puro, y cada mutante suyo es un caso que el jugador ve: invertir el orden de las guardas cambia el motivo, tocar el `>` del alcance abre el panel a 18,5 m, y perder el `speakerId` deja al jugador sin la pista de volver a hablar. Batería de un fichero, derivada del árbol de imports. Nace `sin medir`: la primera medida la hace `npm run mutacion -- local entrega-de-la-replica` o la corrida autorizada."
+    },
+    {
       "id": "render-mode",
       "mutate": [
         "src/narrative/render-mode.ts"

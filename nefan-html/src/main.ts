@@ -8,6 +8,8 @@ import { instalarNefanHook } from "./dev/nefan-hook.js";
 import { relojDeSim } from "./world/reloj-de-sim.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { pickNearestTarget } from "@nefan-core/src/scene/aim.js";
+import type { EfectoEnElWire } from "@nefan-core/src/protocol/messages.js";
+import { lineaDeReplicaDiferida } from "@nefan-core/src/narrative/entrega-de-la-replica.js";
 import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
 import { elReadyQuitaElMuro, esperasQueTermina } from "@nefan-core/src/protocol/status-reparto.js";
@@ -48,6 +50,7 @@ import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu } from "./ui/dev-menu.js";
 import { crearModosDeGraficos } from "./ui/modos-de-graficos.js";
 import { errors } from "./ui/error-log.js";
+import { crearBarrasDeEnemigo } from "./ui/barras-de-enemigo.js";
 import { crearMuroDeCarga } from "./ui/muro-de-carga.js";
 import { crearChipDeConexion } from "./ui/chip-de-conexion.js";
 import { atarLaOfertaDeEntrar } from "./ui/la-partida-llego-tarde.js";
@@ -446,37 +449,9 @@ const fixtures = crearFixturesDelSelector({
   log,
 });
 
-function rebuildEnemyBars(): void {
-  enemyBarsContainer.innerHTML = "";
-  for (const ee of mundo.enemigos) {
-    const bar = document.createElement("div");
-    bar.className = "nf-vital";
-    // El NOMBRE, no el id. Un enemigo de la escena traía un slug legible por
-    // casualidad ("bandido_1") y uno spawneado en runtime llevaba
-    // `narr_npc_1788038791_0` flotando en el HUD del jugador (#323).
-    const nombre = document.createElement("span");
-    nombre.className = "nf-vital-label";
-    nombre.style.color = ee.color;
-    // textContent y no interpolación en innerHTML: `name` es texto libre del
-    // motor narrativo, así que va por el canal que no interpreta marcado.
-    nombre.textContent = ee.name ?? ee.label ?? ee.id;
-    bar.appendChild(nombre);
-    const carril = document.createElement("div");
-    carril.className = "nf-bar";
-    const relleno = document.createElement("div");
-    relleno.className = "nf-bar-fill";
-    relleno.id = `hp-${ee.id}`;
-    relleno.style.width = "100%";
-    relleno.style.background = ee.color;
-    carril.appendChild(relleno);
-    bar.appendChild(carril);
-    const cifra = document.createElement("span");
-    cifra.id = `hp-text-${ee.id}`;
-    cifra.textContent = String(ee.maxHp);
-    bar.appendChild(cifra);
-    enemyBarsContainer.appendChild(bar);
-  }
-}
+/** Las barras de vida de los enemigos: `ui/barras-de-enemigo.ts`. */
+const barrasDeEnemigo = crearBarrasDeEnemigo({ contenedor: enemyBarsContainer, mundo, tiles: tileStore });
+const rebuildEnemyBars = (): void => barrasDeEnemigo.reconstruir();
 
 // --- Collision (lógica en world/collision.ts; aquí solo el cableado) ---
 const collision = new CollisionSystem({
@@ -619,14 +594,14 @@ function gameLoop(now: number): void {
     // peticiones al motor. Es el único sitio del juego donde una tecla GASTA,
     // así que no se auto-dispara: el jugador confirma.
     frontera.tick(playerPos.x, playerPos.z);
+  }
 
-    // Activación por posición: al pisar otro tile, refrescar la "escena
-    // activa" del cliente (imagen IA, exits). El bridge hace lo propio con
-    // NarrativeState en su handler de input.
-    const under = tileStore.getAt(playerPos.x, playerPos.z);
-    if (under && under.key !== mundo.tileActivo) {
-      setActiveClientTile(under.key);
-    }
+  // Activación por posición (el bridge hace lo propio en su input), FUERA del
+  // movimiento: un viaje te pone en el tile nuevo sin andar, y con un panel
+  // abierto el cliente se quedaba en el de salida (QA de BW, guion 344).
+  const under = tileStore.getAt(playerPos.x, playerPos.z);
+  if (under && under.key !== mundo.tileActivo) {
+    setActiveClientTile(under.key);
   }
 
   // Con quién se puede hablar aquí: el NPC vivo más cercano dentro del alcance
@@ -684,12 +659,7 @@ function gameLoop(now: number): void {
   playerHpText.textContent = Math.ceil(result.playerHp).toString();
   playerHpMax.textContent = ` / ${Math.ceil(result.playerMaxHp)}`;
 
-  for (const ee of mundo.enemigos) {
-    const bar = document.getElementById(`hp-${ee.id}`);
-    const text = document.getElementById(`hp-text-${ee.id}`);
-    if (bar) bar.style.width = Math.max(0, (ee.hp ?? 0) / (ee.maxHp ?? 1) * 100) + "%";
-    if (text) text.textContent = Math.ceil(ee.hp ?? 0).toString();
-  }
+  barrasDeEnemigo.actualizar(playerPos);
 
   // Render. Los sprites se poblan solo cuando character_sprites está activo
   // Y el set base y_bot terminó de cargar (antes, círculos — explícitamente,
@@ -1009,33 +979,49 @@ const spawnDelMotor = crearMaterializadorDeSpawn({
   log,
 });
 
+/** Identidad del hablante para el retrato: la entidad que el bridge resolvió,
+ *  la que tiene ese nombre en pantalla, o —si el diálogo llegó sin
+ *  interacción previa— la última con la que se habló. */
+function hablanteDelDialogo(effect: { speakerId?: string; speaker: string }): Entity | undefined {
+  return (
+    (effect.speakerId ? mundo.npcs.find((n) => n.id === effect.speakerId) : undefined) ??
+    mundo.npcs.find((n) => (n.name ?? "") === effect.speaker) ??
+    (hablar.ultimoHablado ? mundo.npc(hablar.ultimoHablado) : undefined)
+  );
+}
+
+/** Abre la conversación con la línea que el motor mandó, con su retrato. Fuera
+ *  del manejador de eventos para que el `switch` de los effects se quede en
+ *  repartir (CRAP del cliente, tanda BW). */
+function abrirElDialogo(effect: Extract<EfectoEnElWire, { kind: "show_dialogue" }>): void {
+  const npc = hablanteDelDialogo(effect);
+  const skinPrompt = npc?.skinPrompt ?? effect.speakerSkinPrompt;
+  conversacion.abrir(
+    effect.speaker,
+    effect.text,
+    effect.choices.map((c) => (typeof c === "string" ? c : c.text)),
+    { id: effect.speakerId ?? npc?.id },
+  );
+  portrait.request({
+    heroUrl: skinPrompt ? spriteRenderer.heroUrl(skinPrompt) : null,
+    skinModel: skinPrompt ? spriteRenderer.skinKey(BASE_MODEL, skinPrompt) : undefined,
+    baseModel: BASE_MODEL,
+  });
+  conversacion.panel.setPortrait(portrait.element);
+}
+
 narrativeClient.onNarrativeEvent((event) => {
   hablar.yaContestaron();
   for (const effect of event.effects) {
     switch (effect.kind) {
-      case "show_dialogue": {
-        // Identidad del hablante para el retrato: la entidad que el bridge
-        // resolvió, la que tiene ese nombre en pantalla, o —si el diálogo
-        // llegó sin interacción previa— la última con la que se habló.
-        const npc =
-          (effect.speakerId ? mundo.npcs.find((n) => n.id === effect.speakerId) : undefined) ??
-          mundo.npcs.find((n) => (n.name ?? "") === effect.speaker) ??
-          (hablar.ultimoHablado ? mundo.npc(hablar.ultimoHablado) : undefined);
-        const skinPrompt = npc?.skinPrompt ?? effect.speakerSkinPrompt;
-        conversacion.abrir(
-          effect.speaker,
-          effect.text,
-          effect.choices.map((c) => (typeof c === "string" ? c : c.text)),
-          { id: effect.speakerId ?? npc?.id },
-        );
-        portrait.request({
-          heroUrl: skinPrompt ? spriteRenderer.heroUrl(skinPrompt) : null,
-          skinModel: skinPrompt ? spriteRenderer.skinKey(BASE_MODEL, skinPrompt) : undefined,
-          baseModel: BASE_MODEL,
-        });
-        conversacion.panel.setPortrait(portrait.element);
+      case "show_dialogue":
+        abrirElDialogo(effect);
         break;
-      }
+      case "replica_diferida":
+        // La réplica llegó cuando la conversación ya no era la actual (lo
+        // decidió el bridge): al registro, entera, sin panel ni ratón suelto.
+        log(lineaDeReplicaDiferida(effect));
+        break;
       case "story_delta":
         log(`📖 ${effect.delta.slice(0, 80)}`);
         break;
@@ -1082,6 +1068,11 @@ narrativeClient.onNarrativeEvent((event) => {
       case "plugin_applied":
         plugins.actualizar(effect.plugin);
         break;
+      default: {
+        // Cerrado sobre el union del wire: un kind nuevo sin pintor no compila.
+        const sinPintor: never = effect;
+        errors.push("narrative", `effect sin pintor en el cliente: ${JSON.stringify(sinPintor)}`);
+      }
     }
   }
 });

@@ -8,7 +8,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { pickAimTarget, pickNearestTarget } from "../src/scene/aim.js";
+import {
+  ALCANCE_DEL_NOMBRE_M,
+  barraDeEnemigoVisible,
+  pickAimTarget,
+  pickNearestTarget,
+} from "../src/scene/aim.js";
 
 /** El ojo del jugador: 1,6 m sobre el suelo (EYE_M de la vista fps). */
 const OJO = { x: 0, y: 1.6, z: 0 };
@@ -224,5 +229,38 @@ describe("pickNearestTarget · con qué se puede tratar aquí", () => {
   it("devuelve la distancia, que es lo que decide si se ofrece la acción", () => {
     const npcs = [{ id: "x", pos: { x: 3, y: 0, z: 4 } }];
     assert.equal(pickNearestTarget(ORIGEN, npcs, { maxDistanceM: 10 })?.distanceM, 5);
+  });
+});
+
+/** Tanda BW, H2: la barra de un enemigo se quedaba en el HUD tras despertar
+ *  en la posada y tras viajar a otro tile. Se ve si le importa al jugador. */
+describe("barra de vida del enemigo en el HUD", () => {
+  it("el alcance del nombre es 18 m, un número para todo el HUD", () => {
+    assert.equal(ALCANCE_DEL_NOMBRE_M, 18);
+  });
+
+  it("lejos y suelto (tras despertar) → oculta", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, mismoTile: true, distanciaM: 30 }), false);
+  });
+
+  it("lejos pero enganchado en el MISMO tile (la pelea es con él) → visible", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: true, mismoTile: true, distanciaM: 30 }), true);
+  });
+
+  it("enganchado pero en OTRO tile y lejos (huiste por «Salidas») → oculta", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: true, mismoTile: false, distanciaM: 54 }), false);
+  });
+
+  it("en otro tile pero al alcance del nombre (al otro lado del borde) → visible", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, mismoTile: false, distanciaM: 10 }), true);
+  });
+
+  it("suelto justo al alcance del nombre → visible; un palmo más allá → oculta", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, mismoTile: true, distanciaM: 18 }), true);
+    assert.equal(barraDeEnemigoVisible({ vivo: true, enganchado: false, mismoTile: true, distanciaM: 18.01 }), false);
+  });
+
+  it("muerto → oculta, aunque esté enganchado, en el tile y al lado", () => {
+    assert.equal(barraDeEnemigoVisible({ vivo: false, enganchado: true, mismoTile: true, distanciaM: 1 }), false);
   });
 });

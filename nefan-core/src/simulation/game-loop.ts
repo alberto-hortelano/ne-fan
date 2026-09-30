@@ -47,6 +47,11 @@ export class GameSimulation {
   /** Quién dio el último golpe al jugador: el `asesino` del contexto de la
    *  muerte. Se olvida al reaparecer. */
   private ultimoAtacante: string | null = null;
+  /** Ataques que el jugador ha EMPEZADO desde que existe el sim (contador
+   *  monótono). No es estado de juego: es un reloj de acciones con el que el
+   *  bridge pregunta «¿ha peleado el jugador desde que pidió la réplica?»
+   *  (tanda BW, H1). */
+  private ataquesEmpezados = 0;
 
   constructor(config: CombatConfig, store?: GameStore, seed?: number, combat?: CombatSystem) {
     this.store = store ?? new GameStore();
@@ -244,13 +249,21 @@ export class GameSimulation {
         `GameSimulation: unknown attack type '${inputs.attackType}' for combat system '${this.combat.id}'`,
       );
     }
-    return Combatant.startAttack(player, norm, this.combat.windUpTime(norm, player.weaponId));
+    const eventos = Combatant.startAttack(player, norm, this.combat.windUpTime(norm, player.weaponId));
+    if (eventos.length > 0) this.ataquesEmpezados++;
+    return eventos;
+  }
+
+  /** Cuántos ataques ha empezado el jugador (ver `ataquesEmpezados`). Solo
+   *  sirve comparado consigo mismo: dos lecturas, antes y después. */
+  get ataquesDelJugador(): number {
+    return this.ataquesEmpezados;
   }
 
   /** El paso 7 del tick (ver allí): vivo y sin nadie enganchado, el punto
    *  donde está es seguro. */
   private apuntarPuntoSeguro(player: CombatantState): void {
-    if (player.health > 0 && !this.algunoEnganchado()) {
+    if (player.health > 0 && !this.jugadorEnCombate) {
       this.puntoSeguro = puntoDeReaparicion(player.position);
     }
   }
@@ -354,14 +367,25 @@ export class GameSimulation {
     return out;
   }
 
-  /** ¿Hay algún enemigo VIVO enganchado? Es la definición de «en combate» del
-   *  punto seguro. */
-  private algunoEnganchado(): boolean {
-    for (const [id, ai] of this.enemyAIs) {
-      const c = this.combatants.get(id);
-      if (c && c.health > 0 && ai.enganchado) return true;
+  /** ¿Está el jugador EN COMBATE? = ¿hay algún enemigo VIVO enganchado? Es
+   *  la definición del punto seguro: una sola regla, aquí. (NO es lo que
+   *  decide la réplica del motor: el enganche no se suelta hasta que el
+   *  jugador muere, y un hostil enganchado en otro tile mandaría al registro
+   *  todas las réplicas — la réplica mira `ataquesDelJugador`.) */
+  get jugadorEnCombate(): boolean {
+    for (const id of this.enemyAIs.keys()) {
+      if (this.enganchado(id)) return true;
     }
     return false;
+  }
+
+  /** ¿Este enemigo, VIVO, le tiene enganchado al jugador? Lo lee el HUD para
+   *  decidir si su barra se ve (`state_update.enemies[].enganchado`). Un id
+   *  sin IA o sin combatiente no engancha a nadie. */
+  enganchado(id: string): boolean {
+    const ai = this.enemyAIs.get(id);
+    const c = this.combatants.get(id);
+    return !!ai && !!c && c.health > 0 && ai.enganchado;
   }
 
   reset(): void {

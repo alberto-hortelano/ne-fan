@@ -35,6 +35,7 @@ interface EnemigoVivo {
   forward?: { x: number; y: number; z: number };
   hp: number;
   alive: boolean;
+  enganchado: boolean;
   state?: string;
   attackType?: string;
 }
@@ -75,6 +76,7 @@ export function aplicarLoQueMandaElBridge(
     }
     cuerpo.hp = enemigo.hp;
     cuerpo.alive = enemigo.alive;
+    cuerpo.enganchado = enemigo.enganchado;
     cuerpo.attacking = enemigo.state === "winding_up" || enemigo.state === "attacking";
     cuerpo.attackType = enemigo.attackType;
   }

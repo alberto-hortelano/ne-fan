@@ -231,6 +231,19 @@ const SEGUNDA_LINEA = "(bench bis)";
  *  (`bridge/handlers/dialogue.ts`), que es lo que pinta el muro con «Cerrar».
  *  La pide el guion 83 para llegar a #503. */
 const MARCA_MOTOR_CAIDO = "MOTOR CAIDO";
+/** Y la que hace que este motor RETENGA su réplica hasta que el guion la
+ *  suelte (`POST /dev/soltar-replica`): es la réplica que llega TARDE, cuando
+ *  el jugador ya se fue, que salió jugando el 2026-09-30 (tanda BW, H1). Se
+ *  retiene y no se retrasa un tiempo fijo porque el guion tiene que haberse
+ *  ido ANTES de que llegue, y eso con un reloj es una carrera. Con la marca, el
+ *  turno no trae spawns (como las de `MARCA_DECLARA`): un Secuaz enganchado
+ *  convertiría «lejos» en «combate». La pide el guion de la réplica tardía. */
+const MARCA_REPLICA_TARDIA = "REPLICA TARDIA";
+/** La réplica retenida, si la hay: soltarla la manda. `/dev/reset` la suelta. */
+let replicaRetenida: (() => void) | null = null;
+/** Tope de la retención: un guion que se muere sin soltarla no deja la
+ *  petición colgada para siempre — el motor contesta 504 y se dice. */
+const RETENCION_MAX_MS = 120_000;
 /** Y las dos que hacen que el motor ponga LO QUE DECLARA SU TAMAÑO Y SU CLASE
  *  (#532): un carro de 6×6 celdas (3 m, el doble del defecto de un `object`) y
  *  una bolsa de monedas `item`, que es la clase que NO frena. Marca y no turno,
@@ -631,6 +644,8 @@ const server = http.createServer((req, res) => {
       tilesConducta: conductaDeTiles(),
       // La forma de la última petición de escena (#578): cuáles, no cuántas.
       ultimaPeticionDeEscena,
+      // ¿Hay una réplica retenida esperando a que la suelten? (tanda BW)
+      replicaRetenida: replicaRetenida !== null,
     });
   }
   // Cómo se conforma el motor ante un tile (#516): mirar sin tocar. El POST
@@ -780,6 +795,26 @@ const server = http.createServer((req, res) => {
         if (String(body.free_text ?? "").includes(MARCA_MOTOR_CAIDO)) {
           return send(500, { detail: "el motor se cayó contestando (simulado por el banco)" });
         }
+        // La réplica que llega tarde (tanda BW): se retiene hasta que el guion
+        // la suelte. Una segunda retención con otra pendiente es un guion mal
+        // escrito, y se dice.
+        const retener = String(body.free_text ?? "").includes(MARCA_REPLICA_TARDIA);
+        if (retener) {
+          if (replicaRetenida) return send(409, { detail: "fake-ai: ya hay una réplica retenida" });
+          const soltada = await new Promise<boolean>((resolve) => {
+            const tope = setTimeout(() => {
+              replicaRetenida = null;
+              resolve(false);
+            }, RETENCION_MAX_MS);
+            replicaRetenida = () => {
+              clearTimeout(tope);
+              resolve(true);
+            };
+          });
+          if (!soltada) {
+            return send(504, { detail: `fake-ai: nadie soltó la réplica retenida en ${RETENCION_MAX_MS} ms` });
+          }
+        }
         // SEGUNDO turno: además de contestar, el motor MANDA algo hostil. Es
         // la otra vía por la que aparece un enemigo (spawn en runtime, sin
         // recargar la escena) y hasta el 2026-08-29 este fichero no emitía un
@@ -923,7 +958,7 @@ const server = http.createServer((req, res) => {
         // cofre encima de lo que va a medir (ver `motorConducidoPorMarcas`).
         if (texto.includes(MARCA_DECLARA)) motorConducidoPorMarcas = true;
         const pocion = texto.includes(MARCA_POCION);
-        const spawns = motorConducidoPorMarcas || pocion
+        const spawns = motorConducidoPorMarcas || pocion || retener
           ? loQueDeclara
           : [...spawnHostil, ...spawnMundo, ...spawnSinProcedencia];
         return send(200, {
@@ -983,6 +1018,9 @@ const server = http.createServer((req, res) => {
         fakeDevCacheEnabled = false;
         motorConducidoPorMarcas = false;
         ultimaPeticionDeEscena = null;
+        // Una réplica retenida por el guion anterior se suelta: no se hereda.
+        replicaRetenida?.();
+        replicaRetenida = null;
         // La conducta ante los tiles vuelve a la del ARRANQUE, no a cero: quien
         // arrancó el proceso con `TILE_DELAY_MS` la pidió para toda la corrida,
         // y el reset entre guiones no está para desdecirle. Lo que sí deshace
@@ -1003,6 +1041,16 @@ const server = http.createServer((req, res) => {
       // `blocking`, el timeout y el cooldown de la frontera. Campo ausente =
       // no se toca; campo con basura = 400 con el motivo (un guion que pide una
       // conducta que no existe está midiendo otra cosa y tiene que enterarse).
+      // Suelta la réplica retenida por `MARCA_REPLICA_TARDIA` (tanda BW). Sin
+      // réplica retenida es un 409: el guion que suelta lo que no está está
+      // midiendo otra cosa y tiene que enterarse.
+      if (req.method === "POST" && ruta === "/dev/soltar-replica") {
+        if (!replicaRetenida) return send(409, { detail: "fake-ai: no hay ninguna réplica retenida" });
+        const soltar = replicaRetenida;
+        replicaRetenida = null;
+        soltar();
+        return send(200, { ok: true });
+      }
       if (req.method === "POST" && ruta === "/dev/tiles") {
         const body = leerBody<{ delay_ms?: unknown; mode?: unknown }>(raw);
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });

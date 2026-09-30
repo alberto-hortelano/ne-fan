@@ -748,6 +748,7 @@ export function getEnemyStates(ctx: BridgeContext): StateUpdateMessage["enemies"
         hp: c.health,
         state: c.state,
         alive: c.health > 0,
+        enganchado: ctx.sim.enganchado(c.id),
         pos: { x: c.position.x, y: c.position.y, z: c.position.z },
         forward: { x: c.forward.x, y: c.forward.y, z: c.forward.z },
         attackType: c.currentAttackType || undefined,

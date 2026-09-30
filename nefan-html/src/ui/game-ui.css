@@ -178,6 +178,9 @@
 /* ── Estado del jugador ─────────────────────────────────────────────────── */
 #player-status { display: flex; align-items: center; gap: 10px; font-size: var(--nf-fs-sm); }
 .nf-vital { display: flex; align-items: center; gap: 6px; }
+/* La barra de un enemigo que no le importa al jugador (tanda BW, H2): sin
+   esto el `display: flex` de arriba gana al atributo y no oculta nada. */
+.nf-vital[hidden] { display: none; }
 .nf-vital-label { color: var(--nf-ink-dim); letter-spacing: var(--nf-tracking); }
 /* El denominador de la vida (#527): apagado al lado del número, que es el que
    se lee de un vistazo. Sin él, «100» con la barra a dos tercios era ambiguo
@@ -192,9 +195,11 @@
 }
 .nf-bar-fill { height: 100%; background: var(--nf-danger); transition: width 200ms ease-out; }
 #enemy-bars { display: flex; flex-direction: column; gap: 4px; font-size: var(--nf-fs-xs); }
-/* Sin enemigos no hay panel: un rectángulo translúcido vacío bajo el estado
-   del jugador sería una promesa de que ahí va algo. */
-#enemy-bars:empty { display: none; }
+/* Sin enemigos A LA VISTA no hay panel: un rectángulo translúcido vacío bajo
+   el estado del jugador sería una promesa de que ahí va algo. Desde la tanda
+   BW una barra puede estar oculta (su enemigo no le importa al jugador), así
+   que `:empty` no basta: el panel se va cuando no le queda ninguna visible. */
+#enemy-bars:not(:has(> .nf-vital:not([hidden]))) { display: none; }
 #enemy-bars .nf-bar { width: 96px; height: 7px; }
 
 /* ── Barra de acciones (ataques + contextuales) ─────────────────────────── */
