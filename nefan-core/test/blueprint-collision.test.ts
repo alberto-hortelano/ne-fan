@@ -170,7 +170,7 @@ describe("blueprint/collision", () => {
 describe("blueprint/collision: por dónde se pasa", () => {
   // Muro norte-sur que parte el tile en dos: sin vano no hay forma de cruzar.
   const muroNS = (width: number): Volume => (
-    { id: "muro", label: "muralla", type: "wall", points: [[64, 0], [64, 127]], width, h: 7 }
+    { id: "muro", label: "muralla", type: "wall", points: [[64, 0], [64, 128]], width, h: 7 }
   );
   const puertaY: Volume = { id: "puerta", label: "portón", type: "gate", at: [64, 64], w: 8, orient: "y" };
 
@@ -192,6 +192,61 @@ describe("blueprint/collision: por dónde se pasa", () => {
     for (let r = 60; r <= 67; r++) for (let c = 55; c <= 73; c++) assert.ok(!solidAt(g.grid, c, r), `vano (${c},${r})`);
     assert.ok(alcanzable(g.grid, [40, 64], [90, 64]));
     assert.ok(solidAt(g.grid, 58, 20) && solidAt(g.grid, 69, 20), "el muro grueso bloquea en todo su grosor lejos del portón");
+  });
+
+  it("muro que acaba en campo abierto: se llega hasta donde se VE acabar, no se choca con aire", () => {
+    // Antes la banda llevaba una tapa redonda de width/2 más allá de cada
+    // punta: con width 12, 3 m de muro invisible (QA de la tanda BT, H1).
+    for (const width of [3, 5, 12]) {
+      const g = volumeCollisionGrid([
+        { id: "muro", label: "tapia", type: "wall", points: [[70, 90], [100, 90]], width, h: 7 },
+      ], RECT)!;
+      assert.ok(solidAt(g.grid, 99, 90) && solidAt(g.grid, 70, 90), `width ${width}: el muro colisiona hasta sus dos puntas`);
+      assert.ok(!solidAt(g.grid, 100, 90) && !solidAt(g.grid, 69, 90), `width ${width}: la celda de delante de cada punta está libre`);
+      assert.ok(alcanzable(g.grid, [120, 90], [100, 90]) && alcanzable(g.grid, [50, 90], [69, 90]), `width ${width}: se llega andando a las dos puntas`);
+      assert.ok(solidAt(g.grid, 85, 90 + Math.ceil(width / 2) - 1), `width ${width}: el costado sigue ocupando su medio grosor`);
+    }
+  });
+
+  it("las esquinas de un muro de varios tramos siguen cerradas (la tapa solo sobra en las puntas LIBRES)", () => {
+    // Patio cuadrado con UNA polilínea abierta (arranca y acaba a media cara,
+    // solapando): sus cuatro esquinas son vértices compartidos. Y un rombo
+    // cerrado y fino, donde la esquina diagonal es la que abriría rendija.
+    const patios: Array<{ nombre: string; v: Volume; dentro: [number, number]; fuera: [number, number] }> = [
+      {
+        nombre: "patio abierto",
+        v: { id: "p", label: "cerca", type: "wall", points: [[50, 30], [70, 30], [70, 70], [30, 70], [30, 30], [52, 30]], width: 2, h: 3 },
+        dentro: [50, 50], fuera: [10, 10],
+      },
+      {
+        nombre: "rombo cerrado",
+        v: { id: "r", label: "cerca", type: "wall", points: [[50, 20], [80, 50], [50, 80], [20, 50], [50, 20]], width: 1.2, h: 3 },
+        dentro: [50, 50], fuera: [5, 5],
+      },
+      // Cerca irregular de grosor 1,35 (hallada por búsqueda: sin la tapa en
+      // los vértices, la rejilla abre una rendija de una celda en una esquina
+      // en ángulo). Cerrada, y la misma abierta por un pelo en su arranque.
+      // Cerrada, arrancando en CADA vértice: el de arranque también es
+      // compartido (primer punto = último) y necesita su tapa.
+      ...[0, 1, 2, 3].map((k) => {
+        const anillo: Array<[number, number]> = [[92.4, 69.5], [56.4, 86.8], [48.6, 60.5], [68.1, 25.5]];
+        const pts = [...anillo.slice(k), ...anillo.slice(0, k)];
+        return {
+          nombre: `cerca irregular cerrada desde el vértice ${k}`,
+          v: { id: "c", label: "cerca", type: "wall", points: [...pts, pts[0]], width: 1.35, h: 3 } as Volume,
+          dentro: [64, 64] as [number, number], fuera: [1, 1] as [number, number],
+        };
+      }),
+      {
+        nombre: "cerca irregular abierta",
+        v: { id: "c", label: "cerca", type: "wall", points: [[92.4, 69.5], [56.4, 86.8], [48.6, 60.5], [68.1, 25.5], [92.41, 69.5]], width: 1.35, h: 3 },
+        dentro: [64, 64], fuera: [1, 1],
+      },
+    ];
+    for (const { nombre, v, dentro, fuera } of patios) {
+      const g = volumeCollisionGrid([v], RECT)!;
+      assert.equal(alcanzable(g.grid, fuera, dentro), false, `${nombre}: sin puerta no se entra (ninguna rendija en las esquinas)`);
+    }
   });
 
   // Casa enterable [20,20]..[40,36]: interior (30,28); fuera, (10,10) y (50,28).

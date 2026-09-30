@@ -48,10 +48,19 @@ function markDisc(grid: Grid, cu: number, cv: number, r: number, dims: Collision
 }
 
 /** Banda gruesa a lo largo de una polilínea (muro): celdas a distancia ≤
- *  width/2 de algún segmento. */
+ *  width/2 de algún segmento. En las PUNTAS LIBRES (primer y último punto de
+ *  una polilínea abierta) la banda acaba en seco, como el muro pintado
+ *  (`wallPrims` corta sus tramos en [0, len]): la tapa redonda de width/2
+ *  ponía hasta 3 m de muro invisible delante de la punta. En los vértices
+ *  compartidos la tapa se queda: rellena la esquina convexa, que sin ella
+ *  abriría rendija entre los dos tramos. */
 function markBand(grid: Grid, points: [number, number][], width: number, dims: CollisionGridDims): void {
   const half = width / 2;
+  const last = points.length - 1;
+  const cerrada = last > 1 && points[0][0] === points[last][0] && points[0][1] === points[last][1];
   for (let i = 0; i < points.length - 1; i++) {
+    const puntaIni = i === 0 && !cerrada;
+    const puntaFin = i === last - 1 && !cerrada;
     const [au, av] = points[i];
     const [bu, bv] = points[i + 1];
     const minU = Math.floor(Math.min(au, bu) - half);
@@ -65,7 +74,9 @@ function markBand(grid: Grid, points: [number, number][], width: number, dims: C
       for (let u = minU; u <= maxU; u++) {
         const pu = u + 0.5;
         const pv = v + 0.5;
-        const t = Math.max(0, Math.min(1, ((pu - au) * dU + (pv - av) * dV) / len2));
+        const tRaw = ((pu - au) * dU + (pv - av) * dV) / len2;
+        if ((puntaIni && tRaw < 0) || (puntaFin && tRaw > 1)) continue; // más allá de una punta libre
+        const t = Math.max(0, Math.min(1, tRaw));
         const dx = pu - (au + t * dU);
         const dy = pv - (av + t * dV);
         if (dx * dx + dy * dy <= half * half) mark(grid, pu, pv, dims);

@@ -86,6 +86,57 @@ describe("el vano pintado es el vano por el que se pasa", () => {
     assert.equal(libres, 8, "el vano mide lo que declara el gate (w 8)");
   });
 
+  for (const width of [3, 12]) {
+    it(`muro de width ${width} que acaba en campo abierto: a lo largo del eje, sólido ⇔ pintado, puntas incluidas`, () => {
+      const muro: Volume = { id: "muro", label: "tapia", type: "wall", points: [[70, 90], [100, 90]], width, h: 7 };
+      const ps = prims([muro]);
+      const g = volumeCollisionGrid([muro], RECT)!;
+      for (let c = 55; c < 115; c++) {
+        const pintada = pintadoEn(ps, c + 0.5, 90.5);
+        assert.equal(solida(g.grid, c + 0.5, 90.5), pintada, `columna ${c}: pintada=${pintada}`);
+      }
+    });
+  }
+
+  it("cutaway: el grosor del muro que colisiona contiene al pintado y lo sobrepasa menos de una celda", () => {
+    // DECISIÓN (render ≠ colisión): el anillo colisiona con 1,5 celdas de
+    // grosor y se pinta con 1,2. Lo que se fija es la relación, por los cuatro
+    // muros: (1) todo lo pintado es sólido (nadie mete el cuerpo en una pared
+    // que ve) y la cara EXTERIOR coincide; (2) hacia dentro, lo sólido acaba
+    // a menos de una celda de la cara pintada (hoy 0,8: el 1,5 redondeado a
+    // celdas contra el 1,2 pintado). Un muro pintado más grueso que su
+    // colisión rompe (1); uno que colisiona muy por delante de lo que se ve, (2).
+    const casa: Volume = { id: "casa", label: "casa", type: "building", rect: [20, 20, 20, 16], cutaway: true };
+    const ps = prims([casa]);
+    const g = volumeCollisionGrid([casa], RECT)!;
+    // Por cada muro: punto medio de la cara, eje de barrido y sentido «hacia dentro».
+    const muros = [
+      { edge: "n", fijo: 30.5, desde: 20, dentro: 1, ejeU: false },
+      { edge: "s", fijo: 30.5, desde: 36, dentro: -1, ejeU: false },
+      { edge: "w", fijo: 28.5, desde: 20, dentro: 1, ejeU: true },
+      { edge: "e", fijo: 28.5, desde: 40, dentro: -1, ejeU: true },
+    ];
+    for (const { edge, fijo, desde, dentro, ejeU } of muros) {
+      let caraPintada = -Infinity;
+      let caraSolida = -Infinity;
+      for (let k = -1; k <= 4; k += 0.05) {
+        const x = desde + dentro * k;
+        const [u, v] = ejeU ? [x, fijo] : [fijo, x];
+        const pintada = pintadoEn(ps, u, v);
+        const solidaAqui = solida(g.grid, u, v);
+        if (pintada) {
+          assert.ok(solidaAqui, `${edge}: pintado y sin colisión a ${k.toFixed(2)} de la cara exterior`);
+          caraPintada = Math.max(caraPintada, k);
+        }
+        if (solidaAqui) caraSolida = Math.max(caraSolida, k);
+        if (k < 0) assert.equal(solidaAqui, false, `${edge}: sólido FUERA de la casa a ${k.toFixed(2)}`);
+      }
+      const sobra = caraSolida - caraPintada;
+      assert.ok(caraPintada > 0.5, `${edge}: hay muro pintado (${caraPintada})`);
+      assert.ok(sobra >= 0 && sobra < 1, `${edge}: la colisión sobrepasa lo pintado ${sobra.toFixed(2)} hacia dentro`);
+    }
+  });
+
   for (const edge of ["n", "s", "w", "e"] as const) {
     it(`cutaway, puerta \`${edge}\` (y dos en el mismo muro): el hueco pintado es el hueco libre`, () => {
       // Dos puertas en el mismo borde: el segundo corte se hace sobre un muro
@@ -278,7 +329,7 @@ describe("el scatter no pisa lo construido (exclusión = huella declarada + marg
     { v: { id: "p", label: "mesa girada", type: "prop", rect: [44, 46, 8, 4], shape: "box", angle: 25 } },
     {
       v: { id: "w", label: "tapia", type: "wall", points: [[30, 40], [70, 40], [70, 70]], width: 4 },
-      extra: 2, porque: "la huella del muro lleva en los extremos la tapa de medio grosor con la que también colisiona (markBand)",
+      extra: 2, porque: "la huella DECLARADA del muro (AABB del trazo ± medio grosor) sobresale medio grosor en las puntas; la colisión ya no, pero mover la exclusión del scatter cambia el tile canónico y repaga el atlas",
     },
     {
       v: { id: "w", label: "cerca sin grosor declarado", type: "wall", points: [[30, 40], [70, 40]] },
