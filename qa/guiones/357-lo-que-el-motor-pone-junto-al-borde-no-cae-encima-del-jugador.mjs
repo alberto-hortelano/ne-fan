@@ -97,7 +97,7 @@ async function medirCuerpoDelJugador(ctx, etiqueta) {
       npcs: window.__nefan.npcs().map((n) => ({ label: n.label, pos: n.pos })),
     };
   }, OBJETOS_DEL_TURNO);
-  ctx.log(`${etiqueta}: jugador ${JSON.stringify(m.p)} · ${JSON.stringify(m.objetos)}`);
+  ctx.log(`${etiqueta}: jugador ${JSON.stringify(m.p)} · ${JSON.stringify(m.objetos)} · npcs ${JSON.stringify(m.npcs)}`);
   ctx.expect(
     `${etiqueta}: el cliente tiene los tres objetos del turno (si no, «nada encima» sería un verde vacío)`,
     m.objetos.length === OBJETOS_DEL_TURNO.length && m.objetos.every((o) => o.sizeXZ),

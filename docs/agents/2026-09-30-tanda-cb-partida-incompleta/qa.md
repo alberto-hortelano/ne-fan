@@ -60,3 +60,53 @@
 ## Veredicto
 
 **No apto.** El muro «incompleta» desaparece y sigue saliendo cuando debe. Pero el acotado mueve el fallo en vez de quitarlo: en el mismo escenario, hablar junto al borde norte, lo que el motor pone cae ahora encima del jugador. Antes caía al otro lado del borde.
+
+---
+
+# Vuelta 2 (fdda5dc1)
+
+Lo de arriba es la vuelta 1 y queda como registro. **Manda esta sección.**
+
+## Criterios
+
+| Criterio | Estado | Evidencia |
+|---|---|---|
+| Nada del turno cae encima del jugador junto al borde (H-1) | ✅ | 357 verde (bloque propio). Jugador en (6,73, −29,5); la fila queda en z −24,5, 5 m al sur: Nogala x 3,2, forja 6,7, carro 11,2 y bolsa 14,2. Holgura ≥ 0 en las tres cajas y `probePoint` false, antes y después de reanudar. Anda 2 m al sur. El ingeniero dice 3/3 a solas. |
+| Nada fuera del tile, y reanudar no saca el muro | ✅ | 355 verde: «NO sale el muro» y Nogala tras reanudar en (2,3, −26,5). |
+| Tras reanudar, un spawn nuevo funciona | ✅ | 357, último aserto. |
+| El despertar «no cabe» deja al jugador caído y R reintenta (H-2) | ✅ en unitario, ⚠️ no en E2E | `bridge-despertar.test.ts` «CB QA H-2» en verde (12/12). El motor falso no manda spawns al despertar, así que el jugador no se ha visto en pantalla. |
+| El muro «incompleta» sale con un save corrupto | ✅ | 63 verde. |
+| El 63 falla en `main` (dato de BZ) | ⚠️ no lo reproduzco | `origin/main` 468ae14d: 63 verde 3 de 3. CB: verde 4 de 4 (1 en la vuelta 1 y 3 ahora). No cuenta contra CB en ningún caso. |
+
+## Qué ve el jugador
+
+- **Dónde queda lo colocado.** «Delante» es el norte fijo, que no es hacia donde mira el jugador. Junto al borde norte ya no cabe delante, así que todo va «detrás», al sur, en una fila de ~12 m de ancho a 5 m.
+- **Si se ve.** En las dos capturas (`01-turno-junto-al-borde` y `02-reanudada`), la cámara mira al norte, hacia la «Zona sin generar». La fila queda a la espalda y **no se ve nada**. El jugador solo se entera por el registro («✨ edificio: Forja del camino…»).
+  - Es la misma raíz que el forward fijo al norte, que está fuera de alcance y va a la tanda siguiente. Aquí solo empeora de grado: antes caía fuera; ahora cae dentro, pero a la espalda.
+- **Si tapa el camino de vuelta al hablante.** En el guion, el tabernero está lejos, en (9, −0,9), por el teletransporte. La fila queda entre el jugador y él, con huecos de 1,0 m entre caras (el cuerpo mide 0,8) y se puede rodear por los extremos, así que no encierra al jugador.
+  - En juego real, el hablante está a ~2,2 m y la forja empieza a 3 m en el sentido de «detrás», así que no hay solape con él. Lo he calculado; no lo he medido en vivo.
+- **Juicio sobre el rodeo que el ingeniero añadió al 357.** No esconde un fallo de juego. `acercarse` anda en línea recta y se clava en la primera cara que encuentra; un jugador gira. Los asertos siguen intactos y la salida de 2 m al sur se afirma antes del rodeo.
+  - Deja ver una fricción menor: una fila de cuatro cosas «a la espalda» que hay que sortear para volver al centro del tile.
+- **El «no cabe» del despertar**, leído del código porque no se ha visto en pantalla:
+  - El jugador sigue caído.
+  - El velo muestra «Lo que el mundo quería poner a tu alrededor al despertar no cabe ahí; pulsa R para que lo intente otra vez.» con «R · reintentar».
+  - El registro repite la frase precedida de «Has caído: ». No sale el muro.
+  - Riesgo: el motor no recibe el motivo del rechazo y no tiene pre-flight de colocación. Un motor que repita el mismo spawn enorme deja al jugador pulsando R en bucle. Hace falta algo como un edificio que no quepa en ninguna de las cuatro direcciones, así que es raro. Menor.
+
+## Hallazgos vivos
+
+1. **Menor, raíz fuera de alcance:** lo colocado junto al borde norte queda a la espalda de la cámara y no se ve. Es el forward fijo al norte (tanda siguiente).
+2. **Menor:** el «no cabe» del despertar puede repetirse en bucle, porque el motor no sabe por qué se rechazó. Sin probar en E2E.
+3. **Menor, de la vuelta 1 y anterior a la tanda:** el disparador de llegada de un viaje por «Salidas» despacha con la posición de origen.
+4. **Menor:** el fail-loud del despacho, cuando salta, sigue llevándose el turno entero, diálogo incluido. Hoy no se alcanza: la costura medida en la vuelta 1 no cambia.
+
+H-1 y H-2 de la vuelta 1 están cerrados.
+
+## Guion
+
+- En el 357 solo he tocado el `ctx.log` de la medida, que ahora incluye los NPC (tabernero y Nogala), para poder juzgar el camino de vuelta. Los asertos están igual.
+- Pasa los candados del banco (69/69 en los tres del banco que ven los guiones).
+
+## Veredicto (vuelta 2)
+
+**Apto con reservas.** Se cumple el requisito: nada cae fuera del tile, el muro solo sale con un save corrupto, y ya no cae nada encima del jugador. Las reservas son los hallazgos 1 y 2, que dependen del forward fijo al norte y de una retroalimentación al motor, las dos fuera de alcance.
