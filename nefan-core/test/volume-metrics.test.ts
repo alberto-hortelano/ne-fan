@@ -318,9 +318,18 @@ describe("altura del volumen", () => {
 
   it("una altura declarada gana al default en todos los tipos que la admiten", () => {
     assert.equal(volumeHeightM({ id: "t", label: "torre", type: "tower", at: [0, 0], h: 20 }, 0.5), 20 * 0.5 + 0.5);
-    assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x", h: 4 }, 0.5), 2);
+    assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x", h: 10 }, 0.5), 5);
     assert.equal(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0], h: 3 }, 0.5), 1.5);
     assert.equal(volumeHeightM({ id: "m", label: "muro", type: "wall", points: [[0, 0], [4, 0]], h: 9 }, 0.5), 4.5);
+  });
+
+  it("un gate más bajo que el paso libre mide lo que se PINTA, no lo declarado (QA BV, M1)", () => {
+    // `gateAlturaCeldas` sube el gate bajo hasta que su dintel deja pasar de
+    // pie: el manifest mide esa altura pintada, no la `h` declarada.
+    const bajo: Volume = { id: "g", label: "portillo", type: "gate", at: [0, 0], orient: "x", h: 4 };
+    // 3,1 m = paso libre (ojos 1,6 + plano cercano 0,3) + lo que cuelga bajo
+    // `h` (dintel 0,9 + dos corbeles de 0,75 celdas = 1,2 m).
+    assert.ok(Math.abs(volumeHeightM(bajo, 0.5) - 3.1) < 1e-9, `mide ${volumeHeightM(bajo, 0.5)}`);
   });
 
   it("ningún tipo mide cero o menos: una altura nula es un volumen invisible", () => {

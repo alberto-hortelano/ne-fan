@@ -23,6 +23,7 @@ import { seededRng, uniform, type SeededRng } from "../../rng.js";
 import { darken, roofColors } from "./palette.js";
 import type { Volume } from "./volumes.js";
 import type { SurfacePrim } from "../greybox/surfaces.js";
+import { gateAlturaCeldas } from "../greybox/volume-prims.js";
 
 /** Especies que se quedan con la copa cónica clásica. */
 const CONIFER_RE = /pin|abet|con[ií]fer|cipr|fir|spruce|cedro|cedar|tejo|yew/i;
@@ -269,7 +270,7 @@ function towerRoof(v: Extract<Volume, { type: "tower" }>): SurfacePrim[] {
 /** Corbeles escalonados bajo el dintel del gate: el vano lee como arco. */
 function gateCorbels(v: Extract<Volume, { type: "gate" }>): SurfacePrim[] {
   const w = v.w ?? 8;
-  const h = v.h ?? 8;
+  const h = gateAlturaCeldas(v);
   const [gx, gz] = v.at;
   const alongX = v.orient === "x";
   const out: SurfacePrim[] = [];

@@ -447,10 +447,11 @@
       ],
       "tests": [
         "test/fps-detail.test.ts",
-        "test/fps-riqueza.test.ts"
+        "test/fps-riqueza.test.ts",
+        "test/lo-que-se-pinta-es-por-donde-se-pasa.test.ts"
       ],
       "break": 42,
-      "porque": "Detalle por cara, relieve e interiores: la riqueza visible del tile. Se llega a los tres desde fps-spec.ts, y los dos tests de la batería son los que tienen ese detalle por sujeto."
+      "porque": "Detalle por cara, relieve e interiores: la riqueza visible del tile. Se llega a los tres desde fps-spec.ts, y los dos primeros tests de la batería son los que tienen ese detalle por sujeto. lo-que-se-pinta entra en la tanda BV (M1): sus casos del vano del gate ejercen `gateCorbels` y afirman que ningún corbel cuelga por debajo del paso libre."
     },
     {
       "id": "blueprint-fps-ambiente",

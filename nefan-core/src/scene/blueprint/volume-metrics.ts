@@ -17,7 +17,7 @@
 import { volumeSolidDiscRadiusCells } from "./collision.js";
 import { volumeFootprint } from "./footprint.js";
 import type { Volume } from "./volumes.js";
-import { customPartTop } from "../greybox/volume-prims.js";
+import { customPartTop, gateAlturaCeldas } from "../greybox/volume-prims.js";
 
 /** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
  *  compartido por el manifest del greybox y la colisión declarada (si
@@ -122,7 +122,7 @@ export function volumeHeightM(v: Volume, mpc: number): number {
     case "tower":
       return (v.h ?? 12) * mpc + 0.5;
     case "gate":
-      return (v.h ?? 8) * mpc;
+      return gateAlturaCeldas(v) * mpc;
     case "tree":
       return (1.6 + 1.7 * 1.9) * (v.s ?? 1); // tronco + copa (≈ SVG)
     case "bush":

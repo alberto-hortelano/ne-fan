@@ -13,7 +13,8 @@ import { buildScatterExclusions } from "../src/scene/blueprint/scatter.js";
 import type { BuildingVolume, GateVolume, Volume } from "../src/scene/blueprint/volumes.js";
 import type { GreyboxPrimitive } from "../src/scene/greybox/common.js";
 import { volumePrimsForTile } from "../src/scene/greybox/volume-prims.js";
-import { createTerrainCollider, NPC_RADIUS_M, PLAYER_RADIUS_M } from "../src/scene/terrain-collision.js";
+import { createTerrainCollider, NPC_RADIUS_M, PASO_LIBRE_M, PLAYER_RADIUS_M } from "../src/scene/terrain-collision.js";
+import { enrichFpsPrims } from "../src/scene/blueprint/fps-detail.js";
 import { TILE_MPC, tileWorldRect } from "../src/scene/tile.js";
 
 const RECT = tileWorldRect(0, 0);
@@ -630,5 +631,56 @@ describe("#788: el resto de figuras finas también cierra (prism, prop girado, e
     assert.ok(solida(g.grid, 50.2, 50.9), "la celda del centro del disco es sólida");
     const col = createTerrainCollider(g)!;
     assert.ok(col.blocksCircle(...aMetros(50.2, 50.9), PLAYER_RADIUS_M), "el cuerpo no se planta encima");
+  });
+});
+
+describe("el vano del gate se cruza de pie: nada pintado baja del paso libre (QA BV, M1)", () => {
+  // La colisión es 2D: el vano de un gate es transitable a cualquier `h`. Lo
+  // pintado tiene que estar de acuerdo — con `h` 3 el dintel caía a la altura
+  // de los ojos y el jugador lo cruzaba por dentro. Relación fijada: toda prim
+  // del gate (greybox + detalle fps) que pisa la planta del vano arranca por
+  // encima de `PASO_LIBRE_M` (ojos + plano cercano de la cámara).
+  const alturas = [0.1, 1, 3, 5, 6, 6.2, undefined, 12, 24];
+  for (const h of alturas) {
+    for (const orient of ["x", "y"] as const) {
+      it(`h ${h ?? "por defecto"}, orient ${orient}`, () => {
+        const w = 8;
+        const at: [number, number] = [64, 64];
+        const g: GateVolume = h === undefined
+          ? { id: "p", label: "portón", type: "gate", at, w, orient }
+          : { id: "p", label: "portón", type: "gate", at, w, orient, h };
+        const base = volumePrimsForTile(g, [g]);
+        const todas = [...base, ...enrichFpsPrims(base, [g], "semilla")];
+        // Planta del vano: ancho `w` a lo largo del muro, fondo de sobra (±6).
+        const [a0, a1] = [at[0] - w / 2, at[0] + w / 2];
+        const vano: [number, number][] = orient === "x"
+          ? [[a0, at[1] - 6], [a1, at[1] - 6], [a1, at[1] + 6], [a0, at[1] + 6]]
+          : [[at[0] - 6, at[1] - w / 2], [at[0] + 6, at[1] - w / 2], [at[0] + 6, at[1] + w / 2], [at[0] - 6, at[1] + w / 2]];
+        let encima = 0;
+        for (const p of todas) {
+          if (p.shape !== "box") continue;
+          const esq = esquinasCaja(p);
+          // ¿Pisa la planta del vano (área > 0)? Recorte contra sus celdas.
+          let pisa = false;
+          for (let v = Math.floor(vano[0][1]); v < vano[2][1] && !pisa; v++) {
+            for (let u = Math.floor(vano[0][0]); u < vano[1][0] && !pisa; u++) pisa = areaEnCelda(esq, u, v) > AREA_EPS;
+          }
+          if (!pisa) continue;
+          encima++;
+          assert.ok(p.pos[1] * TILE_MPC >= PASO_LIBRE_M - 1e-9,
+            `prim a ${(p.pos[1] * TILE_MPC).toFixed(2)} m sobre el vano, por debajo del paso libre ${PASO_LIBRE_M} m`);
+        }
+        assert.ok(encima > 0, "el dintel cruza el vano (si no, el aserto no mira nada)");
+      });
+    }
+  }
+
+  it("un gate alto no cambia: jambas de `h` y dintel en `h − 0,9`, como se declaró", () => {
+    for (const h of [8, 12, 24]) {
+      const g: GateVolume = { id: "p", label: "portón", type: "gate", at: [64, 64], w: 8, orient: "x", h };
+      const [jamba, , dintel] = volumePrimsForTile(g, [g]);
+      assert.equal(jamba.size[1], h);
+      assert.equal(dintel.pos[1], h - 0.9);
+    }
   });
 });
