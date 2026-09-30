@@ -65,8 +65,6 @@ export {
   DeathResolutionSchema,
   ConsequenceSchema,
   MAX_CONSEQUENCES,
-  WeaponOrientSchema,
-  WeaponVerifySchema,
   CONTRACTS,
   type ContractSpec,
 } from "./contract/model-io/schemas.js";

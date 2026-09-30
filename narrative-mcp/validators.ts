@@ -10,8 +10,6 @@ import {
   validateContract,
   NarrativeReactionSchema,
   DeathResolutionSchema,
-  WeaponOrientSchema,
-  WeaponVerifySchema,
   EmittedSceneSchema,
 } from '@nefan/core';
 import { AnchorSchema } from '@nefan/core/contracts/world-map-schema';
@@ -32,17 +30,6 @@ export function validateFormatDScene(data: unknown): { ok: true } | { ok: false;
  *  falló antes de que la petición salga hacia el bridge. */
 export function validateAnchor(data: unknown): { ok: true } | { ok: false; error: string } {
   return validateContract(AnchorSchema, data);
-}
-
-/** Pre-flight de una respuesta weapon_orient / weapon_verify — delega en el
- *  zod SoT. Antes NO existía: el kind pasaba directo a sendVisionResponse sin
- *  validar, y el ai_server devolvía None en silencio (503), así que una malla
- *  mal orientada por el modelo NUNCA volvía al modelo. */
-export function validateWeaponOrient(data: unknown): { ok: true } | { ok: false; error: string } {
-  return validateContract(WeaponOrientSchema, data);
-}
-export function validateWeaponVerify(data: unknown): { ok: true } | { ok: false; error: string } {
-  return validateContract(WeaponVerifySchema, data);
 }
 
 /** Pre-flight check of a narrative_event response (kind === 'narrative_event')

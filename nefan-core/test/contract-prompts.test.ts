@@ -50,8 +50,6 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   // describe la única variante viva. Este marcador se puede cambiar (lo dice
   // el propio test), pero se cambia con el motivo escrito, no de paso.
   "scene_instructions.md": ["scene_id", "entities", "volumes", "ground", "role", "description"],
-  "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
-  "weapon_verify.md": ["suggested_delta_euler"],
   "develop_world.md": ["world_brief", "world_md", "game_id", "style_id", "tags"],
   "narrative_event.md": ["consequences", "dialogue", "story_update", "spawn_entity", "plugin_event", "choices"],
 };
@@ -62,7 +60,6 @@ const TOOLS_DIR = fileURLToPath(new URL("../data/contract/tools", import.meta.ur
  *  archivo → `name` interno de la tool (histórico, no coincide siempre). */
 const CONTRACT_TOOLS: Record<string, string> = {
   generate_scene: "generate_scene",
-  weapon_orient: "orient_weapon",
   narrative_react: "react_to_player",
 };
 

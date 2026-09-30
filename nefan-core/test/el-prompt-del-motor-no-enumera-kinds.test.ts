@@ -22,7 +22,8 @@
  *     dentro de `context`, un kind de otro canal): no está en el contrato, no
  *     se deriva, no se ve;
  *   · un kind retirado que no esté en `RETIRADOS`: `room` está porque es el
- *     que se pudrió aquí; el siguiente hay que añadirlo al retirarlo;
+ *     que se pudrió aquí, y los dos `weapon_*` porque salieron del contrato
+ *     en #790; el siguiente hay que añadirlo al retirarlo;
  *   · otras prosas que hablen al motor (docs/, CLAUDE.md, comentarios): solo
  *     se miran los dos sitios de los que alguien COPIA el encargo;
  *   · el kind escrito de otra forma (con espacios, traducido: «petición de
@@ -40,6 +41,8 @@ const CONTRATO = fileURLToPath(new URL("../src/contracts/narrative-mcp-ws.ts", i
 /** Kinds que el contrato YA NO nombra y que alguna prosa sí nombró. */
 const RETIRADOS: Record<string, string> = {
   room: "El formato de sala cerrada se retiró; narrative-mcp rechaza cualquier formato que no sea `scene`.",
+  weapon_orient: "Retirado con el canal de visión (#790): sin productor desde que salió Godot (#209), su último llamador.",
+  weapon_verify: "Retirado con el canal de visión (#790): sin productor desde que salió Godot (#209), su último llamador.",
 };
 
 /** Los literales de `type`/`kind`/`format` de cada miembro de `AiToMcpMsg`. */
@@ -105,9 +108,11 @@ describe("el encargo al motor no enumera kinds", () => {
   const kinds = [...derivados, ...Object.keys(RETIRADOS)];
 
   it("el censo del contrato no sale vacío (un contrato renombrado es rojo, no verde)", () => {
-    // Los que el playtest vio en el encargo viejo tienen que estar: si el
-    // derivador deja de verlos, este candado no sujeta nada.
-    for (const k of ["scene", "weapon_orient", "weapon_verify", "narrative_event"]) {
+    // Los kinds vivos del encargo viejo tienen que estar: si el derivador deja
+    // de verlos, este candado no sujeta nada. (Los dos `weapon_*` ya no están
+    // en el contrato desde #790: los ve `RETIRADOS`, y el test del encargo
+    // viejo de abajo los sigue exigiendo.)
+    for (const k of ["scene", "narrative_event"]) {
       assert.ok(derivados.includes(k), `el derivador no ve «${k}» en AiToMcpMsg (vio: ${derivados.join(", ")})`);
     }
   });

@@ -22,24 +22,6 @@ export interface RoomRequestMsg {
   format?: "scene";
 }
 
-export interface VisionImage {
-  /** 'front' | 'side' | 'top' | 'combat_pose' | 'blueprint' | ... */
-  view: string;
-  media_type: string;
-  /** Base64 crudo, sin prefijo data:. */
-  data_b64: string;
-}
-
-export interface VisionRequestMsg {
-  type: "vision_request";
-  request_id: string;
-  kind: "weapon_orient" | "weapon_verify";
-  /** Solo kinds weapon_*. */
-  weapon_type?: string;
-  images: VisionImage[];
-  context?: Record<string, unknown>;
-}
-
 export interface NarrativeEventMsg {
   type: "narrative_event";
   request_id: string;
@@ -59,12 +41,11 @@ export interface HelloMsg {
 
 export type AiToMcpMsg =
   | RoomRequestMsg
-  | VisionRequestMsg
   | NarrativeEventMsg
   | HelloMsg;
 
 /** Peticiones que pasan por la cola del listener (excluye hello). */
-export type McpRequestMsg = RoomRequestMsg | VisionRequestMsg | NarrativeEventMsg;
+export type McpRequestMsg = RoomRequestMsg | NarrativeEventMsg;
 
 // ── narrative-mcp → narrative-llm (Python) ──
 
@@ -72,12 +53,6 @@ export interface RoomResponseMsg {
   type: "room_response";
   request_id: string;
   room_data: Record<string, unknown>;
-}
-
-export interface VisionResponseMsg {
-  type: "vision_response";
-  request_id: string;
-  result: Record<string, unknown>;
 }
 
 export interface NarrativeEventResponseMsg {
@@ -97,7 +72,6 @@ export interface NarrativeProgressMsg {
 
 export type McpToAiMsg =
   | RoomResponseMsg
-  | VisionResponseMsg
   | NarrativeEventResponseMsg
   | NarrativeProgressMsg;
 

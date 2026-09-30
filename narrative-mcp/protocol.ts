@@ -8,12 +8,9 @@
 // el union original omitía.
 export type {
   RoomRequestMsg,
-  VisionImage,
-  VisionRequestMsg,
   NarrativeEventMsg,
   HelloMsg,
   RoomResponseMsg,
-  VisionResponseMsg,
   NarrativeEventResponseMsg,
   NarrativeProgressMsg,
   TakeoverMsg,

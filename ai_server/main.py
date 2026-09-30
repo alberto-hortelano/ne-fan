@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
     )
 
     # F4: los pipelines de APIs de pago viven en remote-gen (:8768). Este
-    # proceso solo conserva lo narrativo y la visión — la generación local
+    # proceso solo conserva lo narrativo — la generación local
     # con GPU se retiró entera con el gpu-worker (#199).
     #
     # Packs de estilo por juego: /develop_world los LISTA para el motor

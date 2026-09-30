@@ -48,7 +48,7 @@ export const SERVICES = {
     port: 8765,
     currentPort: 8765,
     description:
-      "Narrativa con LLM: generate_scene, choices, develop_world, reviews con visión. narrative-mcp (:3737) es su sidecar.",
+      "Narrativa con LLM: generate_scene, choices, develop_world. narrative-mcp (:3737) es su sidecar.",
   },
   "asset-store": {
     protocol: "http",
